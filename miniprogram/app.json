@@ -1,0 +1,105 @@
+{
+  "pages": [
+    "pages/auth/login/login",
+    "pages/auth/patient-login/patient-login",
+    "pages/auth/manual-login/manual-login",
+    "pages/auth/doctor-login/doctor-login",
+    "pages/home/home",
+    "pages/consultation/consultation",
+    "pages/health/health",
+    "pages/profile/profile",
+    "pages/tv/cast/cast",
+    "pages/triage/triage",
+    "pages/triage/result/result",
+    "pages/appointment/appointment",
+    "pages/consult/consult",
+    "pages/consult/picker/picker",
+    "pages/profile/records/records",
+    "pages/profile/health-records/health-records",
+    "pages/profile/consultations/consultations",
+    "pages/profile/family/family",
+    "pages/profile/personal-info/personal-info",
+    "pages/profile/settings/settings",
+    "pages/profile/voice-settings/voice-settings",
+    "pages/profile/privacy/privacy",
+    "pages/profile/agreement/agreement",
+    "pages/doctor/workbench/workbench",
+    "pages/doctor/appointments/appointments",
+    "pages/doctor/beds/beds",
+    "pages/doctor/personal/personal",
+    "pages/doctor/consult/consult",
+    "pages/doctor/schedule/schedule",
+    "pages/doctor/account-security/account-security",
+    "pages/doctor/messages/messages"
+  ],
+  "subPackages": [
+    {
+      "root": "packageNav",
+      "name": "nav",
+      "pages": [
+        "pages/nav/nav"
+      ]
+    },
+    {
+      "root": "packageContent",
+      "name": "content",
+      "pages": [
+        "pages/knowledge/knowledge",
+        "pages/detail/detail"
+      ]
+    }
+  ],
+  "preloadRule": {
+    "pages/home/home": {
+      "network": "all",
+      "packages": [
+        "packageContent",
+        "packageNav"
+      ]
+    }
+  },
+  "lazyCodeLoading": "requiredComponents",
+  "window": {
+    "navigationBarTitleText": "AI 智慧医疗",
+    "navigationBarBackgroundColor": "#0B6EF8",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#F3F8FF",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "custom": true,
+    "color": "#8A9BB8",
+    "selectedColor": "#0B6EF8",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/home/home",
+        "text": "首页",
+        "iconPath": "assets/icons/home_gray.png",
+        "selectedIconPath": "assets/icons/home.png"
+      },
+      {
+        "pagePath": "pages/consultation/consultation",
+        "text": "AI问诊",
+        "iconPath": "assets/icons/chat_gray.png",
+        "selectedIconPath": "assets/icons/chat.png"
+      },
+      {
+        "pagePath": "pages/appointment/appointment",
+        "text": "预约挂号",
+        "iconPath": "assets/icons/calendar_gray.png",
+        "selectedIconPath": "assets/icons/calendar.png"
+      },
+      {
+        "pagePath": "pages/profile/profile",
+        "text": "我的",
+        "iconPath": "assets/icons/user_gray.png",
+        "selectedIconPath": "assets/icons/user.png"
+      }
+    ]
+  },
+  "style": "v2",
+  "resizable": true,
+  "sitemapLocation": "sitemap.json"
+}

@@ -1,0 +1,497 @@
+/* pages/profile/family —— 家庭成员管理
+   设计稿：design-output/患者端/C-个人中心/08-家庭成员.png（1391×3014，1rpx ≈ 1.8547px）
+   逐元素实测（设计稿 px → rpx）：
+     · 顶部浅蓝渐变带：导航底 346 → 约 760，色 #E1F1FF 渐隐到页底；带高约 407px = 220rpx
+     · 提示面板：50..1339 × 408..708 = 695×162rpx；填充≈白 25% 叠在浅蓝带上，1px 亮白描边
+       内部图标 ink 107×139px（58×75rpx）、图标→文字 66px=36rpx、两行文字行距 87px=47rpx（lh≈1.57）
+     · 卡片：左右留白 52px=28rpx、圆角 44px=24rpx（--radius-md）、卡片间距 54px=29rpx
+     · 头像 250px=135rpx；内距 66px=36rpx；头像→文字 56px=30rpx
+     · 姓名 字宽 78px/字 = 42rpx（= --font-title + 2rpx）；副行 30rpx，姓名→副行 53px=29rpx
+     · 关系徽章 168×99px=91×53rpx、字 28rpx、内距 10/18rpx、圆角 12rpx
+     · 分隔线 **通栏**（实测 x 55..1340 = 卡宽），非内缩
+     · 操作行 214px=115rpx（padding 36rpx 40rpx）；文字 30rpx/600，左蓝右红
+     · 添加按钮 1227×180px=662×97rpx、2px 主蓝描边、全胶囊、字 34rpx；说明文字 24rpx（--text-weak）
+   颜色：全部走令牌；半透明白用 rgba(255,255,255,…)（唯一允许的字面色族）。
+   本页类名统一 fm-*，不改全局 .notice-bar（其它页在用）。 */
+
+.fm-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* ============ 顶部浅蓝渐变带 + 半透明提示面板 ============ */
+.fm-hero {
+  padding: 32rpx 28rpx 40rpx;
+  background: linear-gradient(180deg, var(--accent-soft) 0%, var(--bg) 100%);
+}
+
+.fm-tip {
+  display: flex;
+  align-items: flex-start;
+  padding: 32rpx 36rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.3);
+  box-sizing: border-box;
+}
+
+.fm-tip-ic {
+  width: 60rpx;
+  height: 72rpx;
+  flex-shrink: 0;
+  margin-top: 6rpx;
+}
+
+.fm-tip-text {
+  flex: 1;
+  min-width: 0;
+  margin-left: 36rpx;
+  font-size: var(--font-body);
+  color: var(--text-main);
+  line-height: 1.57;
+}
+
+/* ============ 成员卡 ============ */
+.fm-body {
+  padding: 0 28rpx;
+}
+
+.fm-card {
+  margin-bottom: 28rpx;
+  border-radius: var(--radius-md);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;      /* 让「通栏分隔线」与圆角共存 */
+}
+
+.fm-head {
+  display: flex;
+  align-items: flex-start;
+  padding: 40rpx 36rpx 39rpx;
+}
+
+/* 头像：真人图优先；无图时用 CSS 人形占位（底色 --accent-soft，人形 --border，
+   实测设计稿圆底 (231,243,255) / 人形 (218,227,242)），0 新增素材 */
+.fm-avatar {
+  position: relative;
+  width: 135rpx;
+  height: 135rpx;
+  flex-shrink: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--accent-soft);
+}
+
+.fm-avatar-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.fm-ava-ph {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.fm-ava-head {
+  position: absolute;
+  left: 50%;
+  top: 30rpx;
+  width: 40rpx;
+  height: 40rpx;
+  margin-left: -20rpx;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.fm-ava-body {
+  position: absolute;
+  left: 50%;
+  bottom: -8rpx;
+  width: 78rpx;
+  height: 58rpx;
+  margin-left: -39rpx;
+  border-radius: 39rpx 39rpx 0 0;
+  background: var(--border);
+}
+
+.fm-info {
+  flex: 1;
+  min-width: 0;
+  margin-left: 30rpx;
+}
+
+.fm-name {
+  font-size: calc(var(--font-title) + 2rpx);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fm-meta {
+  margin-top: 16rpx;
+  font-size: var(--font-body);
+  color: var(--text-weak);
+  line-height: 1.4;
+}
+
+/* 关系徽章（设计稿是圆角矩形，不是胶囊） */
+.fm-chip {
+  flex-shrink: 0;
+  margin: 8rpx 0 0 16rpx;
+  padding: 10rpx 18rpx;
+  border-radius: 12rpx;
+  background: var(--accent-soft);
+  font-size: calc(var(--font-caption) + 4rpx);
+  font-weight: 600;
+  color: var(--primary);
+  line-height: 1.2;
+}
+
+/* 操作行：分隔线通栏，左右裸文字（各自 ≥88rpx 触控高） */
+.fm-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 40rpx;
+  border-top: 1rpx solid var(--border);
+}
+
+.fm-act {
+  display: flex;
+  align-items: center;
+  min-height: 115rpx;
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.fm-act:active {
+  opacity: 0.65;
+}
+
+.fm-act-danger {
+  color: var(--accent-red);
+}
+
+/* ============ 底部：贴底添加按钮 + 授权说明 ============ */
+.fm-footer {
+  margin-top: auto;
+  padding: 40rpx 44rpx calc(24rpx + env(safe-area-inset-bottom));
+}
+
+.fm-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 97rpx;
+  border: 2rpx solid var(--primary);
+  border-radius: 999rpx;
+  background: var(--card);
+  box-sizing: border-box;
+}
+
+.fm-add:active {
+  background: var(--accent-soft);
+}
+
+.fm-add-ic {
+  width: 30rpx;
+  height: 30rpx;
+  margin-right: 12rpx;
+}
+
+.fm-add-t {
+  font-size: var(--font-h2);
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.fm-note {
+  margin-top: 24rpx;
+  text-align: center;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.5;
+}
+
+/* ============ 添加成员浮层 ============ */
+.fm-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(8, 26, 61, 0.45);
+}
+
+.fm-sheet {
+  width: 100%;
+  padding: 32rpx 32rpx calc(32rpx + env(safe-area-inset-bottom));
+  border-radius: 32rpx 32rpx 0 0;
+  background: var(--card);
+  box-sizing: border-box;
+}
+
+.fm-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 8rpx;
+}
+
+.fm-sheet-title {
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.fm-sheet-cancel {
+  min-height: 64rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 8rpx;
+  font-size: var(--font-body);
+  color: var(--text-sub);
+}
+
+.fm-field {
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.fm-field-last {
+  border-bottom: 0;
+}
+
+.fm-label {
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+.fm-optional {
+  color: var(--text-placeholder);
+}
+
+.fm-input {
+  height: 64rpx;
+  margin-top: 8rpx;
+  font-size: calc(var(--font-body) + 2rpx);
+  color: var(--text-main);
+}
+
+.fm-ph {
+  color: var(--text-placeholder);
+}
+
+.fm-relations {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 8rpx;
+}
+
+.fm-rchip {
+  margin: 12rpx 16rpx 0 0;
+  padding: 12rpx 28rpx;
+  border-radius: 999rpx;
+  background: var(--bg);
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  line-height: 1.3;
+}
+
+.fm-rchip-on {
+  background: var(--accent-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.fm-err {
+  margin-top: 16rpx;
+  font-size: var(--font-caption);
+  color: var(--accent-red);
+}
+
+.fm-privacy {
+  margin-top: 16rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.5;
+}
+
+.fm-submit {
+  margin-top: 28rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  border-radius: 999rpx;
+  background: var(--primary);
+  color: var(--card);
+  font-size: calc(var(--font-body) + 2rpx);
+  font-weight: 600;
+}
+
+.fm-submit::after {
+  border: 0;
+}
+
+.fm-submit-busy {
+  opacity: 0.6;
+}
+
+/* ================= 平板：≥600px 全部 rpx 折 px（÷2），主栏 375px 居中 ================= */
+@media (min-width: 600px) {
+  .fm-page {
+    max-width: 375px;
+    margin: 0 auto;
+  }
+
+  .fm-hero {
+    padding: 16px 14px 20px;
+  }
+  .fm-tip {
+    padding: 16px 18px;
+    border-radius: 8px;
+    border-width: 1px;
+  }
+  .fm-tip-ic {
+    width: 30px;
+    height: 36px;
+    margin-top: 3px;
+  }
+  .fm-tip-text {
+    margin-left: 18px;
+    font-size: 15px;
+  }
+
+  .fm-body {
+    padding: 0 14px;
+  }
+  .fm-card {
+    margin-bottom: 14px;
+    border-radius: 12px;
+  }
+  .fm-head {
+    padding: 20px 18px 19px;
+  }
+  .fm-avatar {
+    width: 68px;
+    height: 68px;
+  }
+  .fm-ava-head {
+    top: 15px;
+    width: 20px;
+    height: 20px;
+    margin-left: -10px;
+  }
+  .fm-ava-body {
+    bottom: -4px;
+    width: 39px;
+    height: 29px;
+    margin-left: -19.5px;
+    border-radius: 19.5px 19.5px 0 0;
+  }
+  .fm-info {
+    margin-left: 15px;
+  }
+  .fm-name {
+    font-size: 21px;
+  }
+  .fm-meta {
+    margin-top: 8px;
+    font-size: 15px;
+  }
+  .fm-chip {
+    margin: 4px 0 0 8px;
+    padding: 5px 9px;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+
+  .fm-actions {
+    padding: 0 20px;
+    border-top-width: 1px;
+  }
+  .fm-act {
+    min-height: 58px;
+    font-size: 15px;
+  }
+
+  .fm-footer {
+    padding: 20px 22px 12px;
+  }
+  .fm-add {
+    height: 49px;
+    border-width: 1px;
+  }
+  .fm-add-ic {
+    width: 15px;
+    height: 15px;
+    margin-right: 6px;
+  }
+  .fm-add-t {
+    font-size: 17px;
+  }
+  .fm-note {
+    margin-top: 12px;
+    font-size: 12px;
+  }
+
+  /* 浮层：宽屏不铺满 1200px，收进 375px 主栏 */
+  .fm-sheet {
+    width: 375px;
+    margin: 0 auto;
+    padding: 16px 16px 16px;
+    border-radius: 16px 16px 0 0;
+  }
+  .fm-sheet-title {
+    font-size: 17px;
+  }
+  .fm-sheet-cancel {
+    min-height: 32px;
+    padding: 0 4px;
+    font-size: 15px;
+  }
+  .fm-field {
+    padding: 12px 0;
+    border-bottom-width: 1px;
+  }
+  .fm-label {
+    font-size: 13px;
+  }
+  .fm-input {
+    height: 32px;
+    margin-top: 4px;
+    font-size: 16px;
+  }
+  .fm-relations {
+    margin-top: 4px;
+  }
+  .fm-rchip {
+    margin: 6px 8px 0 0;
+    padding: 6px 14px;
+    font-size: 13px;
+  }
+  .fm-err,
+  .fm-privacy {
+    margin-top: 8px;
+    font-size: 12px;
+  }
+  .fm-submit {
+    margin-top: 14px;
+    height: 44px;
+    line-height: 44px;
+    font-size: 16px;
+  }
+}

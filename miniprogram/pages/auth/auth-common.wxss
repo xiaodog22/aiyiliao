@@ -1,0 +1,204 @@
+/**
+ * auth-common.wxss —— 登录相关页面共用样式（V1.6 视觉升级）
+ *
+ * 设计要点：
+ * 1) 整个登录卡片（Logo + 欢迎语 + 表单 + 按钮）作为整体，Flexbox 垂直水平居中
+ *    ⚠️ 居中用「卡片 margin:auto」实现而非 justify-content:center：
+ *       后者在大字模式等内容超高场景会把顶部裁出视口外且无法滚动（真机复现过）
+ * 2) 背景柔和渐变（浅蓝 → 白 → 浅紫），避免单调
+ * 3) 卡片半透明毛玻璃（backdrop-filter: blur），不支持时退化为半透明白
+ * 4) 输入框与按钮统一 100% 宽 / 28rpx 内边距 / 96rpx 高，严格对齐
+ *    ⚠️ 按钮禁用固定 line-height：文字一旦换行会与固定行高冲突造成上下错位（真机复现过）
+ * 5) 按钮内仅纯文本，不含任何图标
+ */
+/* 渐变背景挂在 page 根（而非 .auth-page）：宽屏限宽居中时两侧留白同为渐变，无色带割裂 */
+page {
+  min-height: 100vh;
+  background: linear-gradient(165deg, #E8F1FF 0%, #F7F9FD 42%, #EDF0FF 100%);
+}
+
+/* ⚠️ 布局用普通文档流 + padding 顶部留白（约垂直居中），禁用 flex/auto-margin 居中：
+   ① 内容高于视口（大字模式）时天然可滚动、永不裁切；
+   ② 不依赖内核对 flex auto-margin 的解析（某模拟器内核下会导致整页白屏，已复现） */
+.auth-page {
+  min-height: 100vh;
+  padding: 12vh 48rpx 56rpx;
+  box-sizing: border-box;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* 毛玻璃登录卡片：水平居中，普通流排布 */
+.auth-card {
+  width: 100%;
+  max-width: 640rpx;
+  margin: 0 auto;
+  background: rgba(255, 255, 255, 0.78);
+  -webkit-backdrop-filter: blur(28rpx);
+  backdrop-filter: blur(28rpx);
+  border-radius: 36rpx;
+  box-shadow: 0 24rpx 72rpx rgba(31, 62, 145, 0.14);
+  padding: 64rpx 48rpx 56rpx;
+  box-sizing: border-box;
+}
+
+/* Logo（无标题文字）
+   参考图 02/03：logo 为**正圆**（原为圆角方形） */
+.auth-logo-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.logo-badge {
+  width: 132rpx;
+  height: 132rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 12rpx 32rpx rgba(22, 93, 255, 0.22);
+}
+
+/* 品牌 Logo（assets/brand/logo-mark.png）：铺满圆底，自带透明外圈 */
+.logo-badge-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+/* 欢迎语与辅助文案 */
+.auth-welcome {
+  margin-top: 36rpx;
+  text-align: center;
+  /* 走令牌：适老化 large/xlarge 档必须跟随放大（D-A-P2-03） */
+  font-size: var(--font-title);
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+
+.auth-subtitle {
+  margin-top: 10rpx;
+  text-align: center;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+/* 表单区（统一宽度与间距） */
+.auth-form {
+  margin-top: 48rpx;
+}
+
+.field {
+  margin-bottom: 28rpx;
+}
+
+.field-label {
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  margin-bottom: 12rpx;
+  padding-left: 4rpx;
+}
+
+/* 输入区：参考图 02/03 为「极淡蓝圆角填充块、无描边」（原为白底 + 灰描边） */
+.field-input {
+  width: 100%;
+  height: 96rpx;
+  background: var(--bg);
+  border-radius: var(--radius-md);
+  padding: 0 28rpx;
+  font-size: var(--font-body);
+  color: var(--text-main);
+  box-sizing: border-box;
+}
+
+/* 按钮：纯文本，宽度/内边距与输入框严格对齐 */
+/* ⚠️ width + min-width 双保险（防 button 默认样式导致内容宽收缩）；
+   line-height 用 normal（.btn 已 flex 居中），文字异常换行时也不会上下错位 */
+.auth-btn {
+  width: 100%;
+  min-width: 100%;
+  height: 96rpx;
+  margin: 0;
+  padding: 0 28rpx;
+  line-height: normal;
+  border-radius: var(--radius-md);
+  font-size: var(--font-body);
+  font-weight: 600;
+  box-sizing: border-box;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.auth-btn + .auth-btn { margin-top: 24rpx; }
+
+.auth-btn::after { border: none; }
+
+/* 安全提示（合规文案，是要读的内容 → 24rpx 起 + --text-sub） */
+.auth-security {
+  margin-top: 40rpx;
+  text-align: center;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+/* 底部辅助入口（大字模式开关等） */
+.auth-aux {
+  margin-top: 40rpx;
+  text-align: center;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  padding: 16rpx 32rpx;
+}
+
+/* ============ 手动登录页专属 ============ */
+/* 左上角返回按钮：色块背景 + 箭头 + 文字，点击区 ≥ 44pt */
+.auth-back-btn {
+  position: fixed;
+  left: 32rpx;
+  top: calc(env(safe-area-inset-top) + 96rpx);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  min-width: 176rpx;
+  height: 88rpx;
+  padding: 0 28rpx;
+  background: rgba(255, 255, 255, 0.85);
+  -webkit-backdrop-filter: blur(12rpx);
+  backdrop-filter: blur(12rpx);
+  border-radius: 999rpx;
+  box-shadow: 0 8rpx 24rpx rgba(31, 62, 145, 0.10);
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-sub);
+}
+
+.auth-back-arrow {
+  width: 36rpx;
+  height: 36rpx;
+}
+
+.auth-hint {
+  margin-top: 32rpx;
+  text-align: center;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+/* ===== Pad/宽屏（与 app.wxss 600px 断点一致）：硬编码 rpx 尺寸 px 化 =====
+   走 Token 变量的部分已由 app.wxss 全局覆盖；此处处理本文件硬编码项。 */
+@media (min-width: 600px) {
+  .auth-welcome { font-size: 20px; }
+  .logo-badge { width: 66px; height: 66px; border-radius: 18px; }
+  .auth-card { border-radius: 18px; }
+  /* .auth-btn/.field-input 硬编码 96rpx 高（覆盖了 --btn-height），此处 px 化 */
+  .auth-btn { height: 48px; }
+  .field-input { height: 48px; }
+  .auth-back-btn {
+    height: 44px;
+    min-width: 88px;
+    padding: 0 14px;
+  }
+  .auth-back-arrow { width: 18px; height: 18px; }
+  .auth-security { font-size: 10px; }
+}

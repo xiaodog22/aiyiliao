@@ -1,0 +1,95 @@
+<!-- 系统设置（设计稿 C-个人中心/10-系统设置.png）
+     结构：三张「白卡 + 灰标题 + 细分隔线」列表 + 底部红色「账号注销」。
+     ⚠️ 不复用全局 .card/.row/.group-head：本页实测圆角 12rpx（全局 32rpx）、
+        标题无灰底、行内距 28rpx（全局 32rpx），复用会静默覆盖全局值（check-project ④ 守这条）。 -->
+<view class="st-page theme-{{theme}} {{highContrast ? 'high-contrast' : ''}}">
+
+  <!-- ① 服务状态：圆点 + 状态词，四态（在线 / 检查中 / 离线 / 未知） -->
+  <view class="st-card">
+    <view class="st-head">服务状态</view>
+    <view class="st-row" wx:for="{{healthItems}}" wx:key="name">
+      <view class="st-label">{{item.name}}</view>
+      <view class="st-state st-state-{{item.tone}}">
+        <view class="st-dot"></view>
+        <text>{{item.stateText}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ② 通用设置：值居右（蓝）+ 箭头；开关行右对齐原生 switch -->
+  <view class="st-card">
+    <view class="st-head">通用设置</view>
+    <view class="st-row" bindtap="onVoiceSettings">
+      <view class="st-label">音色管理</view>
+      <view class="st-value">{{voiceName || '默认'}}</view>
+      <image class="st-arrow" src="{{icons.chevronRight}}" />
+    </view>
+    <view class="st-row" bindtap="onThemeRow">
+      <view class="st-label">字号模式</view>
+      <view class="st-value">{{themeLabel}}</view>
+      <image class="st-arrow" src="{{icons.chevronRight}}" />
+    </view>
+    <view class="st-row">
+      <view class="st-label">高对比度模式</view>
+      <switch class="st-switch" checked="{{highContrast}}" color="#0B6EF8" bindchange="onContrast" />
+    </view>
+    <view class="st-row">
+      <view class="st-label">语音播报</view>
+      <switch class="st-switch" checked="{{voiceRead}}" color="#0B6EF8" bindchange="onVoiceRead" />
+    </view>
+    <view class="st-row" bindtap="onClearCache">
+      <view class="st-label">缓存管理</view>
+      <view class="st-note">清理缓存</view>
+      <image class="st-arrow" src="{{icons.chevronRight}}" />
+    </view>
+  </view>
+
+  <!-- ③ 关于与隐私 -->
+  <view class="st-card">
+    <view class="st-head">关于与隐私</view>
+    <view class="st-row" bindtap="onAgreement">
+      <view class="st-label">用户协议</view>
+      <image class="st-arrow" src="{{icons.chevronRight}}" />
+    </view>
+    <view class="st-row" bindtap="onPolicy">
+      <view class="st-label">隐私政策</view>
+      <image class="st-arrow" src="{{icons.chevronRight}}" />
+    </view>
+    <view class="st-row" bindtap="onRevoke">
+      <view class="st-label">撤回授权同意</view>
+      <image class="st-arrow" src="{{icons.chevronRight}}" />
+    </view>
+  </view>
+
+  <!-- ⑤ 退出登录：设计稿只有「账号注销」，但患者端全仓**没有**退出入口
+       （profile 页的 onLogout 有实现却没挂 UI，等于死链）→ 补一张单行卡，
+       位置在「关于与隐私」之后、「账号注销」之前（破坏性更强的入口保持最下）。 -->
+  <view class="st-card">
+    <view class="st-row st-row-center" bindtap="onLogout">
+      <view class="st-label st-label-center">退出登录</view>
+    </view>
+  </view>
+
+  <!-- ⑥ 账号注销（设计稿：卡外居中红字，非按钮） -->
+  <view class="st-danger" bindtap="onLogoutAccount">账号注销</view>
+
+  <!-- 字号三档选择浮层：设计稿只给了「字号模式 标准 ›」这一行，
+       三档的「选中高亮」在这里承载（原生 showActionSheet 无法标出当前档）。 -->
+  <view wx:if="{{sheetOpen}}" class="st-mask" bindtap="onSheetClose" catchtouchmove="noop">
+    <view class="st-sheet" catchtap="noop">
+      <view class="st-sheet-handle"></view>
+      <view class="st-sheet-title">字号模式</view>
+      <view class="st-opt {{theme === item.value ? 'st-opt-on' : ''}}"
+            wx:for="{{themeOptions}}" wx:key="value"
+            data-value="{{item.value}}" bindtap="onTheme">
+        <view class="st-opt-body">
+          <view class="st-opt-label st-preview-{{item.value}}">{{item.label}}</view>
+          <view class="st-opt-desc">{{item.desc}}</view>
+        </view>
+        <image wx:if="{{theme === item.value}}" class="st-opt-check" src="{{icons.check}}" />
+      </view>
+      <view class="st-sheet-cancel" bindtap="onSheetClose">取消</view>
+    </view>
+  </view>
+
+</view>

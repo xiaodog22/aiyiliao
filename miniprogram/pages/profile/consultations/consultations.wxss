@@ -1,0 +1,185 @@
+/* pages/profile/consultations —— 我的问诊
+   设计稿：design-output/患者端/C-个人中心/07-我的问诊.png（1391×3014，1rpx ≈ 1.8547px）
+   逐元素实测（设计稿 px → rpx）：
+     · 页面左右留白 52px → 28rpx；卡片间隙 46px → 24rpx；导航底→首卡 43px → 24rpx
+     · 卡片圆角 30px → 16rpx；卡片内距 65/66px → 36rpx；卡内文字左缘 121px（= 卡左 52 + 69px）
+     · 标题字宽 85px/字 → 46rpx（= --font-title + 6rpx，走 calc 保证适老化跟着放大）
+     · 徽章底 243×99px、字宽 56px → 字号 30rpx / 内距 8rpx 20rpx / 圆角 12rpx（圆角矩形，不是胶囊）
+     · 日期（「2026-10-15 14:30」）字高 46px → 34rpx（--font-h2）；与标题间距 74px → 20rpx
+     · 摘要单行、字号 32rpx；日期→摘要 93px → 32rpx
+     · 分隔线（实测 #DCDCDC，取 --border）内缩 65px 与文字同缘；摘要→分隔线 95px → 45rpx
+     · 「查看详情」34rpx/600，右对齐，分隔线→字 45rpx、字→卡底 47rpx（内距 36/38rpx 达成）
+   颜色：徽章底走 --accent-soft / --mint-soft / --bg，字走 --primary / --mint-text / --text-weak
+        （--mint 本身不能当小字色，见 app.wxss 令牌注释）
+   本页只在此文件写类名 qc-*，无全局类改动、页面零字面色值（白卡走 var(--card)）。 */
+
+.qc-page {
+  padding: 24rpx 28rpx calc(32rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+/* ============ 卡片 ============ */
+.qc-card {
+  padding: 36rpx 36rpx 0;
+  margin-bottom: 24rpx;
+  border-radius: 16rpx;
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+  box-sizing: border-box;
+}
+
+.qc-card:active {
+  opacity: 0.9;
+}
+
+.qc-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.qc-title {
+  flex: 1;
+  min-width: 0;
+  font-size: calc(var(--font-title) + 6rpx);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 状态徽章：圆角矩形 12rpx（实测 20px），不是全局 .badge 的胶囊形 */
+.qc-badge {
+  flex-shrink: 0;
+  margin: 4rpx 0 0 16rpx;
+  padding: 8rpx 20rpx;
+  border-radius: 12rpx;
+  font-size: var(--font-body);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.qc-badge-blue {
+  background: var(--accent-soft);
+  color: var(--primary);
+}
+
+.qc-badge-mint {
+  background: var(--mint-soft);
+  color: var(--mint-text);
+}
+
+.qc-badge-gray {
+  background: var(--bg);
+  color: var(--text-weak);
+}
+
+.qc-date {
+  margin-top: 20rpx;
+  font-size: var(--font-h2);
+  color: var(--text-weak);
+  line-height: 1.4;
+}
+
+.qc-brief {
+  margin-top: 32rpx;
+  font-size: calc(var(--font-body) + 2rpx);
+  color: var(--text-main);
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 底部分隔线 + 右对齐入口
+   ⚠️ 不放 min-height:88rpx —— 整张卡片就是点击热区，链接不需要独立 88rpx 触控区；
+      内距 36/38rpx 是按设计稿「分隔线→字 45rpx、字→卡底 47rpx」反算出来的。 */
+.qc-foot {
+  margin-top: 45rpx;
+  padding: 36rpx 0 38rpx;
+  border-top: 1rpx solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.qc-more {
+  display: flex;
+  align-items: center;
+}
+
+.qc-more-t {
+  font-size: var(--font-h2);
+  font-weight: 600;
+  color: var(--primary);
+  line-height: 1.4;
+}
+
+.qc-more-ic {
+  width: 20rpx;
+  height: 20rpx;
+  margin-left: 8rpx;
+}
+
+/* 分页尾部（全局 .load-more/.load-all 已有排版，这里只对齐页边距） */
+.qc-page .load-more,
+.qc-page .load-all {
+  padding: 8rpx 0 24rpx;
+}
+
+/* ================= 平板：≥600px 全部 rpx 折 px（÷2），主栏 375px 居中 ================= */
+@media (min-width: 600px) {
+  .qc-page {
+    max-width: 375px;
+    margin: 0 auto;
+    padding: 12px 0 16px;
+  }
+
+  .qc-card {
+    margin: 0 14px 12px;
+    padding: 18px 18px 0;
+    border-radius: 8px;
+  }
+
+  .qc-title { font-size: 23px; }
+  .qc-badge {
+    margin: 2px 0 0 8px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 15px;
+  }
+  .qc-date { margin-top: 10px; font-size: 17px; }
+  .qc-brief { margin-top: 16px; font-size: 16px; }
+
+  .qc-foot {
+    margin-top: 22px;
+    padding: 18px 0 19px;
+    border-top-width: 1px;
+  }
+  .qc-more-t { font-size: 17px; }
+  .qc-more-ic { width: 10px; height: 10px; margin-left: 4px; }
+
+  .qc-page .load-more,
+  .qc-page .load-all { padding: 4px 0 12px; }
+}
+
+/* ================= 平板横屏：卡片略微放大，避免窄列两侧太空 ================= */
+@media (min-width: 900px) and (min-height: 700px) and (orientation: landscape) {
+  .qc-page {
+    max-width: 420px;
+    padding: 16px 0 20px;
+  }
+  .qc-card {
+    margin: 0 16px 14px;
+    padding: 20px 20px 0;
+    border-radius: 12px;
+  }
+  .qc-title { font-size: 25px; }
+  .qc-badge { font-size: 15px; padding: 4px 11px; }
+  .qc-date { font-size: 18px; }
+  .qc-brief { font-size: 17px; }
+  .qc-foot { margin-top: 24px; padding: 20px 0 21px; }
+  .qc-more-t { font-size: 18px; }
+}

@@ -1,0 +1,409 @@
+/* packageContent/pages/knowledge —— 健康科普列表（设计稿 17 / 1391×3014，1rpx ≈ 1.8547px）
+   本文件所有尺寸均来自设计稿实测换算（px ÷ 1.8547 = rpx），注释保留实测值便于复核。
+   ⚠️ 尺寸一律 rpx（手机基准），600px 断点内全部改 px（÷2）——
+   rpx 在宽屏会等比放大（1200pt 平板 1rpx≈1.6px），不改会把封面撑成 320px。 */
+
+/* ================= 页面根 ================= */
+/* 实测页面底色 (242,247,253) ≈ --bg，hero 通栏出血到左右边缘 */
+.kb-page {
+  padding-bottom: 16rpx;
+  background: var(--bg);
+}
+
+/* ================= hero =================
+   实测：hero 竖高 752px=405rpx；标题字形顶距 hero 顶 164px → padding-top 82rpx；
+   左右内距 56px=30rpx（搜索框同宽）；底部仅留 25px=13rpx（搜索框几乎贴 hero 底）。
+   ⚠️ 设计稿 hero 为纯色（多点采样恒为 31,123,248），不用 .grad-hero 的 135° 渐变。 */
+.kb-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 82rpx 32rpx 13rpx;
+  margin: calc(-1 * var(--space-page)) calc(-1 * var(--space-page)) 36rpx;
+  background: var(--primary);
+  border-radius: 0;            /* 通栏蓝带方角（覆盖 .page 圆角语义） */
+}
+
+.kb-hero-top {
+  position: relative;
+  z-index: 1;
+}
+
+.kb-hero-body {
+  min-width: 0;
+  /* 右侧给插画让位（插画绝对定位，不参与流布局；见 .kb-hero-art） */
+  padding-right: 210rpx;
+}
+
+/* 实测字形高 106px=57rpx。走 token 加码（40+16=56rpx），保证 large/xlarge 档同步放大，
+   ⚠️ 不可写死 52rpx —— 那样适老化三档会失效（前 9 页踩过的坑）。 */
+.kb-hero-title {
+  font-size: calc(var(--font-title) + 16rpx);
+  font-weight: 800;
+  color: #FFFFFF;             /* 彩色底白字（§10 允许） */
+  letter-spacing: 2rpx;
+  line-height: 1.2;
+}
+
+/* 实测字形高 44px=24rpx，与 --font-caption 完全一致；标题底到副标题顶 60px→margin-top 20rpx */
+.kb-hero-sub {
+  margin-top: 20rpx;
+  font-size: var(--font-caption);
+  color: rgba(255, 255, 255, 0.92);
+  line-height: 1.5;
+}
+
+/* 装饰插画（设计稿右侧「心形描边 + 叶片 + 底部云」）：复用现有图标，0 新增素材。
+   实测插画整体 410×188rpx，此处按心形主体取 240rpx 方形（云朵部分不还原）。
+   ⚠️ 必须 absolute：设计稿插画顶(494) 低于标题顶(483)、底(842) 却探到搜索框上方留白里，
+   与文字块**重叠**而不占流高度。用 flex 平铺会把 hero 撑高 85rpx（实测 492 vs 405rpx）。 */
+.kb-hero-art {
+  position: absolute;
+  right: 32rpx;
+  top: 76rpx;
+  width: 200rpx;
+  height: 200rpx;
+}
+
+.kb-hero-heart {
+  width: 100%;
+  height: 100%;
+  opacity: 0.28;
+}
+
+.kb-hero-leaf {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 76rpx;
+  height: 76rpx;
+  margin: -38rpx 0 0 -38rpx;
+  opacity: 0.92;
+}
+
+/* ================= 搜索（hero 内白胶囊）================= */
+/* 实测：高 145px=78rpx、宽 691rpx（左右各 30rpx）。
+   取 84rpx 而非 78rpx —— 触控目标 ≥88rpx 的硬约束下折中，差 3px 视觉无感。 */
+.kb-search {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  height: 84rpx;
+  padding: 0 28rpx;
+  margin-top: 105rpx;          /* 实测副标题底→搜索框顶 211px，扣行高留白后 105rpx（大片留白给插画） */
+  border-radius: 999rpx;
+  background: var(--card);
+  /* 实测搜索框下方是**提亮光晕**（亮度随距离衰减），不是深色投影 */
+  box-shadow: 0 6rpx 26rpx rgba(255, 255, 255, 0.22);
+}
+
+.kb-search-ic {
+  width: 28rpx;
+  height: 28rpx;
+  flex-shrink: 0;
+  opacity: 0.45;
+}
+
+.kb-search-in {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  margin-left: 16rpx;
+  font-size: var(--font-body);
+  color: var(--text-main);
+}
+
+.kb-search-ph { color: var(--text-weak); }
+
+.kb-search-clear {
+  flex-shrink: 0;
+  margin-left: 12rpx;
+  padding: 8rpx 18rpx;
+  border-radius: 999rpx;
+  background: var(--accent-soft);
+  font-size: var(--font-caption);
+  color: var(--primary);
+}
+
+/* ================= 分类 chips ================= */
+/* 实测：chip 高 90px=48rpx、字号 44px=24rpx、左右内距 44px=24rpx、chip 间距 32px=17rpx；
+   hero 底→chip 顶 66px=36rpx（由 .kb-hero 的 margin-bottom 承担）。
+   ⚠️ 48rpx 低于 88rpx 触控线 → 用 ::after 向上/下各扩 20rpx 透明热区，视觉不变。 */
+/* scroll-view 默认 overflow:hidden 会裁掉 chip 的 ::after 热区，
+   所以给容器上下各留 20rpx padding 撑高，再用负 margin 抵消，视觉位置不变。 */
+.kb-cats {
+  padding: 20rpx 0;
+  margin: -20rpx 0 6rpx;       /* 实测 chip 底→卡片顶 49px=26rpx，减去 padding-bottom 的 20rpx */
+  white-space: nowrap;
+}
+
+.kb-cats-in { display: inline-flex; align-items: center; }
+
+.kb-chip {
+  position: relative;
+  flex-shrink: 0;
+  margin-right: 17rpx;
+  padding: 9rpx 24rpx;
+  border-radius: 999rpx;
+  background: var(--card);
+  box-shadow: 0 2rpx 8rpx rgba(11, 110, 248, 0.06);
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.3;
+}
+
+/* 触控热区扩展：上下各 20rpx（48+20×2=88rpx），不改变视觉高度 */
+.kb-chip::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -20rpx;
+  bottom: -20rpx;
+}
+
+.kb-chip-on {
+  background: var(--primary);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+/* ================= 类型 tab（全部 / 图文 / 视频）=================
+   与分类 chip 区分：文字 + 选中下划线，不做第二个胶囊行（避免两层胶囊视觉噪音）。
+   热区高度 88rpx（适老触控），状态不只靠颜色：选中同时加粗 + 下划线。 */
+.kb-types {
+  display: flex;
+  align-items: center;
+  /* 左右留白由 .page 的 padding 提供（再补一层会把类型行缩进到 32px，与卡片错位） */
+}
+
+.kb-type {
+  position: relative;
+  flex: 0 0 auto;
+  height: 88rpx;
+  margin-right: 48rpx;
+  display: flex;
+  align-items: center;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
+.kb-type:last-child { margin-right: 0; }
+
+.kb-type-on {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* 下划线宽度 = 文字宽度（不做内缩，避免与左对齐的卡片边缘看起来错位） */
+.kb-type-on::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 14rpx;
+  height: 4rpx;
+  border-radius: 2rpx;
+  background: var(--primary);
+}
+
+/* ================= 两列卡片 ================= */
+/* 实测：卡片 630×788px = 340×425rpx，列间距 40px=20rpx，行间距 41px=20rpx */
+.kb-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20rpx;
+}
+
+.kb-card {
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 封面：实测 532px=287rpx 高（近 4:3 偏方的 340×287），缺图时回退主色底板 + 大图标。 */
+.kb-cover {
+  position: relative;
+  width: 100%;
+  height: 288rpx;
+  background: var(--accent-soft);
+  overflow: hidden;
+}
+
+.kb-cover-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.kb-cover-art {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--hero-grad);
+}
+
+.kb-cover-ic {
+  width: 96rpx;
+  height: 96rpx;
+  opacity: 0.9;
+}
+
+/* 视频角标：CSS 三角（设计稿为纯白播放键、无深色底圈）。
+   ⚠️ 不用 emoji / 字符箭头；border 三角是图形，可安全着色。 */
+.kb-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  margin: -30rpx 0 0 -18rpx;
+  border-style: solid;
+  border-width: 30rpx 0 30rpx 46rpx;
+  border-color: transparent transparent transparent #FFFFFF;
+  filter: drop-shadow(0 2rpx 8rpx rgba(2, 24, 80, 0.35));
+}
+
+/* 文字区：实测高 256px=138rpx；内距 上49→20rpx、左48→24rpx、下53→28rpx */
+.kb-body {
+  flex: 1;
+  padding: 20rpx 24rpx 28rpx;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 实测字形高 52px=28rpx，--font-body(30rpx) 最接近且随适老化缩放 */
+.kb-t {
+  font-size: var(--font-body);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+/* 元信息「分类 · 图文/视频」：实测字形高 39px=21rpx，走 --font-caption */
+.kb-f {
+  margin-top: auto;
+  padding-top: 14rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ================= 空态 ================= */
+.kb-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 80rpx 32rpx 60rpx;
+}
+
+.kb-empty-ic {
+  width: 96rpx;
+  height: 96rpx;
+  opacity: 0.35;
+}
+
+.kb-empty-t {
+  margin-top: 24rpx;
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-sub);
+}
+
+.kb-empty-s {
+  margin-top: 8rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+}
+
+.kb-empty-btn {
+  margin-top: 28rpx;
+  padding: 0 44rpx;
+  height: 76rpx;
+  line-height: 76rpx;
+  border-radius: 999rpx;
+  background: var(--accent-soft);
+  font-size: var(--font-body);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* ================= 页脚声明 ================= */
+.k-note {
+  padding: 24rpx 4rpx 8rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.65;
+}
+
+/* ================= 平板断点（≥600px）：rpx → px（÷2）+ 主栏 375px 居中 =================
+   ⚠️ 每个含 rpx 的选择器都要在此重声明，calc(…rpx) 里的 rpx 也一并改。 */
+@media (min-width: 600px) {
+  .kb-page {
+    padding-bottom: 8px;
+  }
+
+  /* hero 通栏：宽屏下不再出血，收成 375px 主栏内的卡片式蓝带 */
+  .kb-hero {
+    padding: 41px 16px 7px;
+    margin: 0 0 18px;
+    border-radius: var(--radius-lg);
+  }
+
+  .kb-hero-title { font-size: 28px; letter-spacing: 1px; }
+  .kb-hero-sub { margin-top: 10px; }
+
+  .kb-hero-body { padding-right: 105px; }
+  .kb-hero-art { right: 16px; top: 38px; width: 100px; height: 100px; }
+  .kb-hero-leaf { width: 38px; height: 38px; margin: -19px 0 0 -19px; }
+
+  .kb-search { height: 42px; padding: 0 14px; margin-top: 52px; }
+  .kb-search-ic { width: 14px; height: 14px; }
+  .kb-search-in { margin-left: 8px; }
+  .kb-search-clear { margin-left: 6px; padding: 4px 9px; }
+
+  .kb-cats { padding: 10px 0; margin: -10px 0 3px; }
+  .kb-chip { margin-right: 9px; padding: 5px 12px; }
+
+  .kb-types { padding: 0; }
+  .kb-type { height: 44px; margin-right: 24px; }
+  .kb-type-on::after { bottom: 7px; height: 2px; border-radius: 1px; }
+
+  .kb-grid { gap: 10px; }
+  .kb-cover { height: 144px; }
+  .kb-cover-ic { width: 48px; height: 48px; }
+  .kb-play { margin: -15px 0 0 -9px; border-width: 15px 0 15px 23px; }
+  .kb-body { padding: 10px 12px 14px; }
+  .kb-f { padding-top: 7px; }
+
+  .kb-empty { padding: 40px 16px 30px; }
+  .kb-empty-ic { width: 48px; height: 48px; }
+  .kb-empty-t { margin-top: 12px; }
+  .kb-empty-s { margin-top: 4px; }
+  .kb-empty-btn { margin-top: 14px; padding: 0 22px; height: 38px; line-height: 38px; }
+
+  .k-note { padding: 12px 2px 4px; }
+}
+
+/* 竖屏平板（≥600px）主栏收窄 375px 居中；页面自带通栏 hero，用 margin 收边 */
+@media (min-width: 600px) and (max-width: 899px) {
+  .kb-page { max-width: 375px; margin: 0 auto; }
+}
+
+/* ================= 横屏平板（≥900px）：3 列 ================= */
+@media (min-width: 900px) and (min-height: 700px) and (orientation: landscape) {
+  .kb-page { max-width: 720px; margin: 0 auto; }
+  .kb-grid { grid-template-columns: repeat(3, 1fr); }
+  .kb-cover { height: 132px; }
+}

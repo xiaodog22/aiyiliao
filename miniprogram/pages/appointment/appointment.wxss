@@ -1,0 +1,675 @@
+/* pages/appointment —— 预约挂号（按 design-output/患者端/03-预约挂号.png + 复刻文档 §四.3 重排）
+   2026-10-19 批次 C：在「单页 + 底部抽屉」形态上补齐效果图的元素与尺寸——
+   · 搜索栏：右侧补分隔线 + 「搜索」蓝字按钮（文档 §四.3-①）；
+   · 筛选组：下拉箭头换成图标（原来是一个「▾」字符）+ 胶囊下方蓝色选中圆点；
+   · 日期条：3 天 → 7 天，上排星期 / 下排日期数字，选中 24rpx 圆角蓝实心；
+   · 医生卡：补「科室·院区」「号源状态」+ 右侧「预约 / 约满」按钮（文档 §四.3-⑤）；
+   · 抽屉：就诊人补「›」、科室医生补职称、预约日期改「10月20日 周一」、
+     就诊时段与标签同一行（效果图）、seg 未选中改浅灰底、去掉行分割线（效果图无分割线）；
+   · 清理：删掉改版后已无模板引用的死样式（.steps/.pick-grid/.dept-card/.kv-row/.doc-tag 等 30 余条）；
+   · 平板：把「≥900px 横屏」那批 px 口径统一前置到 **≥600px**（与前两页一致），
+     并覆盖本页全部硬编码 rpx 尺寸（宽屏下 rpx 会等比放大，必须逐条 px 化）。
+   ⚠️ 全部颜色/圆角/阴影/字号仍只走 app.wxss 令牌，未新增色值。 */
+
+/* ============ ① 搜索栏（白底胶囊 + 放大镜 + 占位文字 + 分隔线 + 「搜索」蓝字） ============ */
+.ap-search {
+  display: flex;
+  align-items: center;
+  height: 80rpx;
+  padding: 0 24rpx;
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  background: var(--card);
+  margin-bottom: 28rpx;
+}
+
+.ap-search-ic {
+  width: 32rpx;
+  height: 32rpx;
+  flex-shrink: 0;
+  margin-right: 16rpx;
+  opacity: 0.55;
+}
+
+.ap-search-in {
+  flex: 1;
+  min-width: 0;
+  height: 80rpx;
+  font-size: var(--font-body);
+  color: var(--text-main);
+}
+
+.ap-search-ph { color: var(--text-placeholder); }
+
+/* 清空：仅在有关键字时出现（小字，不与「搜索」抢注意力） */
+.ap-search-clear {
+  flex-shrink: 0;
+  padding: 8rpx 4rpx 8rpx 12rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
+/* 竖分隔线（效果图：搜索胶囊右侧的细线） */
+.ap-search-div {
+  flex-shrink: 0;
+  width: 2rpx;
+  height: 44rpx;
+  margin: 0 20rpx;
+  background: var(--border);
+}
+
+.ap-search-btn {
+  flex-shrink: 0;
+  padding: 8rpx 0 8rpx 4rpx;
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--primary);
+}
+
+/* ============ ② 筛选胶囊（白底 + 图标 + 文字 + 下拉箭头 + 选中圆点） ============ */
+.ap-filters {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 30rpx;
+}
+
+.ap-filter {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 64rpx;
+  padding: 0 22rpx;
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  background: var(--card);
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-main);
+}
+
+.ap-filter-ic {
+  width: 30rpx;
+  height: 30rpx;
+  margin-right: 12rpx;
+}
+
+/* 下拉箭头：图标库无 chevronDown，用 chevronRight 旋转 90°（比字符「▾」清晰且可随字号缩放） */
+.ap-filter-caret {
+  width: 24rpx;
+  height: 24rpx;
+  margin-left: 8rpx;
+  opacity: 0.5;
+  transform: rotate(90deg);
+}
+
+/* 选中态：效果图不是填充，而是胶囊**下方一枚蓝点** —— 用绝对定位挂在外沿，
+   不占布局高度（否则筛选行会随选中态跳动一行）。 */
+.ap-filter-dot {
+  position: absolute;
+  left: 50%;
+  bottom: -14rpx;
+  width: 12rpx;
+  height: 12rpx;
+  margin-left: -6rpx;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+.ap-filter-cur .ap-filter-caret { opacity: 0.85; }
+
+/* ============ ③ 日期条（白卡 + 横向 7 天；上排星期 / 下排日期数字） ============ */
+.ap-card {
+  padding: 20rpx 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.date-row {
+  display: flex;
+  align-items: stretch;
+}
+
+.date-item {
+  flex: 1;
+  min-width: 0;
+  min-height: 96rpx;
+  margin: 0 4rpx;
+  padding: 10rpx 0;
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.date-on { background: var(--primary); }
+
+.date-label {
+  font-size: calc(var(--font-caption) - 2rpx);
+  line-height: 1.2;
+  color: var(--text-sub);
+}
+
+.date-value {
+  margin-top: 6rpx;
+  font-size: var(--font-h2);
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text-main);
+}
+
+.date-on .date-label { color: rgba(255, 255, 255, 0.88); }
+.date-on .date-value { color: #FFFFFF; }
+
+/* ============ ④ 科室横向标签（选中蓝底白字 / 未选中白底） ============ */
+.ap-depts {
+  width: 100%;
+  white-space: nowrap;
+  margin-bottom: 24rpx;
+}
+
+.ap-depts-in { display: inline-flex; gap: 16rpx; }
+
+.ap-dept {
+  display: inline-flex;
+  align-items: center;
+  height: 64rpx;
+  padding: 0 28rpx;
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  background: var(--card);
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-main);
+}
+
+.ap-dept-on {
+  background: var(--primary);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+/* 骨架 chip：加载中占位，与 .ap-dept 同高避免跳动 */
+.ap-dept-skel {
+  width: 150rpx;
+  background: var(--border);
+  animation: skel-pulse 1.4s ease-in-out infinite;
+}
+
+/* ============ ⑤ 医生卡（左头像 120rpx / 中信息三行 / 右预约按钮） ============ */
+.doc-list { display: block; }
+
+.doc-card {
+  display: flex;
+  align-items: center;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  border: 2rpx solid transparent;
+  box-shadow: var(--shadow-card);
+  padding: 28rpx 24rpx;
+  margin-bottom: 20rpx;
+  box-sizing: border-box;
+}
+
+/* 选中医生的高亮（原实现靠边框，这里边框已用于占位，改为边框上色） */
+.doc-on { border-color: var(--primary); }
+
+.doc-face {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--bg);
+}
+
+.doc-face-img { width: 100%; height: 100%; display: block; }
+
+.doc-main {
+  flex: 1;
+  min-width: 0;
+  margin-left: 24rpx;
+}
+
+.doc-name-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.doc-name {
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.35;
+}
+
+/* 职称徽标：浅蓝底 + 品牌蓝字（文档 §四.3-⑤「浅蓝底蓝字 badge」） */
+.doc-title-chip {
+  padding: 2rpx 12rpx;
+  border-radius: 8rpx;
+  background: var(--accent-soft);
+  color: var(--primary);
+  font-size: calc(var(--font-caption) - 2rpx);
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+/* 科室 · 院区（26rpx 灰蓝） */
+.doc-meta {
+  margin-top: 8rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 号源状态：可预约=薄荷绿字 / 约满=灰字（文档 §四.3-⑤） */
+.doc-status {
+  margin-top: 6rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.doc-ok { color: var(--mint-text); }
+.doc-full { color: var(--text-weak); }
+
+/* 右侧按钮：可预约=实心蓝胶囊 / 约满=灰禁用 */
+.doc-op {
+  flex-shrink: 0;
+  min-width: 128rpx;
+  height: 64rpx;
+  margin-left: 20rpx;
+  padding: 0 24rpx;
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.doc-op:active { background: var(--primary-dark); }
+
+.doc-op-off {
+  background: var(--disabled-soft);
+  color: var(--text-weak);
+}
+
+.doc-op-off:active { background: var(--disabled-soft); }
+
+/* ============ 选时段（号源快照，约满禁选） ============ */
+.slot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16rpx;
+  margin-bottom: 48rpx;
+}
+
+.slot {
+  background: var(--card);
+  border-radius: var(--radius-md);
+  padding: 16rpx 0 12rpx;
+  text-align: center;
+  box-shadow: var(--shadow-card);
+  border: 2rpx solid transparent;
+  box-sizing: border-box;
+}
+
+.slot-time {
+  font-size: var(--font-body);
+  color: var(--text-main);
+}
+
+.slot-left {
+  margin-top: 6rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+.slot-on {
+  border-color: var(--primary);
+  background: var(--bg);
+}
+
+.slot-on .slot-time { color: var(--primary); font-weight: 600; }
+.slot-on .slot-left { color: var(--primary-dark); }
+
+.slot-full {
+  background: var(--disabled-soft);
+  box-shadow: none;
+}
+
+.slot-full .slot-time { color: var(--text-sub); }
+.slot-left-full { color: var(--text-sub); }
+
+.act-btn {
+  margin-top: 24rpx;
+  width: 100%;
+}
+
+/* ============ 骨架 / 错误 / 空态 ============ */
+.skeleton {
+  background: var(--border);
+  border-radius: 12rpx;
+}
+
+.skeleton-card { align-items: center; }
+
+.skeleton-face { width: 120rpx; height: 120rpx; border-radius: 50%; flex-shrink: 0; }
+.skeleton-line { width: 70%; height: 28rpx; margin-top: 20rpx; }
+
+.error-card,
+.hint-card {
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 48rpx 32rpx;
+  text-align: center;
+  margin-bottom: 16rpx;
+}
+
+.error-text {
+  font-size: var(--font-body);
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+
+.error-retry { margin-top: 24rpx; }
+
+.hint-card {
+  font-size: var(--font-body);
+  color: var(--text-sub);
+}
+
+/* ============ 预约摘要（仅平板右栏，见 .side-only） ============ */
+.sum-card { padding: 24rpx; }
+
+.sum-head {
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  margin-bottom: 8rpx;
+}
+
+.sum-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.sum-k {
+  font-size: var(--font-body);
+  color: var(--text-sub);
+  flex-shrink: 0;
+  margin-right: 16rpx;
+}
+
+.sum-v {
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-main);
+  text-align: right;
+}
+
+.sum-empty { color: var(--text-sub); font-weight: 400; }
+
+/* ============ ⑥ 确认抽屉（结构复用全局 .sheet / .sheet-handle / .sheet-title） ============ */
+/* 遮罩：效果图里列表几乎不暗化 → 仅压 20% 深蓝，保住"半模态"的层次又不遮住上下文 */
+.ap-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 55;
+  background: rgba(20, 38, 76, 0.2);
+}
+
+.ap-sheet {
+  max-height: 82vh;
+  overflow-y: auto;
+  /* 原生 tabBar 遮挡修复（2026-10-24）：
+     原生 tabBar 是系统原生层，webview 内 fixed bottom 元素会被其盖住。
+     全局 .sheet 的 bottom=0 + safe-area 在 tabBar 之上仍被遮 → 额外留 tabBar 高度（约 100rpx）。 */
+  padding-bottom: calc(100rpx + var(--space-page) + env(safe-area-inset-bottom)) !important;
+}
+
+/* 信息行：左灰标签（定宽 160rpx 成列）+ 右深内容（左对齐，与效果图一致）
+   效果图行间没有分割线 → 只用间距分隔（原来每行一条 1rpx 分割线，已去掉）。 */
+.ap-kv {
+  display: flex;
+  align-items: center;
+  padding: 18rpx 0;
+}
+
+.ap-k {
+  width: 160rpx;
+  flex-shrink: 0;
+  font-size: var(--font-body);
+  color: var(--text-sub);
+}
+
+.ap-v {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-body);
+  font-weight: 500;
+  color: var(--text-main);
+  text-align: left;
+}
+
+/* 就诊人 + 「›」（效果图首行带箭头） */
+.ap-v-row {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* 箭头紧跟文字（效果图「王女士 ›」），所以这行的 .ap-v 不能吃掉整行宽度 */
+.ap-v-row .ap-v {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.ap-v-arrow {
+  width: 24rpx;
+  height: 24rpx;
+  margin-left: 8rpx;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+/* 就诊时段：与标签同一行（效果图），两枚等宽胶囊 */
+.ap-segs {
+  flex: 1;
+  display: flex;
+  gap: 16rpx;
+}
+
+.ap-seg {
+  min-width: 140rpx;
+  height: 64rpx;
+  padding: 0 24rpx;
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  border: 2rpx solid transparent;
+  background: var(--disabled-soft);
+  font-size: var(--font-body);
+  color: var(--text-sub);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ap-seg-on {
+  background: #FFFFFF;
+  border-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.ap-disclaimer {
+  margin: 20rpx 0 0;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.ap-confirm-btn { margin-top: 20rpx; }
+
+/* ============ 成功态（整页浮层，保证流程闭环） ============ */
+.ap-done-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 70;
+  background: var(--bg);
+  /* 原生 tabBar 遮挡修复：底部按钮（查看院内路线/发起在线问诊/返回首页）需留 tabBar 高度 */
+  padding: var(--space-page) var(--space-page) calc(var(--space-page) + 100rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.success-card {
+  text-align: center;
+  padding: 64rpx 32rpx;
+}
+
+.success-icon {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 50%;
+  background: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.success-icon-img {
+  width: 60rpx;
+  height: 60rpx;
+}
+
+.success-title {
+  margin-top: 24rpx;
+  font-size: var(--font-title);
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.success-line {
+  margin-top: 12rpx;
+  font-size: var(--font-body);
+  color: var(--text-sub);
+}
+
+.success-no {
+  display: inline-block;
+  margin-top: 24rpx;
+  padding: 10rpx 24rpx;
+  border-radius: 999rpx;
+  background: var(--accent-soft);
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 600;
+  color: var(--primary-dark);
+}
+
+/* 页面根：给底部抽屉 + TabBar 留出呼吸位（抽屉 fixed，不占位；TabBar 高 100rpx + 安全区） */
+.apt-page { padding-bottom: calc(100rpx + env(safe-area-inset-bottom) + 40rpx); }
+
+/* ============================================================
+   平板档（≥600px）：本页所有**硬编码 rpx 尺寸**逐条 px 化。
+   为什么必须写：rpx 随视口等比放大（600px 视口 1rpx≈0.8px、1200px 视口 1rpx≈1.6px），
+   不覆盖就会出现「80rpx 搜索框在平板上变成 128px 高」这类走形。
+   口径与前两页一致：取值 = 手机 375pt 基准 ÷2。
+   ============================================================ */
+@media (min-width: 600px) {
+  .apt-page { padding-bottom: calc(50px + env(safe-area-inset-bottom) + 20px); }
+
+  /* 搜索栏 */
+  .ap-search { height: 40px; padding: 0 12px; margin-bottom: 14px; }
+  .ap-search-ic { width: 16px; height: 16px; margin-right: 8px; }
+  .ap-search-in { height: 40px; }
+  .ap-search-clear { padding: 4px 2px 4px 6px; }
+  .ap-search-div { width: 1px; height: 22px; margin: 0 10px; }
+  .ap-search-btn { padding: 4px 0 4px 2px; }
+
+  /* 筛选胶囊 */
+  .ap-filters { gap: 8px; margin-bottom: 15px; }
+  .ap-filter { height: 32px; padding: 0 11px; }
+  .ap-filter-ic { width: 15px; height: 15px; margin-right: 6px; }
+  .ap-filter-caret { width: 12px; height: 12px; margin-left: 4px; }
+  .ap-filter-dot { width: 6px; height: 6px; margin-left: -3px; bottom: -7px; }
+
+  /* 日期条 */
+  .ap-card { padding: 10px 8px; margin-bottom: 12px; }
+  .date-item { min-height: 48px; margin: 0 2px; padding: 5px 0; }
+  .date-label { font-size: 11px; }
+  .date-value { margin-top: 3px; font-size: 17px; }
+
+  /* 科室 chip */
+  .ap-depts { margin-bottom: 12px; }
+  .ap-depts-in { gap: 8px; }
+  .ap-dept { height: 32px; padding: 0 14px; }
+  .ap-dept-skel { width: 75px; }
+
+  /* 医生卡 */
+  .doc-card { padding: 14px 12px; margin-bottom: 10px; border-width: 1px; }
+  .doc-face { width: 60px; height: 60px; }
+  .skeleton-face { width: 60px; height: 60px; }
+  .skeleton-line { height: 14px; margin-top: 10px; }
+  .skeleton { border-radius: 6px; }
+  .doc-main { margin-left: 12px; }
+  .doc-name-row { gap: 6px; }
+  .doc-name { font-size: 17px; }
+  .doc-title-chip { padding: 1px 6px; border-radius: 4px; font-size: 11px; }
+  .doc-meta { margin-top: 4px; font-size: 13px; }
+  .doc-status { margin-top: 3px; font-size: 13px; }
+  .doc-op { min-width: 64px; height: 32px; padding: 0 12px; margin-left: 10px; }
+
+  /* 号源 */
+  .slot-grid { gap: 8px; margin-bottom: 24px; }
+  .slot { padding: 8px 0 6px; border-width: 1px; }
+  .slot-left { margin-top: 3px; }
+  .act-btn { margin-top: 12px; }
+
+  /* 空态 / 错误态 */
+  .error-card,
+  .hint-card { padding: 24px 16px; margin-bottom: 8px; }
+  .error-retry { margin-top: 12px; }
+
+  /* 右栏摘要 */
+  .sum-card { padding: 12px; }
+  .sum-row { padding: 10px 0; border-bottom-width: 1px; }
+  .sum-head { margin-bottom: 4px; }
+  .sum-k { margin-right: 8px; }
+
+  /* 抽屉 */
+  .ap-kv { padding: 9px 0; }
+  .ap-k { width: 80px; }
+  .ap-v-arrow { width: 12px; height: 12px; margin-left: 4px; }
+  .ap-segs { gap: 8px; }
+  .ap-seg { min-width: 70px; height: 32px; padding: 0 12px; border-width: 1px; }
+  .ap-disclaimer { margin-top: 10px; }
+  .ap-confirm-btn { margin-top: 10px; }
+
+  /* 成功态 */
+  .success-card { padding: 32px 16px; }
+  .success-icon { width: 60px; height: 60px; }
+  .success-icon-img { width: 30px; height: 30px; }
+  .success-title { margin-top: 12px; }
+  .success-line { margin-top: 6px; }
+  .success-no { margin-top: 12px; padding: 5px 12px; }
+}

@@ -1,0 +1,35 @@
+<view class="page theme-{{theme}} legal-page">
+  <view class="legal-head">
+    <view class="legal-title">用户协议</view>
+    <view class="legal-sub">最后更新：{{updatedAt}}</view>
+  </view>
+
+  <view class="legal-body">
+    <view class="legal-sec">
+      <view class="legal-h">一、服务性质</view>
+      <view class="legal-p">本小程序为医疗健康 AI 演示应用，所展示的养生建议、导诊结果、健康解读等内容均由算法生成，不构成任何诊疗意见，不能替代执业医师的面诊、检查与诊断。</view>
+    </view>
+
+    <view class="legal-sec">
+      <view class="legal-h">二、使用须知</view>
+      <view class="legal-p">如您出现急症或身体不适，请立即前往就近医疗机构就诊，或拨打急救电话，切勿依赖本应用的输出延误治疗。</view>
+    </view>
+
+    <view class="legal-sec">
+      <view class="legal-h">三、账号与责任</view>
+      <view class="legal-p">您应对使用本应用所填写的信息真实性负责。请妥善保管您的登录凭据，因账号泄露或不当使用造成的后果由您自行承担。</view>
+    </view>
+
+    <view class="legal-sec">
+      <view class="legal-h">四、知识产权</view>
+      <view class="legal-p">本应用内的界面、文案、算法及相关内容归运营方所有，未经许可不得复制、传播或用于商业用途。</view>
+    </view>
+
+    <view class="legal-sec">
+      <view class="legal-h">五、协议变更</view>
+      <view class="legal-p">我们可能根据产品与法规变化调整本协议。继续使用本应用即视为您接受更新后的条款。</view>
+    </view>
+
+    <view class="legal-note">本页面为演示版用户协议，正式文本以官方发布为准。</view>
+  </view>
+</view>

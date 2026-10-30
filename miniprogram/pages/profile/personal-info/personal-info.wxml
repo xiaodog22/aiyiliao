@@ -1,0 +1,128 @@
+<!-- 个人信息（设计稿 患者端/C-个人中心/09-个人信息.png）
+     设计稿版式：白卡三行 —— 头像（圆头像 + 箭头，官方 chooseAvatar）/ 姓名（右对齐值 + 箭头，官方 nickname）
+                 / 手机号（「已绑定 138****1234」 + 箭头）→ 卡下居中灰字授权说明
+     ⚠️ 设计稿只有这三行 + 说明；下方「联系与住址」「身份与医保」是 V8 已上线能力
+        （/me/extended、/me/identity、/me/insurance），删掉属功能回退 → 保留，见 DEV_LOG 偏离项。 -->
+<view class="page theme-{{theme}} pi-page">
+
+  <!-- ① 设计稿主体：头像 / 姓名 / 手机号 -->
+  <view class="pi-card">
+    <!-- 头像：open-type=chooseAvatar 必须是 button，复位成行容器 -->
+    <button class="pi-row pi-row-tall pi-avatar-btn" open-type="chooseAvatar" bindchooseavatar="onChooseAvatar">
+      <text class="pi-label">头像</text>
+      <view class="pi-avatar">
+        <image wx:if="{{avatarUrl && !avatarErr}}" class="pi-avatar-img" src="{{avatarUrl}}"
+               mode="aspectFill" binderror="onAvatarErr" />
+        <view wx:else class="pi-ph">
+          <view class="pi-ph-head"></view>
+          <view class="pi-ph-body"></view>
+        </view>
+      </view>
+      <image class="pi-chevron" src="{{icons.chevronRightGray}}" mode="aspectFit" />
+    </button>
+
+    <!-- 姓名：input type=nickname 保微信昵称快填；点右侧箭头聚焦（设计稿有箭头） -->
+    <view class="pi-row">
+      <text class="pi-label">姓名</text>
+      <input class="pi-input" type="nickname" value="{{form.displayName}}" focus="{{nameFocus}}"
+             maxlength="20" placeholder="请输入姓名" placeholder-class="pi-input-ph"
+             bindinput="onNameInput" bindblur="onNameBlur" />
+      <image class="pi-chevron" src="{{icons.chevronRightGray}}" mode="aspectFit" bindtap="onFocusName" />
+    </view>
+
+    <!-- 手机号：只展示绑定态 + 服务端下发的脱敏号（原文永不出服务端） -->
+    <view class="pi-row pi-row-last" bindtap="onPhoneTap">
+      <text class="pi-label">手机号</text>
+      <view class="pi-value">
+        <block wx:if="{{phoneBound}}">
+          <text class="pi-value-tag">已绑定</text>
+          <text wx:if="{{maskedPhone}}" class="pi-value-num">{{maskedPhone}}</text>
+        </block>
+        <text wx:else class="pi-value-wait">未绑定</text>
+      </view>
+      <image class="pi-chevron" src="{{icons.chevronRightGray}}" mode="aspectFit" />
+    </view>
+  </view>
+
+  <!-- 微信授权说明（设计稿 09：卡下居中灰字） -->
+  <view class="pi-hint">头像和昵称可通过微信授权快速填写，手机号需微信授权绑定</view>
+
+  <!-- ② 联系与住址（V8 能力，设计稿未覆盖） -->
+  <view class="section-header">联系与住址</view>
+  <view class="pi-card">
+    <view class="pi-field">
+      <view class="pi-field-t">邮箱</view>
+      <input class="pi-field-in" type="text" value="{{form.email}}" maxlength="120"
+             placeholder="用于接收就诊通知" placeholder-class="pi-input-ph" bindinput="onEmailInput" />
+    </view>
+    <view class="pi-field">
+      <view class="pi-field-t">住宅地址</view>
+      <input class="pi-field-in" type="text" value="{{form.residence}}" maxlength="200"
+             placeholder="现居住地址" placeholder-class="pi-input-ph" bindinput="onResidenceInput" />
+    </view>
+    <view class="pi-field pi-field-last">
+      <view class="pi-field-t">户籍所在地</view>
+      <input class="pi-field-in" type="text" value="{{form.householdRegistration}}" maxlength="200"
+             placeholder="如：广东省汕头市" placeholder-class="pi-input-ph" bindinput="onHouseholdInput" />
+    </view>
+    <view class="pi-card-foot">
+      <button class="btn btn-primary pi-save" loading="{{savingContact}}" bindtap="saveContact">保存联系信息</button>
+    </view>
+  </view>
+
+  <!-- ③ 身份与医保（V8 能力，设计稿未覆盖） -->
+  <view class="section-header">身份与医保</view>
+  <view class="pi-card">
+    <!-- 身份证实名 -->
+    <view class="pi-row pi-row-tall">
+      <view class="pi-tile tile-blue"><image class="tile-ic" src="{{icons.shield}}" /></view>
+      <view class="pi-row-label">
+        <view class="pi-row-t">身份验证</view>
+        <view wx:if="{{idVerified}}" class="pi-row-s">{{idName}}（{{idMasked}}）</view>
+        <view wx:else class="pi-row-s">完成实名后可办理挂号报销等业务</view>
+      </view>
+      <view wx:if="{{idVerified}}" class="pi-badge pi-badge-ok">已实名</view>
+      <view wx:else class="pi-link" bindtap="toggleIdForm">{{showIdForm ? '收起' : '去实名'}}</view>
+    </view>
+    <view wx:if="{{showIdForm && !idVerified}}" class="pi-form">
+      <input class="pi-field-in pi-field-in-box" type="text" value="{{idNameInput}}" maxlength="40"
+             placeholder="姓名" placeholder-class="pi-input-ph" bindinput="onIdNameInput" />
+      <input class="pi-field-in pi-field-in-box" type="idcard" value="{{idNumberInput}}" maxlength="18"
+             placeholder="18 位居民身份证号码" placeholder-class="pi-input-ph" bindinput="onIdNumberInput" />
+      <button class="btn btn-primary pi-save" loading="{{savingId}}" bindtap="submitIdentity">提交实名认证</button>
+    </view>
+
+    <!-- 医保绑定 -->
+    <view class="pi-row pi-row-tall pi-row-last">
+      <view class="pi-tile tile-mint"><image class="tile-ic" src="{{icons.checkCircle}}" /></view>
+      <view class="pi-row-label">
+        <view class="pi-row-t">医保绑定</view>
+        <view wx:if="{{insBound}}" class="pi-row-s">{{insType}}（{{insMasked}}）</view>
+        <view wx:else class="pi-row-s">绑定后就诊结算更便捷</view>
+      </view>
+      <view wx:if="{{insBound}}" class="pi-badge pi-badge-ok">已绑定</view>
+      <view wx:else class="pi-link" bindtap="toggleInsForm">{{showInsForm ? '收起' : '去绑定'}}</view>
+    </view>
+    <view wx:if="{{showInsForm && !insBound}}" class="pi-form">
+      <picker mode="selector" range="{{insuranceTypes}}" value="{{insuranceTypeIndex}}"
+              bindchange="onInsuranceTypeChange">
+        <view class="pi-picker">
+          <text>{{insuranceTypes[insuranceTypeIndex]}}</text>
+          <image class="pi-chevron" src="{{icons.chevronRightGray}}" mode="aspectFit" />
+        </view>
+      </picker>
+      <input class="pi-field-in pi-field-in-box" type="text" value="{{insuranceNoInput}}" maxlength="30"
+             placeholder="医保卡号 / 医保编号" placeholder-class="pi-input-ph" bindinput="onInsuranceNoInput" />
+      <button class="btn btn-primary pi-save" loading="{{savingIns}}" bindtap="submitInsurance">绑定医保</button>
+    </view>
+  </view>
+
+  <!-- ④ 加载 / 错误态 -->
+  <view wx:if="{{loading}}" class="state">正在加载个人信息…</view>
+  <view wx:if="{{loadError}}" class="error-inline" bindtap="onRetry">{{loadError}}（点按重试）</view>
+
+  <!-- ⑤ 隐私说明 -->
+  <view class="pi-privacy">
+    身份证号与医保号加密存储，页面仅显示部分号码；信息仅用于医疗服务身份核验。
+  </view>
+</view>

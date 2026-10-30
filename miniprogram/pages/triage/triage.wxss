@@ -1,0 +1,1189 @@
+/**
+ * triage.wxss —— AI 导诊
+ * 2026-10-18 批次 B：按设计参考图 患者端/02-AI智能导诊.png 对齐视觉——
+ *   · hero 由「淡蓝渐变 + 气泡 + 机器人插画」改为参考图的**白色信息卡 + 右侧浅蓝圆角图标底板**；
+ *   · 多轮补问选项由「横排胶囊」改为参考图的**整宽单选行（前置圆环）**；
+ *   · 科室/建议行图标底板由「圆形」改为参考图的**圆角方形**；
+ *   · 结果卡与急诊卡的操作按钮统一为**胶囊**；
+ *   · 原先散落的 #hex 硬编码（白底 / 分割线 / 红橙语义 / 占位灰）全部收口到 app.wxss 令牌。
+ * ⚠️ 本页只改样式与 hero 结构：分诊引擎、红旗判定、隐私开关、全部事件绑定与数据字段未变。
+ */
+.triage-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* 复刻文档 §2「页面背景：#F3F8FF」= 全局 --bg。
+     ⚠️ 此处原为硬编码 linear-gradient(180deg,#D9EEFE,var(--bg)44%)：既违反「页面禁写 hex」，
+        也让 AI 气泡（#E4F1FF）与其底色#D9EEFE 几乎同色、读不出边界。
+        改回纯 --bg 后：页面底 = #F3F8FF / 白卡 / 浅蓝气泡三层分明。 */
+  background: var(--bg);
+}
+
+/* ============ 导诊 hero（设计参考图 02 版式：白色卡片 + 左标题/说明 + 右侧浅蓝圆角图标底板）============
+   2026-10-18 批次B：原「淡蓝渐变卡 + 白气泡 + 机器人插画」按参考图改为白色信息卡
+   （标题 17px 级 / 说明一行 / 右侧 88rpx 圆角图标底板）。标题文案以参考图为准。
+   2026-10-17 保留的紧凑态：用户开始说话后折叠为一行标题栏，把首屏让给第一轮问答。 */
+.tg-hero {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  margin: 4rpx 0 16rpx;
+  padding: 28rpx 32rpx;          /* 复刻文档 §2-①：内边距 32rpx */
+  min-height: 168rpx;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+  box-sizing: border-box;
+}
+
+/* 紧凑态：用户已开口 / AI 正在分析 → 只留标题一行（说明与图标仅 CSS 隐去，节点保留） */
+.tg-hero-compact {
+  min-height: 88rpx;
+  padding: 16rpx 20rpx;
+}
+
+.tg-hero-compact .tg-hero-desc,
+.tg-hero-compact .tg-hero-ic { display: none; }
+
+.tg-hero-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.tg-hero-title {
+  /* 复刻文档 §2-①：34rpx / 700 / #0B6EF8（= --primary）。原用 --primary-dark，比参考图偏深一档。 */
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--primary);
+  line-height: 1.35;
+}
+
+.tg-hero-desc {
+  margin-top: 8rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  line-height: 1.5;
+  /* 说明保持一行：超出省略，不把 hero 撑高（完整语义已在首条 AI 消息里） */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 右侧图标底板（复刻文档 §2-①：112rpx × 112rpx、#E4F1FF 底、**50% 圆**、图标 44rpx）
+   ⚠️ 原为 88rpx 圆角方形（radius 24rpx），与参考图的圆形底板不符；图标原为 44rpx 但底径更小，
+      显得"图标贴边"，现按文档放大底板、保持图标 44rpx，留出约 30% 的内边距。 */
+.tg-hero-ic {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tg-hero-ic-img { width: 44rpx; height: 44rpx; }
+
+/* ============ 顶部导航（2026-10-18：保留既有「对话 / 我的」双页签入口，
+     不因视觉重构删除导航功能；参考图 02 的标题居中 + 右侧电话图标属另一版式，
+     与页签并存会挤压标题，故维持现状。） ============ */
+.nav-bar {
+  display: flex;
+  align-items: center;
+  padding-left: 24rpx;
+  padding-right: 24rpx;
+  padding-bottom: 16rpx;
+  flex-shrink: 0;
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  min-width: 160rpx;
+}
+
+.nav-back-icon {
+  width: 36rpx;
+  height: 36rpx;
+}
+
+.nav-brand {
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+/* 居中标题（设计效果图 02：返回 + 居中「AI 智能导诊」，无 Tab） */
+.nav-title {
+  flex: 1;
+  text-align: center;
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.nav-tabs {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  gap: 40rpx;
+}
+
+.nav-tab {
+  font-size: var(--font-h2);
+  font-weight: 600;
+  color: var(--text-weak);
+  padding: 6rpx 0;
+  position: relative;
+}
+
+.nav-tab-on {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.nav-tab-on::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -6rpx;
+  transform: translateX(-50%);
+  width: 44rpx;
+  height: 6rpx;
+  border-radius: 3rpx;
+  background: var(--primary);
+}
+
+.nav-right { min-width: 160rpx; }
+
+/* ============ 主体滚动区 ============ */
+.body-scroll {
+  flex: 1;
+  overflow: hidden;
+  padding: 0 24rpx;
+  box-sizing: border-box;
+}
+
+/* ============ 用户信息条（单行） ============
+   2026-10-17：info 区由「姓名/性别 + 掩码」两行改为单行（姓名 · 性别 · 掩码）；
+   切换入口从一截文字改为「文字 + 箭头 + ≥88rpx 触控区 + 按压底色」（UIUX §3.4）。 */
+.user-strip {
+  display: flex;
+  align-items: center;
+  background: var(--card);
+  border-radius: var(--radius-md);
+  padding: 16rpx 20rpx;
+  margin-bottom: 16rpx;
+}
+
+.user-avatar {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.user-strip-info {
+  flex: 1;
+  min-width: 0;              /* 不加会被长掩码顶破右侧切换入口 */
+  display: flex;
+  align-items: baseline;
+  margin-left: 16rpx;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.user-strip-name {
+  font-size: var(--font-body);
+  font-weight: 700;
+  color: var(--text-main);
+  flex-shrink: 0;
+}
+
+.user-strip-sep {
+  margin: 0 8rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  flex-shrink: 0;
+}
+
+.user-gender {
+  font-size: var(--font-caption);
+  font-weight: 500;
+  color: var(--text-sub);
+  flex-shrink: 0;
+}
+
+/* 证件掩码：次级信息，单行内超出省略（不再单独占一行） */
+.user-strip-id {
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 切换就医人：整块可点、≥88rpx 高、带箭头与按压底色（不能只靠蓝色文字表达可点） */
+.user-switch {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  flex-shrink: 0;
+  min-height: 88rpx;
+  padding: 0 8rpx 0 16rpx;
+  margin: -8rpx -8rpx -8rpx 0;
+  border-radius: var(--radius-sm);
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.user-switch:active { background: var(--accent-soft); }
+
+.user-switch-ic { width: 24rpx; height: 24rpx; opacity: 0.7; }
+
+/* ============ 就医进度：有流程 = 完整卡（app.wxss 唯一实现）／无流程 = 一行入口 ============
+   2026-10-16 VF-10 收敛说明保留（见 git 历史）。
+   2026-10-17 新增 .flow-slim：无进行中流程时原来也铺一张 ≈300rpx 的空进度卡（含占位文案
+   「暂无进行中的就医流程…」），首屏被它吃掉约 118px。改为一行入口，去向仍是 onFlowDetail。 */
+.flow-slim {
+  display: flex;
+  align-items: center;
+  min-height: 88rpx;
+  padding: 0 20rpx;
+  margin-bottom: 16rpx;
+  border-radius: var(--radius-md);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.flow-slim-ic {
+  width: 32rpx;
+  height: 32rpx;
+  margin-right: 12rpx;
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+
+.flow-slim-text {
+  flex: 1;
+  min-width: 0;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.flow-slim-arrow {
+  width: 28rpx;
+  height: 28rpx;
+  margin-left: 12rpx;
+  opacity: 0.45;
+  flex-shrink: 0;
+}
+
+.flow-slim:active { background: var(--accent-soft); }
+
+/* ============ 就医进度卡 ============
+   ⚠️ 2026-10-16 VF-10 收敛：本页原有的整套 .flow-* 样式（中蓝渐变 #5D96F6→#8FBAFA 白字版）
+   已**上移到 app.wxss 唯一实现**（与 consultation 页共用，浅色基调版）。
+   本页 WXML 无需改动：无子元素的 .flow-dot 在新实现下呈「空心环 → 已完成白底蓝边 →
+   当前蓝底+halo」三态，与原实心点语义一致且浅底上对比更强。
+   如需改视觉请改 app.wxss，勿在此处重建副本。 */
+
+/* ============ 对话区 ============ */
+.chat-list {
+  padding-bottom: 24rpx;
+}
+
+.msg {
+  margin-bottom: 24rpx;
+  display: flex;
+  flex-direction: column;
+}
+
+.msg-user { align-items: flex-end; }
+.msg-ai { align-items: flex-start; }
+
+/* 消息行：AI = 「圆形头像 + 内容」，用户 = 「内容（右对齐）」。
+   `.msg` 仍是纵向容器（时间戳要靠它居中），行内的横向关系交给 `.msg-row`。 */
+.msg-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12rpx;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.msg-user .msg-row { justify-content: flex-end; }
+
+/* AI 头像（复刻文档 §2-③「左侧带 AI 头像：圆形浅蓝底 + 图标」） */
+.msg-avatar {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 4rpx;
+}
+
+.msg-avatar-ic { width: 30rpx; height: 30rpx; }
+
+/* 内容列：占满剩余宽度，子块才有稳定的百分比基准（若不 flex:1，max-width:xx% 会失效） */
+.msg-stack {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.msg-user .msg-stack { align-items: flex-end; }
+
+.msg-in { animation: msgIn 300ms ease-out both; }
+
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(24rpx); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.msg-bubble {
+  max-width: 78%;
+  padding: 22rpx 28rpx;
+  border-radius: var(--radius-md);
+  font-size: var(--font-body);
+  line-height: 1.7;
+  word-break: break-all;
+}
+
+/* 用户气泡：主蓝实心 + 右下小尾巴（复刻文档 §2-③「小尾巴：右下角小三角」） */
+.bubble-user {
+  position: relative;
+  background: var(--primary);
+  color: #FFFFFF;
+  border-bottom-right-radius: 8rpx;
+}
+
+.bubble-user::after {
+  content: '';
+  position: absolute;
+  right: -10rpx;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  border-left: 14rpx solid var(--primary);
+  border-top: 14rpx solid transparent;
+  border-bottom: 0;
+}
+
+/* AI 气泡：浅蓝底（复刻文档 §2-③ #E4F1FF），不再用白底 + 投影
+   （白底会与页面上的白卡混为一层；参考图里 AI 气泡与白卡是两个层级）。
+   宽度：左侧已被头像占掉一列，所以 AI 气泡直接占满剩余行宽（≈参考图 70% 屏宽），
+   不再二次打折 —— 原 82% 是相对整行算的，加上头像后实际只剩 ≈55% 屏宽，明显偏窄。 */
+.bubble-ai {
+  max-width: 100%;
+  background: var(--accent-soft);
+  color: var(--text-main);
+  border-bottom-left-radius: 8rpx;
+}
+
+/* 时间戳：复刻文档 §2-③ 居中 + 弱化。
+   字号/颜色保留 22rpx/--text-sub（合规：辅助文字不浅于 #5064A0）。 */
+.msg-time {
+  align-self: center;
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: var(--text-sub);
+}
+
+/* ============ 科室卡（AI 推荐） ============ */
+.dept-card {
+  width: 100%;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  padding: 28rpx;
+  box-shadow: var(--shadow-card);
+  box-sizing: border-box;
+}
+
+.dept-intro {
+  font-size: var(--font-body);
+  color: var(--text-main);
+  line-height: 1.7;
+  margin-bottom: 8rpx;
+}
+
+.dept-row {
+  display: flex;
+  align-items: center;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.dept-row:last-of-type { border-bottom: none; }
+
+/* 图标底板：参考图为圆角方形浅蓝底（原为本页自造的圆形） */
+.dept-icon {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 24rpx;
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dept-info { flex: 1; margin-left: 20rpx; }
+
+.dept-name {
+  font-size: var(--font-body);
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.dept-desc {
+  margin-top: 6rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
+/* 挂号按钮：参考图同列的「去预约 ›」为胶囊描边，此处同步为胶囊 */
+.dept-book {
+  min-width: 112rpx;
+  min-height: 80rpx;      /* 64→80rpx：触控下限（UIUX §5-4） */
+  border: 2rpx solid var(--primary);
+  border-radius: 999rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 600;
+  color: var(--primary);
+  padding: 0 24rpx;
+  box-sizing: border-box;
+}
+
+.dept-book:active { background: var(--accent-soft); }
+
+/* AI 免责 + 反馈 */
+.ai-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16rpx;
+}
+
+/* 免责小字：合规文案也是要读的内容 → 24rpx 起 + --text-sub（原 20rpx/--text-weak） */
+.ai-disclaimer {
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
+.ai-fb { display: flex; gap: 16rpx; }
+
+.fb-btn {
+  width: 36rpx;
+  height: 36rpx;
+  padding: 6rpx 12rpx;
+  border-radius: 10rpx;
+  background: var(--accent-soft);
+}
+
+/* ============ 思考中 ============ */
+.thinking-bubble {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 24rpx 28rpx;
+  background: var(--card);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+
+.spinner {
+  width: 32rpx;
+  height: 32rpx;
+  border: 4rpx solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.thinking-text {
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+.anchor { height: 4rpx; }
+
+/* ============ 常驻橙色警示条（复刻文档 §2-⑥）============
+   app.wxss 的 `.notice-bar-amber` 已给出 浅橙底 #FFF4E5 / 深橙字 #CC6600 / 1rpx 橙边，
+   这里只补三件文档要求、但全局类没有的事：字重 600、左右页边距、贴在输入栏正上方。
+   ⚠️ 原写法把 font-size/color 写在本类上：它命中的是容器元素，而 `.notice-bar-text` 是子元素、
+      自带 font-size，父级的字号根本继承不下去（等于没生效）→ 改为命中子元素。 */
+.ai-note {
+  flex-shrink: 0;
+  margin: 0 24rpx 12rpx;
+}
+
+.ai-note .notice-bar-text {
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+/* ============ 固定区服务入口（2026-10-17 收敛为单个「更多服务」） ============
+   原来 4 个 pill 横排；窄屏会被裁（见 triage.wxml 注释），且占掉固定区一行。
+   现在只有 1 个 pill，`overflow-x` 与 `.qs-all`（早先预留的实心"全部服务"样式，
+   全仓已无引用）一并移除。 */
+.quick-services {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 10rpx 24rpx;
+  flex-shrink: 0;
+}
+
+.qs-item {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  min-height: 72rpx;
+  background: var(--card);
+  border-radius: 999rpx;
+  padding: 0 26rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-main);
+  flex-shrink: 0;
+  box-shadow: var(--shadow-card);
+}
+
+.qs-item:active { background: var(--accent-soft); }
+
+/* ============ 底部输入条 ============
+   ⚠️ 2026-10-17 修一处真实缺陷：本元素同时挂了 `.safe-bottom`（app.wxss 用
+   `padding-bottom: calc(20rpx + env(safe-area-inset-bottom))`）。但页面 wxss 在 app.wxss
+   之后生效，同特异度（都是单类）时**后写的 shorthand 覆盖先写的 padding-bottom**
+   → iPhone 上输入栏贴着屏幕最底、被 Home 指示条压住。
+   这里显式把安全区写进 shorthand，两个类叠在一起也不会丢。 */
+.input-bar {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 12rpx 24rpx calc(12rpx + env(safe-area-inset-bottom));
+  background: var(--card);
+  flex-shrink: 0;
+}
+
+/* 语音钮（复刻文档 §2-⑦：88rpx 圆形、**白底 + 蓝边** + 蓝字形）
+   ⚠️ 原为浅蓝实底无描边，与输入框同为浅蓝块，三者糊成一片；参考图里麦克风是"描边圆"。 */
+.voice-btn {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 50%;
+  background: var(--card);
+  border: 2rpx solid var(--primary);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* 录音中：蓝底白字形（保持原有状态反馈） */
+.voice-btn-on {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+/* 输入框（复刻文档 §2-⑦：88rpx / 白色底 / 胶囊）
+   ⚠️ 输入栏本身是白底，白底输入框必须给描边才看得出是输入框（原为浅蓝实底，靠色块区分）。 */
+.input-field {
+  flex: 1;
+  height: 88rpx;
+  background: var(--card);
+  border: 2rpx solid var(--border);
+  border-radius: 999rpx;
+  padding: 0 28rpx;
+  box-sizing: border-box;
+  font-size: var(--font-body);
+  color: var(--text-main);
+}
+
+.ph { color: var(--text-weak); }
+
+/* 蓝色发送按钮（88rpx；参考图为圆角方形 ≈28rpx 圆角 + 白纸飞机） */
+.send-fab {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 28rpx;
+  background: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.send-fab-disabled { background: var(--disabled-bg); }
+
+.send-icon {
+  width: 40rpx;
+  height: 40rpx;
+}
+
+/* 语音提示浮层 */
+.voice-hint {
+  position: fixed;
+  left: 50%;
+  bottom: calc(220rpx + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  background: rgba(29, 33, 41, 0.8);
+  color: #FFFFFF;
+  border-radius: 999rpx;
+  padding: 14rpx 32rpx;
+  font-size: var(--font-caption);
+  z-index: 30;
+}
+
+/* ==================== V1.8 导诊优化：新增区块 ==================== */
+
+/* 急诊预警常驻条（红旗命中后固定在导航下方，不随对话滚走）
+   ⚠️ 语义色口径：参考图里的橙色条是**常驻安全提醒**；本元素只在
+   `emergency` 为真（红旗命中）时出现，属「真实高风险」，按项目色彩纪律
+   （红=真实高风险、橙=提醒）保持红色，不随参考图改为橙色。 */
+.emg-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  margin: 0 24rpx 12rpx;
+  padding: 16rpx 20rpx;
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+  border: 2rpx solid var(--danger-border);
+}
+
+.emg-bar-text {
+  flex: 1;
+  margin: 0 16rpx;
+  font-size: var(--font-caption);
+  line-height: 1.5;
+  color: var(--danger-text);
+}
+
+.emg-bar-call {
+  flex-shrink: 0;
+  padding: 10rpx 24rpx;
+  border-radius: 999rpx;
+  background: var(--accent-red);
+  color: #FFFFFF;
+  font-size: var(--font-caption);
+  font-weight: 700;
+}
+
+.emg-bar-call:active { background: var(--danger-text); }
+
+/* 已理解回执（NLU 可视化） */
+.slots-card {
+  display: flex;
+  align-items: flex-start;
+  max-width: 86%;
+  padding: 14rpx 20rpx;
+  border-radius: var(--radius-md);
+  background: var(--card);
+  border: 2rpx dashed var(--border);
+}
+
+.slots-text {
+  margin-left: 10rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  line-height: 1.6;
+  color: var(--text-sub);
+}
+
+/* 多轮补问：主问题 28rpx/600（UIUX §3.5「主问题 28–30rpx、600 字重」）
+   2026-10-18：左侧 8rpx 蓝色竖条移除（参考图的补问卡为纯白卡 + 整宽单选行）。 */
+.ask-card {
+  /* 卡片类消息不带头像 → 占满整行（参考图的补问卡/结果卡都是通栏卡片） */
+  max-width: 100%;
+  padding: 24rpx;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.ask-q {
+  display: flex;
+  align-items: flex-start;
+  font-size: calc(var(--font-body) + 2rpx);
+  font-weight: 600;
+  color: var(--text-main);
+  line-height: 1.6;
+}
+
+.ask-q .ic-sm { margin-right: 10rpx; flex-shrink: 0; }
+
+/* 选项容器：参考图为**纵向整宽单选行**（原实现为横排胶囊，窄屏会换行参差） */
+.ask-ops {
+  display: flex;
+  flex-direction: column;
+  margin-top: 18rpx;
+}
+
+/* 选项：整宽单选行，前置圆环表明"单选"语义
+   ⚠️ 用 min-height 而非 height：大字档字号变大时按钮跟着长高，不裁字。 */
+.ask-opt {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 88rpx;
+  padding: 0 24rpx;
+  margin-bottom: 16rpx;
+  border-radius: var(--radius-md);
+  background: var(--card);
+  border: 2rpx solid var(--border);
+  color: var(--text-main);
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+}
+
+.ask-opt:last-child { margin-bottom: 0; }
+
+.ask-opt::before {
+  content: '';
+  width: 30rpx;
+  height: 30rpx;
+  border-radius: 50%;
+  border: 3rpx solid var(--accent);
+  margin-right: 16rpx;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.ask-opt:active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+/* 结构化导诊结果卡 */
+.tri-card {
+  max-width: 100%;
+  padding: 24rpx;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.tri-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tri-level { font-size: var(--font-caption); font-weight: 700; }
+
+.tri-window {
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 700;
+  color: var(--primary);
+}
+
+/* 字段行（复刻文档 §2-④「推荐科室行 / 判断理由行」）：
+   左侧浅灰 chip 标签 + 右侧内容。原实现是「图标 + 单行文字」，缺标签语义，
+   且判断理由被塞进浅蓝底板里（与参考图的"标签 + 正文"结构不同）。 */
+.tri-field {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 20rpx;
+}
+
+.tri-chip {
+  flex-shrink: 0;
+  margin-right: 16rpx;
+  padding: 4rpx 14rpx;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: var(--font-caption);
+  font-weight: 600;
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
+.tri-field-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.tri-dept-name {
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--primary-dark);
+  line-height: 1.35;
+}
+
+.tri-dept-sub {
+  margin-top: 4rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
+.tri-conf {
+  margin-top: 4rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+/* 判断理由条目：正文色、行距 1.7（要能读，不是脚注） */
+.tri-reason {
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-main);
+  line-height: 1.7;
+}
+
+.tri-alt {
+  margin-top: 20rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+
+.tri-advice {
+  margin-top: 20rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-main);
+  line-height: 1.7;
+}
+
+.tri-ops {
+  display: flex;
+  align-items: center;
+  margin-top: 20rpx;
+}
+
+/* 结果卡操作（复刻文档 §2-④「按钮组：左描边 + 右实心」）
+   ⚠️ 原左按钮是浅蓝实底（accent-soft），与右侧实心主按钮都算"实底"，主次不分；
+      改为 白底 + 蓝边 + 蓝字 = 描边按钮，与文档一致。 */
+.tri-op {
+  flex: 1;
+  min-height: 88rpx;      /* 触控达标（UIUX §5-4） */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  background: var(--card);
+  border: 2rpx solid var(--primary);
+  color: var(--primary);
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 600;
+  box-sizing: border-box;
+}
+
+.tri-op + .tri-op { margin-left: 16rpx; }
+.tri-op:active { background: var(--accent-soft); }
+
+.tri-op-main {
+  background: var(--primary);
+  color: #FFFFFF;
+}
+
+.tri-op-main:active { background: var(--primary-dark); }
+
+/* 底部免责：居中（复刻文档 §2-④「以上为AI建议，不能替代医生诊断」居中、弱化） */
+.tri-disc {
+  margin-top: 20rpx;
+  text-align: center;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
+.tri-disc-sub { margin-top: 4rpx; }
+
+.tri-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12rpx;
+}
+
+/* 「查看完整报告 ›」：原为按钮组里的第三个等宽按钮（三按钮在 94% 宽卡内每个仅 ≈200rpx，
+   文案折行）；降为底部文字链，入口不丢，主次更清。 */
+.tri-report-link {
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 600;
+  color: var(--primary);
+}
+
+/* 路线询问卡（结果卡之后的「要不要带您过去」；回答「要」→ 院内导诊页） */
+.navask-card {
+  max-width: 100%;
+  padding: 22rpx 24rpx;
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  /* 原 #C7DBFF 硬编码 → 收口为既有令牌 --accent-press（同色系深一档，视觉几乎无差） */
+  border: 2rpx solid var(--accent-press);
+}
+
+.navask-q {
+  display: flex;
+  align-items: flex-start;
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-main);
+  line-height: 1.6;
+}
+
+.navask-q .ic-sm { margin-right: 10rpx; flex-shrink: 0; }
+
+.navask-ops {
+  display: flex;
+  align-items: center;
+  margin-top: 18rpx;
+}
+
+.navask-op {
+  flex: 1;
+  height: 80rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  background: var(--card);
+  color: var(--primary);
+  font-size: var(--font-caption);
+  font-weight: 600;
+}
+
+.navask-op + .navask-op { margin-left: 12rpx; }
+
+.navask-op-main {
+  background: var(--primary);
+  color: #FFFFFF;
+}
+
+.navask-op-main:active { background: var(--primary-dark); }
+
+/* 急诊预警卡（红旗命中 → 真实高风险，保持红色语义） */
+.emg-card {
+  max-width: 100%;
+  padding: 24rpx;
+  border-radius: var(--radius-lg);
+  background: var(--danger-soft);
+  border: 2rpx solid var(--danger-border);
+}
+
+.emg-head {
+  display: flex;
+  align-items: center;
+}
+
+.emg-icon {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: var(--card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-right: 16rpx;
+}
+
+.emg-title {
+  flex: 1;
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--danger-text);
+}
+
+.emg-action {
+  margin-top: 16rpx;
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--danger-text);
+  line-height: 1.7;
+}
+
+.emg-advice {
+  margin-top: 10rpx;
+  font-size: var(--font-caption);
+  color: var(--text-main);
+  line-height: 1.8;
+}
+
+.emg-note {
+  margin-top: 12rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+
+.emg-ops {
+  display: flex;
+  align-items: center;
+  margin-top: 20rpx;
+}
+
+/* 急诊操作：胶囊（参考图的「拨打120」为实心胶囊） */
+.emg-op {
+  flex: 1;
+  min-height: 84rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  background: var(--card);
+  border: 2rpx solid var(--accent-red);
+  color: var(--danger-text);
+  font-size: var(--font-body);
+  font-weight: 700;
+  box-sizing: border-box;
+}
+
+.emg-op + .emg-op { margin-left: 16rpx; }
+
+.emg-op-call {
+  background: var(--accent-red);
+  border-color: var(--accent-red);
+  color: #FFFFFF;
+}
+
+.emg-op-call:active { background: var(--danger-text); }
+.emg-op-call .ic-sm { margin-right: 8rpx; }
+
+/* 症状采集看板（固定区，不占用滚动区） */
+.collect-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  margin: 0 24rpx 8rpx;
+  padding: 14rpx 20rpx;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.92);
+  border: 2rpx solid var(--border);
+}
+
+.collect-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.collect-text {
+  margin-left: 10rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.collect-btn {
+  flex-shrink: 0;
+  margin-left: 16rpx;
+  padding: 10rpx 24rpx;
+  border-radius: 999rpx;
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: var(--font-caption);
+  font-weight: 600;
+}
+
+.collect-btn:active { background: var(--primary-dark); }
+
+/* ==================== ≥600px（平板）====================
+   rpx 按屏宽等比放大，平板上一张 112rpx 的底板会变成 ≈150px。
+   本页此前**没有任何断点**（flow-card 走 app.wxss 的 px 版，与本页 rpx 混排）。
+   这里把主要盒子统一改为 px（1px = 2rpx 口径），与其它页面的写法一致。 */
+@media (min-width: 600px) {
+  .nav-bar { padding-left: 12px; padding-right: 12px; padding-bottom: 8px; }
+  .nav-title, .nav-brand { font-size: 17px; }
+  .nav-left, .nav-right { min-width: 80px; }
+  .nav-back-icon { width: 18px; height: 18px; }
+
+  .body-scroll { padding: 0 12px; }
+
+  .tg-hero { padding: 14px 16px; min-height: 84px; gap: 10px; }
+  .tg-hero-compact { min-height: 44px; padding: 8px 10px; }
+  .tg-hero-title { font-size: 17px; }
+  .tg-hero-desc { margin-top: 4px; font-size: 13px; }
+  .tg-hero-ic { width: 56px; height: 56px; }
+  .tg-hero-ic-img { width: 22px; height: 22px; }
+
+  .user-strip { padding: 8px 10px; margin-bottom: 8px; border-radius: 12px; }
+  .user-avatar { width: 32px; height: 32px; }
+  .user-strip-info { margin-left: 8px; }
+  .user-strip-name, .user-gender, .user-strip-id, .user-switch { font-size: 13px; }
+  .user-switch { min-height: 44px; }
+
+  .flow-slim { min-height: 44px; padding: 0 10px; margin-bottom: 8px; }
+  .flow-slim-ic, .flow-slim-arrow { width: 16px; height: 16px; }
+  .flow-slim-text { font-size: 13px; }
+
+  .msg { margin-bottom: 12px; }
+  .msg-row { gap: 6px; }
+  .msg-avatar { width: 28px; height: 28px; margin-top: 2px; }
+  .msg-avatar-ic { width: 15px; height: 15px; }
+  .msg-bubble { padding: 11px 14px; border-radius: 12px; font-size: 15px; line-height: 1.6; }
+  .msg-time { margin-top: 4px; font-size: 11px; }
+
+  .dept-card, .ask-card, .tri-card, .navask-card, .emg-card { padding: 12px; border-radius: 16px; }
+  .tri-head { align-items: center; }
+  .tri-chip { padding: 2px 7px; margin-right: 8px; font-size: 12px; border-radius: 6px; }
+  .tri-field { margin-top: 10px; }
+  .tri-dept-name { font-size: 17px; }
+  .tri-dept-sub, .tri-conf, .tri-reason, .tri-alt, .tri-advice { font-size: 13px; }
+  .tri-advice, .tri-alt { margin-top: 7px; }
+  .tri-ops { margin-top: 10px; }
+  .tri-op { min-height: 44px; border-width: 1px; font-size: 13px; }
+  .tri-disc { margin-top: 10px; font-size: 12px; }
+  .tri-report-link { font-size: 13px; }
+  .ask-opt { min-height: 44px; font-size: 13px; margin-bottom: 8px; }
+  .ask-q { font-size: 16px; }
+  .thinking-bubble { padding: 12px 14px; border-radius: 12px; }
+  .emg-op { min-height: 42px; font-size: 15px; }
+
+  .emg-bar { margin: 0 12px 6px; padding: 8px 10px; border-radius: 12px; border-width: 1px; }
+  .emg-bar-text, .emg-bar-call { font-size: 12px; }
+
+  .ai-note { margin: 0 12px 6px; }
+  .ai-note .notice-bar-text { font-size: 13px; }
+
+  .collect-bar { margin: 0 12px 4px; padding: 7px 10px; border-radius: 12px; border-width: 1px; }
+  .collect-text, .collect-btn { font-size: 12px; }
+
+  .quick-services { padding: 5px 12px; gap: 10px; }
+  .qs-item { min-height: 36px; padding: 0 13px; font-size: 13px; }
+
+  .input-bar { gap: 8px; padding: 6px 12px calc(6px + env(safe-area-inset-bottom)); }
+  .voice-btn, .send-fab { width: 44px; height: 44px; }
+  .voice-btn { border-width: 1px; }
+  .input-field { height: 44px; padding: 0 14px; font-size: 15px; border-width: 1px; }
+  .send-fab { border-radius: 14px; }
+  .send-icon { width: 20px; height: 20px; }
+}

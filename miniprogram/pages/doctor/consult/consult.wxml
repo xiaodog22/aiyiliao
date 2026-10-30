@@ -1,0 +1,184 @@
+<!--
+  pages/doctor/consult/consult —— 医生端「在线问诊处理」
+
+  两种模式：
+    LIST —— 待接诊 / 正在接诊的会话列表（患者头像+姓名、最后消息时间、摘要、状态标签）
+    CHAT —— 与患者端 04-在线问诊 一致的微信式对话（患者左白气泡 / 医生右蓝气泡 / 系统胶囊 / 日期分隔）
+
+  ⚠️ WXML 表达式限制（本页历史上踩过）：
+    · 不支持方法调用（`{{input.trim()}}` 会让整个模板编译失败 → 白屏），输入态改用 data 的 canSend；
+    · 事件名不能数据绑定（`bindtap="{{cond ? 'a' : 'b'}}"`），必须拆成两组静态绑定。
+
+  ⚠️ 不伪造：患者姓名缺失回落「患者」；消息/接诊接口失败如实提示，不用本地假消息冒充。
+-->
+<view class="page theme-{{theme}} dc-page" style="padding-top: {{navH}}px; padding-bottom: {{kbHeight}}px;">
+
+  <!-- ============ 自绘导航 ============ -->
+  <view class="dc-nav" style="padding-top: {{statusBarHeight}}px; height: {{navH}}px;">
+    <view class="dc-nav-bar">
+      <view class="dc-back" bindtap="onBack" aria-role="button" aria-label="返回">
+        <image class="dc-back-ic" src="{{icons.chevronLeft}}" mode="aspectFit" />
+      </view>
+      <view class="dc-title">{{mode === 'CHAT' ? (active.patientName || '在线问诊') : '在线问诊'}}</view>
+      <!-- 右侧：会话模式给「结束」入口（列表模式占位保持标题居中） -->
+      <view wx:if="{{mode === 'CHAT' && active.status === 'CLOSED'}}" class="dc-nav-done">已结束</view>
+      <view wx:elif="{{mode === 'CHAT'}}" class="dc-nav-end" bindtap="onCloseConsult" aria-role="button">结束</view>
+      <view wx:else class="dc-nav-ph" />
+    </view>
+  </view>
+
+  <!-- ==================== 列表模式 ==================== -->
+  <block wx:if="{{mode === 'LIST'}}">
+    <scroll-view class="dc-body" scroll-y>
+      <view class="dc-list-head">
+        <text class="dc-list-tip">分配给您、尚未结束的问诊会话</text>
+      </view>
+
+      <view wx:if="{{listLoading && list.length === 0}}" class="dc-empty">
+        <text class="dc-empty-t">加载中…</text>
+      </view>
+
+      <view wx:elif="{{list.length === 0 && !listError}}" class="dc-empty">
+        <text class="dc-empty-t">暂无待处理的问诊</text>
+        <text class="dc-empty-s">患者发起在线问诊后会出现在这里</text>
+      </view>
+
+      <view wx:if="{{listError}}" class="dc-empty">
+        <text class="dc-empty-t">{{listError}}</text>
+        <view class="dc-retry" bindtap="reloadList">重新加载</view>
+      </view>
+
+      <view class="dc-list">
+        <view wx:for="{{list}}" wx:key="id" class="dc-item">
+          <view class="dc-item-head" data-id="{{item.id}}" bindtap="onItemTap">
+            <view class="dc-avatar">{{item.initial}}</view>
+            <view class="dc-item-main">
+              <view class="dc-item-row">
+                <text class="dc-patient">{{item.patientName}}</text>
+                <text class="dc-time">{{item.lastTime}}</text>
+              </view>
+              <text class="dc-summary">{{item.summary || item.title}}</text>
+            </view>
+          </view>
+          <view class="dc-item-meta">
+            <view class="dc-item-state">
+              <text class="dc-state-chip {{item.accepting ? 'dc-state-chip-on' : ''}}">{{item.accepting ? '正在接诊' : '待接诊'}}</text>
+              <text class="dc-count">{{item.messageCount}} 条消息</text>
+            </view>
+            <!-- 未接诊 → 一键接诊并进入会话；已接诊 → 直接进入会话回复 -->
+            <view wx:if="{{item.accepting}}" class="dc-go" data-id="{{item.id}}" bindtap="onItemTap">进入会话 ›</view>
+            <view wx:else class="dc-accept" data-id="{{item.id}}" bindtap="onAccept">{{acceptingId === item.id ? '接诊中…' : '接诊'}}</view>
+          </view>
+        </view>
+      </view>
+
+      <view wx:if="{{nextCursor && !listLoading}}" class="dc-loadmore" bindtap="onLoadMore">加载更多</view>
+      <view wx:if="{{listLoading && list.length > 0}}" class="dc-loadmore">加载中…</view>
+    </scroll-view>
+  </block>
+
+  <!-- ==================== 会话模式（对齐患者端聊天界面） ==================== -->
+  <block wx:if="{{mode === 'CHAT'}}">
+
+    <!-- 患者信息卡：头像 / 姓名 / 会话类型 + 右上接诊态 + 分隔线 + 提示 -->
+    <view class="dc-card">
+      <view class="dc-card-main">
+        <view class="dc-card-face">{{active.initial || '者'}}</view>
+        <view class="dc-card-body">
+          <view class="dc-card-top">
+            <text class="dc-card-name">{{active.patientName || '患者'}}</text>
+            <view class="dc-card-chip">图文问诊</view>
+          </view>
+          <view class="dc-card-sub">在线问诊 · 图文咨询</view>
+        </view>
+        <view class="dc-card-state {{active.status === 'CLOSED' ? 'dc-card-state-off' : (active.accepting ? 'dc-card-state-on' : '')}}">
+          <view class="dc-card-dot"></view>
+          <text>{{active.status === 'CLOSED' ? '已结束' : (active.accepting ? '正在接诊' : '待接诊')}}</text>
+        </view>
+      </view>
+      <view class="dc-card-divider"></view>
+      <view class="dc-card-tip">{{active.status === 'CLOSED' ? '本次问诊已结束，双方均无法继续发送消息' : (active.accepting ? '患者消息实时同步，可直接回复' : '回复患者即视为接诊，患者端会同步显示「正在接诊」')}}</view>
+    </view>
+
+    <!-- 消息流 -->
+    <scroll-view class="dc-chat" scroll-y scroll-into-view="{{scrollInto}}" scroll-with-animation>
+      <view wx:if="{{msgLoading && messages.length === 0}}" class="dc-empty">
+        <text class="dc-empty-t">加载消息中…</text>
+      </view>
+
+      <view wx:if="{{msgError}}" class="dc-empty">
+        <text class="dc-empty-t">{{msgError}}</text>
+        <view wx:if="{{msgErrorKind === 'noaccess'}}" class="dc-retry" bindtap="backToList">返回会话列表</view>
+        <view wx:else class="dc-retry" data-id="{{active.id}}" bindtap="onRetryMessages">重新加载</view>
+      </view>
+
+      <block wx:for="{{messages}}" wx:key="id">
+        <!-- 日期分隔 -->
+        <view wx:if="{{item.kind === 'day'}}" class="dc-day">
+          <view class="dc-day-line"></view>
+          <text class="dc-day-t">{{item.label}}</text>
+          <view class="dc-day-line"></view>
+        </view>
+
+        <!-- 系统提示胶囊（含「医生已接诊」） -->
+        <view wx:elif="{{item.kind === 'sys'}}" class="dc-sys">{{item.content}}</view>
+
+        <!-- 患者：左白气泡 -->
+        <view wx:elif="{{item.kind === 'patient'}}" class="dc-row dc-row-left">
+          <view class="dc-face">{{active.initial || '者'}}</view>
+          <view class="dc-bubble dc-bubble-patient">
+            <text class="dc-text" user-select>{{item.content}}</text>
+            <text class="dc-bubble-time">{{item.time}}</text>
+          </view>
+        </view>
+
+        <!-- 医生：右蓝气泡 -->
+        <view wx:else class="dc-row dc-row-right">
+          <view class="dc-bubble dc-bubble-doctor">
+            <text class="dc-text dc-text-on" user-select>{{item.content}}</text>
+            <text class="dc-bubble-time dc-bubble-time-on">{{item.time}}</text>
+          </view>
+          <view class="dc-face dc-face-me">医</view>
+        </view>
+      </block>
+
+      <view wx:if="{{messages.length === 0 && !msgLoading && !msgError}}" class="dc-empty">
+        <text class="dc-empty-t">暂无消息</text>
+        <text class="dc-empty-s">患者尚未发送内容，可主动询问症状</text>
+      </view>
+
+      <view id="msg-bottom" class="dc-anchor"></view>
+    </scroll-view>
+
+    <!-- 输入栏
+         ⚠️ adjust-position=false：不让微信把**整页**顶上去（会把顶部导航和患者卡一起推走）。
+         键盘高度由 bindfocus / bindkeyboardheightchange 拿，只给页面补 padding-bottom，
+         于是「输入栏贴着键盘上移、聊天区自适应变矮、导航与患者卡原地不动」。 -->
+    <view wx:if="{{active.status === 'CLOSED'}}" class="dc-closed">
+      <text class="dc-closed-t">本次问诊已结束，如需继续请让患者重新发起</text>
+    </view>
+    <block wx:else>
+      <view wx:if="{{replyError}}" class="dc-reply-err">{{replyError}}</view>
+      <view class="dc-input-bar">
+        <input
+          class="dc-input"
+          value="{{input}}"
+          placeholder="{{active.assigned ? '回复患者…' : '请先接诊'}}"
+          placeholder-class="dc-input-ph"
+          confirm-type="send"
+          adjust-position="{{false}}"
+          cursor-spacing="0"
+          bindinput="onInput"
+          bindconfirm="sendReply"
+          bindfocus="onKbHeight"
+          bindblur="onKbBlur"
+          bindkeyboardheightchange="onKbHeight"
+          maxlength="2000"
+          disabled="{{sending}}"
+        />
+        <view class="dc-send {{canSend ? 'dc-send-on' : ''}}" bindtap="sendReply" aria-role="button">发送</view>
+      </view>
+    </block>
+  </block>
+
+</view>

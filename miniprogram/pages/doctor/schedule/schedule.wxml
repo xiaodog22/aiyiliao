@@ -1,0 +1,68 @@
+<!--
+  pages/doctor/schedule —— 排班设置（医生端）
+  ⚠️ 时段与号源全部来自服务端（GET /api/v1/doctor/schedule），客户端只做编辑与保存。
+-->
+<view class="page theme-{{theme}} ds-page" style="padding-top: {{navH}}px;">
+
+  <view class="ds-nav" style="padding-top: {{statusBarHeight}}px;">
+    <view class="ds-nav-bar">
+      <view class="ds-nav-back" bindtap="onBack" hover-class="ds-hover" aria-role="button" aria-label="返回">
+        <image class="ds-nav-back-ic" src="{{icons.chevronLeft}}" />
+      </view>
+      <view class="ds-nav-title">排班设置</view>
+    </view>
+  </view>
+
+  <!-- 在线接诊开关 -->
+  <view class="ds-online">
+    <view class="ds-online-body">
+      <view class="ds-online-title">在线接诊</view>
+      <view class="ds-online-sub">开启后患者可在「在线问诊」中选择您并发起会话</view>
+    </view>
+    <switch checked="{{online}}" color="#0B6EF8" bindchange="onOnlineChange" />
+  </view>
+
+  <!-- 加载中 / 失败 -->
+  <skeleton wx:if="{{loading}}" type="list" rows="5" />
+  <view wx:elif="{{error}}" class="ds-state">
+    <view class="ds-state-title">排班加载失败</view>
+    <view class="ds-state-sub">{{error}}</view>
+    <view class="ds-btn ds-btn-primary" bindtap="fetch">重试</view>
+  </view>
+
+  <block wx:else>
+    <!-- 周模板 -->
+    <view class="ds-card">
+      <view class="ds-card-head">每周出诊安排</view>
+
+      <view wx:for="{{days}}" wx:key="weekday" wx:for-item="day" class="ds-day">
+        <view class="ds-day-head">
+          <text class="ds-day-name">{{day.name}}</text>
+          <text class="ds-day-state {{day.hasSchedule ? 'ds-day-on' : ''}}">
+            {{day.hasSchedule ? '出诊' : '休诊'}}
+          </text>
+        </view>
+
+        <block wx:if="{{day.hasSchedule}}">
+          <view wx:for="{{day.slots}}" wx:key="index" wx:for-item="slot" wx:for-index="idx" class="ds-slot">
+            <text class="ds-slot-time">{{slot.startTime}} - {{slot.endTime}}</text>
+            <text class="ds-slot-cap">号源 {{slot.capacity}}</text>
+            <view class="ds-slot-del" data-weekday="{{day.weekday}}" data-index="{{idx}}" bindtap="onRemoveSlot">删除</view>
+          </view>
+          <view class="ds-day-add" data-weekday="{{day.weekday}}" bindtap="onAddSlot">＋ 添加时段</view>
+        </block>
+        <view wx:else class="ds-day-empty" data-weekday="{{day.weekday}}" bindtap="onAddSlot">
+          点击添加出诊时段
+        </view>
+      </view>
+    </view>
+
+    <!-- 保存 -->
+    <view class="ds-save">
+      <view class="ds-btn ds-btn-primary ds-save-btn {{saving ? 'ds-btn-off' : ''}}" bindtap="onSave">保存排班</view>
+    </view>
+  </block>
+
+  <view class="ds-footbar-space"></view>
+  <doctor-tabbar current="me" />
+</view>

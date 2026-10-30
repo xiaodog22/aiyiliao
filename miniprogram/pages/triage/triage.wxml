@@ -1,0 +1,309 @@
+<view class="page theme-{{theme}} triage-page">
+
+  <!-- ============ 顶部导航（设计效果图 02：返回 + 居中标题，无 Tab） ============ -->
+  <view class="nav-bar" style="padding-top: {{statusBarHeight + 8}}px;">
+    <view class="nav-left" bindtap="onBack">
+      <image class="nav-back-icon" src="/assets/icons/chevronLeft.png" />
+    </view>
+    <view class="nav-title">AI 智能导诊</view>
+    <view class="nav-right"></view>
+  </view>
+
+  <!-- 急诊预警常驻条（红旗命中后一直显示，不随对话滚走） -->
+  <view class="emg-bar" wx:if="{{emergency}}">
+    <image class="ic-sm" src="{{icons.alert}}" />
+    <view class="emg-bar-text">{{emergency.advice}}</view>
+    <view class="emg-bar-call" catchtap="onCall120">拨打120</view>
+  </view>
+
+  <scroll-view class="body-scroll" scroll-y scroll-into-view="bottom-anchor" scroll-with-animation>
+
+    <!-- ============ ① 导诊 hero（参考图 02：白色卡 + 左标题/说明 + 右侧浅蓝**圆形**图标底板）
+         参考图实测：底板为圆形（不是圆角方形），底径明显大于图标（图标约占底板 40%）。
+         紧凑态：用户开口后折叠为一行标题栏（说明与图标仅 CSS 隐去，节点保留）。 ============ -->
+    <view class="tg-hero {{messages.length > 1 || status !== 'IDLE' ? 'tg-hero-compact' : ''}}">
+      <view class="tg-hero-body">
+        <view class="tg-hero-title">让我帮您梳理就医方向</view>
+        <view class="tg-hero-desc">描述您的不适，逐步补充相关信息</view>
+      </view>
+      <view class="tg-hero-ic"><image class="tg-hero-ic-img" src="{{icons.chat}}" /></view>
+    </view>
+
+    <!-- ============ ② 用户信息条（单行：姓名 · 性别 · 证件掩码；右侧「切换就医人 ›」） ============ -->
+    <view class="user-strip">
+      <view class="user-avatar"><image class="ic-sm" src="{{icons.user}}" /></view>
+      <view class="user-strip-info">
+        <text class="user-strip-name">{{user.maskName}}</text>
+        <text wx:if="{{user.gender}}" class="user-strip-sep">·</text>
+        <text wx:if="{{user.gender}}" class="user-gender">{{user.gender}}</text>
+        <text class="user-strip-sep">·</text>
+        <text class="user-strip-id">{{user.maskId}}</text>
+      </view>
+      <view class="user-switch pressable" bindtap="onSwitchUser">
+        <text>切换就医人</text>
+        <image class="user-switch-ic" src="{{icons.chevronRight}}" />
+      </view>
+    </view>
+
+    <!-- ============ ⑤ 就医进度卡（.flow-card 为 app.wxss 唯一实现）
+         四步圆点三态（规范复刻文档 §2-⑤）：未完成=空心蓝环 / 已完成=白底蓝边+蓝勾 / 当前=蓝底白字+halo；
+         连线：已完成段=蓝，未完成段=浅蓝。无进行中流程 → 退化为一行入口。 ============ -->
+    <view wx:if="{{progress.hasFlow}}" class="flow-card">
+      <view class="flow-main">
+        <view class="flow-info">
+          <view class="flow-title">{{progress.title}}</view>
+          <view class="flow-sub">{{progress.subtitle}}</view>
+        </view>
+        <image class="flow-doc" src="/assets/icons/stethoscope_white.png" />
+      </view>
+      <!-- 四步进度 -->
+      <view class="flow-steps">
+        <block wx:for="{{[1,2,3,4]}}" wx:key="*this">
+          <view class="flow-step">
+            <view class="flow-dot {{item <= progress.step ? 'flow-dot-on' : ''}}{{item === progress.step ? ' flow-dot-cur' : ''}}">
+              <!-- 已完成：蓝勾；当前：白色步骤号（未完成：空环，不塞字符） -->
+              <image wx:if="{{item < progress.step}}" class="flow-check" src="{{icons.check}}" />
+              <text wx:elif="{{item === progress.step}}" class="flow-dot-num">{{item}}</text>
+            </view>
+            <view class="flow-line {{item < progress.step ? 'flow-line-on' : ''}}"></view>
+          </view>
+        </block>
+      </view>
+      <view class="flow-labels">
+        <text class="flow-label {{progress.step >= 1 ? 'flow-label-on' : ''}}">预约</text>
+        <text class="flow-label {{progress.step >= 2 ? 'flow-label-on' : ''}}">待取号</text>
+        <text class="flow-label {{progress.step >= 3 ? 'flow-label-on' : ''}}">待就诊</text>
+        <text class="flow-label {{progress.step >= 4 ? 'flow-label-on' : ''}}">就诊</text>
+      </view>
+      <view class="flow-detail-btn" bindtap="onFlowDetail">就医详情</view>
+    </view>
+    <view wx:else class="flow-slim pressable" bindtap="onFlowDetail">
+      <image class="flow-slim-ic" src="{{icons.hospital}}" />
+      <text class="flow-slim-text">暂无进行中的就医流程 · 查看我的就医记录</text>
+      <image class="flow-slim-arrow" src="{{icons.chevronRight}}" />
+    </view>
+
+    <!-- ============ ③ 对话区 ============
+         参考图：AI 消息左侧有**圆形浅蓝底 + 气泡图标**的头像，气泡为浅蓝底（#E4F1FF）；
+         用户气泡为主蓝实心 + 右下小尾巴。结构上只说两句：`.msg-row`（头像 + 内容）+ `.msg-stack`。 ============ -->
+    <view class="chat-list">
+      <view
+        wx:for="{{messages}}"
+        wx:key="id"
+        class="msg {{item.role === 'user' ? 'msg-user' : 'msg-ai'}} msg-in"
+      >
+        <view class="msg-row">
+          <!-- AI 头像：只在「AI 文本气泡」上出现（参考图里白卡/补问卡都是整宽卡、不带头像） -->
+          <view wx:if="{{item.role !== 'user' && item.type === 'text'}}" class="msg-avatar">
+            <image class="msg-avatar-ic" src="{{icons.chat}}" />
+          </view>
+
+          <view class="msg-stack">
+            <!-- AI 文本 -->
+            <block wx:if="{{item.type === 'text'}}">
+              <view class="msg-bubble {{item.role === 'user' ? 'bubble-user' : 'bubble-ai'}}">{{item.content}}</view>
+            </block>
+
+            <!-- AI 科室卡 -->
+            <block wx:elif="{{item.type === 'dept'}}">
+              <view class="dept-card">
+                <view class="dept-intro">{{item.intro}}</view>
+                <view wx:for="{{item.depts}}" wx:for-item="d" wx:key="name" class="dept-row">
+                  <view class="dept-icon"><image class="ic-md" src="/assets/icons/hospital.png" /></view>
+                  <view class="dept-info">
+                    <view class="dept-name">{{d.name}}</view>
+                    <view class="dept-desc">{{d.intro}}</view>
+                  </view>
+                  <view class="dept-book" data-dept="{{d.name}}" catchtap="onDeptBook">挂号</view>
+                </view>
+                <view class="ai-foot">
+                  <text class="ai-disclaimer">· 内容由AI大模型生成，仅供参考</text>
+                  <view class="ai-fb">
+                    <image class="fb-btn" data-type="down" catchtap="onFeedback" src="{{icons.thumbDown}}" />
+                    <image class="fb-btn" data-type="up" catchtap="onFeedback" src="{{icons.thumbUp}}" />
+                  </view>
+                </view>
+              </view>
+            </block>
+
+            <!-- 已理解回执（NLU 可视化：让用户知道系统"听懂"了什么，可纠错） -->
+            <block wx:elif="{{item.type === 'slots'}}">
+              <view class="slots-card">
+                <image class="ic-xs" src="{{icons.clipboardList}}" />
+                <text class="slots-text">已理解：{{item.slotsText}}</text>
+              </view>
+            </block>
+
+            <!-- 多轮补问（一次只问一个问题，带快捷选项） -->
+            <block wx:elif="{{item.type === 'ask'}}">
+              <view class="ask-card">
+                <view class="ask-q"><image class="ic-sm" src="{{icons.info}}" />{{item.content}}</view>
+                <view class="ask-ops">
+                  <view
+                    wx:for="{{item.options}}"
+                    wx:for-item="opt"
+                    wx:key="*this"
+                    class="ask-opt"
+                    data-v="{{opt}}"
+                    catchtap="onAskOption"
+                  >{{opt}}</view>
+                </view>
+              </view>
+            </block>
+
+            <!-- ============ ④ 结构化结果卡（复刻文档 §2-④）
+                 顶部：分级 badge（左）+ 时间窗口（右）
+                 推荐科室行：浅灰 chip 标签 + 科室大字
+                 判断理由行：浅灰 chip 标签 + 理由列表
+                 按钮组：左「院内路线」描边 + 右「去预约」实心（真实去向，见 JS 注释）
+                 底部：免责声明居中 + 完整报告文字链 + AI 反馈 ============ -->
+            <block wx:elif="{{item.type === 'triage'}}">
+              <view class="tri-card">
+                <view class="tri-head">
+                  <view class="badge {{item.levelCls}} tri-level">{{item.levelText}}</view>
+                  <!-- ⚠️ levelWindow 自带单位（「24 小时内」「1~3 天」「近期」），不能再拼「内」 -->
+                  <view class="tri-window">{{item.levelWindow}}</view>
+                </view>
+
+                <!-- 推荐科室 -->
+                <view class="tri-field">
+                  <view class="tri-chip">推荐科室</view>
+                  <view class="tri-field-body">
+                    <view class="tri-dept-name">{{item.dept}}</view>
+                    <view class="tri-dept-sub" wx:if="{{item.deptFloor || item.deptIntro}}">
+                      <text wx:if="{{item.deptFloor}}">{{item.deptFloor}}</text>
+                      <text wx:if="{{item.deptIntro}}"> · {{item.deptIntro}}</text>
+                    </view>
+                    <view class="tri-conf" wx:if="{{item.confidenceText}}">匹配度：{{item.confidenceText}}</view>
+                  </view>
+                </view>
+
+                <!-- 判断理由 -->
+                <view class="tri-field" wx:if="{{item.reasons.length}}">
+                  <view class="tri-chip">判断理由</view>
+                  <view class="tri-field-body">
+                    <view class="tri-reason" wx:for="{{item.reasons}}" wx:for-item="rr" wx:key="*this">· {{rr}}</view>
+                  </view>
+                </view>
+
+                <view class="tri-alt" wx:if="{{item.alternates}}">其他可能相关：{{item.alternates}}</view>
+                <view class="tri-advice">{{item.levelAdvice}}</view>
+
+                <view class="tri-ops">
+                  <view class="tri-op" wx:if="{{item.navigable}}" data-dept="{{item.dept}}" catchtap="onNavDept">院内路线</view>
+                  <view class="tri-op tri-op-main" data-dept="{{item.dept}}" catchtap="onDeptBook">去预约</view>
+                </view>
+
+                <!-- 底部免责：居中（复刻文档 §2-④）；AI 不可用时如实说明 -->
+                <view class="tri-disc">以上为AI建议，不能替代医生诊断</view>
+                <view class="tri-disc tri-disc-sub" wx:if="{{item.aiFallback}}">本次为本地规则结果（AI 暂不可用）</view>
+                <view class="tri-foot">
+                  <text class="tri-report-link pressable" catchtap="onReport">查看完整报告 ›</text>
+                  <view class="ai-fb">
+                    <image class="fb-btn" data-type="down" catchtap="onFeedback" src="{{icons.thumbDown}}" />
+                    <image class="fb-btn" data-type="up" catchtap="onFeedback" src="{{icons.thumbUp}}" />
+                  </view>
+                </view>
+              </view>
+            </block>
+
+            <!-- 路线询问（结果卡之后：回答「要」→ 直接弹到院内导诊页） -->
+            <block wx:elif="{{item.type === 'navask'}}">
+              <view class="navask-card">
+                <view class="navask-q"><image class="ic-sm" src="{{icons.mapPin}}" />{{item.content}}</view>
+                <view class="navask-ops">
+                  <view class="navask-op navask-op-main" data-dept="{{item.dept}}" catchtap="onNavaskYes">要，带我去</view>
+                  <view class="navask-op" catchtap="onNavaskNo">不用了</view>
+                </view>
+              </view>
+            </block>
+
+            <!-- 急诊预警卡（红旗症状） -->
+            <block wx:elif="{{item.type === 'emergency'}}">
+              <view class="emg-card">
+                <view class="emg-head">
+                  <view class="emg-icon"><image class="ic-md" src="{{icons.alert}}" /></view>
+                  <view class="emg-title">紧急情况：{{item.title}}</view>
+                </view>
+                <view class="emg-action" wx:if="{{item.action}}">{{item.action}}</view>
+                <view class="emg-advice">{{item.advice}}</view>
+                <view class="emg-note" wx:if="{{item.slotsText}}">已采集：{{item.slotsText}}</view>
+                <view class="emg-ops">
+                  <view class="emg-op emg-op-call" catchtap="onCall120">
+                    <image class="ic-sm" src="{{icons.phoneWhite}}" />立即拨打 120
+                  </view>
+                  <view class="emg-op" data-dept="急诊科" catchtap="onNavDept">前往急诊区</view>
+                </view>
+              </view>
+            </block>
+          </view>
+        </view>
+
+        <!-- 时间戳：居中（复刻文档 §2-③） -->
+        <view class="msg-time">{{item.time}}</view>
+      </view>
+
+      <!-- 思考中（同样带 AI 头像，与其它 AI 消息对齐） -->
+      <view wx:if="{{status === 'THINKING'}}" class="msg msg-ai">
+        <view class="msg-row">
+          <view class="msg-avatar"><image class="msg-avatar-ic" src="{{icons.chat}}" /></view>
+          <view class="msg-stack">
+            <view class="thinking-bubble">
+              <view class="spinner"></view>
+              <text class="thinking-text">{{thinkingText}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view id="bottom-anchor" class="anchor"></view>
+    </view>
+  </scroll-view>
+
+  <!-- ============ 症状采集看板（实时显示已采集到的信息 + 主动出结果） ============ -->
+  <view class="collect-bar" wx:if="{{slotsText}}">
+    <view class="collect-info">
+      <image class="ic-xs" src="{{icons.clipboardList}}" />
+      <text class="collect-text">{{slotsText}}</text>
+    </view>
+    <view class="collect-btn" bindtap="onForceResult">生成结果</view>
+  </view>
+
+  <!-- ============ 固定区服务入口（收敛为单个「更多服务」，4 个去向走动作面板） ============ -->
+  <view class="quick-services">
+    <view class="qs-item pressable" bindtap="onServices">
+      <image class="ic-xs" src="{{icons.layoutGrid}}" /> 更多服务
+    </view>
+  </view>
+
+  <!-- ============ ⑥ 橙色警示条（复刻文档 §2-⑥：常驻在输入栏正上方）
+       浅橙底 #FFF4E5 / 深橙字 #CC6600 / 1rpx 橙边，均为 app.wxss 的 .notice-bar-amber 令牌 ============ -->
+  <view class="notice-bar notice-bar-amber ai-note">
+    <image class="notice-bar-ic" src="{{icons.alert}}" />
+    <view class="notice-bar-text">若出现高烧不退、呼吸困难、胸痛等紧急情况，请立即拨打120或前往急诊。</view>
+  </view>
+
+  <!-- ============ ⑦ 底部输入条（复刻文档 §2-⑦：左麦克风 88rpx 圆形 / 中输入框 / 右发送） ============ -->
+  <view class="input-bar safe-bottom">
+    <view class="voice-btn {{recording ? 'voice-btn-on' : ''}}" bindtap="onVoice">
+      <image class="ic-md" src="{{recording ? '/assets/icons/mic_white.png' : icons.mic}}" />
+    </view>
+    <input
+      class="input-field"
+      placeholder="继续描述或补充信息…"
+      placeholder-class="ph"
+      value="{{input}}"
+      bindinput="onInput"
+      confirm-type="send"
+      bindconfirm="onSend"
+      disabled="{{status !== 'IDLE'}}"
+    />
+    <view class="send-fab {{status !== 'IDLE' ? 'send-fab-disabled' : ''}}" bindtap="onSend">
+      <image class="send-icon" src="/assets/icons/send_white.png" />
+    </view>
+  </view>
+
+  <!-- 语音提示 -->
+  <view wx:if="{{voiceHint}}" class="voice-hint">{{voiceHint}}</view>
+
+</view>

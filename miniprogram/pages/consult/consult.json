@@ -1,0 +1,10 @@
+{
+  "navigationStyle": "custom",
+  "navigationBarTitleText": "在线问诊",
+  "backgroundColor": "#F3F8FF",
+  "backgroundTextStyle": "dark",
+  "disableScroll": false,
+  "usingComponents": {
+    "skeleton": "/components/skeleton/skeleton"
+  }
+}

@@ -1,0 +1,127 @@
+<!--
+  pages/doctor/beds —— 床位管理（医生端）
+  版式：design-output/医生端/E-医生端/14-床位管理.png（1391×3014，1rpx ≈ 1.8547px，逐元素实测）
+
+  ① 自定义导航栏（返回 + 居中标题；右侧胶囊由微信自绘）
+  ② 床位统计（总床位 / 占用 / 空闲 / 待消毒）—— 增强项，设计稿无，口径见 README §8.40
+  ③ 病区横滑筛选 —— 增强项，**仅当医生有 ≥2 个授权病区时出现**（单病区时与设计稿一致）
+  ④ 图例：空闲(绿) / 占用(蓝) / 维修中(灰)；床位数据里出现「待消毒」「已预留」时才追加对应图例
+  ⑤ 床位卡（2 列）：空闲=白底绿描边 + 安排入住；占用=蓝色渐变头 + 浅蓝底 + 患者脱敏名；
+     待消毒=浅橙底；维修中=中性灰；已预留=浅蓝渐变
+
+  ⚠️ 状态只认契约英文枚举（BedStatus），中文与配色由 JS 唯一映射，模板不写英文判断。
+  ⚠️ 不伪造：wardName / occupantDisplayName 缺失就不渲染对应文案。
+-->
+<view class="page theme-{{theme}} bd-page" style="padding-top: {{navH}}px;">
+
+  <!-- ① 自定义导航栏（fixed，页面用 padding-top 让位） -->
+  <view class="bd-nav" style="padding-top: {{statusBarHeight}}px;">
+    <view class="bd-nav-bar">
+      <view class="bd-nav-back" bindtap="onBack" hover-class="bd-hover"
+            aria-role="button" aria-label="返回">
+        <image class="bd-nav-back-ic" src="{{icons.chevronLeft}}" />
+      </view>
+      <view class="bd-nav-title">床位管理</view>
+    </view>
+  </view>
+
+  <!-- ② 床位统计（加载中显灰块，失败显弱化灰块；不显 0 冒充真实值） -->
+  <view class="bd-stats">
+    <view wx:for="{{stats}}" wx:key="key" class="bds-col">
+      <view class="bds-label">{{item.label}}</view>
+      <view wx:if="{{loading}}" class="bds-skel"></view>
+      <view wx:elif="{{error}}" class="bds-skel bds-skel-mute"></view>
+      <view wx:else class="bds-v">{{item.value}}</view>
+    </view>
+  </view>
+
+  <!-- ③ 病区筛选：单病区不渲染（保持设计稿版式） -->
+  <scroll-view wx:if="{{wards.length > 1}}" class="bd-wards" scroll-x>
+    <view class="bd-ward {{wardId === '' ? 'bd-ward-on' : ''}}"
+          data-id="" bindtap="onWardTap" aria-role="button">全部病区</view>
+    <view wx:for="{{wards}}" wx:key="id"
+          class="bd-ward {{wardId === item.id ? 'bd-ward-on' : ''}}"
+          data-id="{{item.id}}" bindtap="onWardTap" aria-role="button">{{item.name}}</view>
+  </scroll-view>
+
+  <!-- 加载中 -->
+  <view wx:if="{{loading}}" class="state">
+    <view class="state-badge state-badge-gray"><image class="state-ic" src="{{icons.refreshGray}}" /></view>
+    <view class="state-title">正在加载床位…</view>
+  </view>
+
+  <!-- 加载失败：图标 + 中文说明 + 实心重试按钮 -->
+  <view wx:elif="{{error}}" class="state">
+    <view class="state-badge state-badge-primary"><image class="state-ic" src="{{icons.alertWhite}}" /></view>
+    <view class="state-title">床位信息加载失败</view>
+    <view class="state-sub">{{error}}</view>
+    <view class="btn btn-primary state-btn" bindtap="fetch">重试</view>
+  </view>
+
+  <block wx:elif="{{displayed.length > 0}}">
+    <!-- ④ 图例 -->
+    <view class="bd-legend">
+      <view wx:for="{{legend}}" wx:key="cls" class="bl-item">
+        <view class="bl-dot bl-dot-{{item.cls}}"></view>
+        <text class="bl-text bl-text-{{item.cls}}">{{item.text}}</text>
+      </view>
+    </view>
+
+    <!-- ⑤ 床位卡（2 列） -->
+    <view class="bed-grid">
+      <view wx:for="{{displayed}}" wx:key="id" class="bed-card bed-{{item.cls}}">
+        <view class="bed-top">
+          <view class="bed-no">{{item.no}}</view>
+          <view class="bed-status">{{item.statusText}}</view>
+        </view>
+
+        <!-- 患者脱敏展示名（仅占用/已预留且后端下发时渲染） -->
+        <view wx:if="{{item.patient}}" class="bed-patient">{{item.patient}}</view>
+
+        <!-- 仅空闲床位可「安排入住」（契约 action=ASSIGN + 乐观锁 version） -->
+        <view wx:if="{{item.canAssign}}" class="bed-assign"
+              data-id="{{item.id}}" data-no="{{item.no}}" data-version="{{item.version}}"
+              bindtap="onAssignTap" hover-class="bed-assign-hover"
+              aria-role="button" aria-label="{{item.no}} 安排入住">安排入住</view>
+      </view>
+    </view>
+
+    <view wx:if="{{hasMore}}" class="load-more">上拉加载更多</view>
+    <view wx:else class="load-all">已显示全部 {{displayed.length}} 张床位</view>
+  </block>
+
+  <view wx:else class="state">
+    <view class="state-badge state-badge-gray"><image class="state-ic" src="{{icons.searchGray}}" /></view>
+    <view class="state-title">{{wardId ? '该病区暂无床位' : '暂无床位数据'}}</view>
+    <view class="state-sub">床位信息接入后会显示在这里</view>
+  </view>
+
+  <!-- 安排入住抽屉（AVAILABLE 床位）：patientRef 为内部患者 ID（契约不接受姓名/手机号） -->
+  <view wx:if="{{showAssign}}" class="sheet-mask" bindtap="closeAssign">
+    <view class="sheet assign-sheet" catchtap="noop">
+      <view class="sheet-handle"></view>
+      <view class="sheet-title">安排入住 · {{assignBedNo}}</view>
+
+      <view class="form-row">
+        <view class="form-label">患者内部 ID</view>
+        <input class="form-input" placeholder="请输入 patientRef（内部编号）"
+               value="{{assignPatientRef}}" data-field="assignPatientRef" bindinput="onAssignInput" />
+      </view>
+      <view class="form-row">
+        <view class="form-label">备注（选填）</view>
+        <input class="form-input" placeholder="可填写入院备注"
+               value="{{assignNote}}" data-field="assignNote" bindinput="onAssignInput" />
+      </view>
+
+      <view wx:if="{{assignErr}}" class="form-err">{{assignErr}}</view>
+
+      <view class="sheet-actions">
+        <view class="btn btn-ghost" bindtap="closeAssign">取消</view>
+        <view class="btn btn-primary {{assigning ? 'btn-loading' : ''}}" bindtap="confirmAssign">
+          {{assigning ? '提交中…' : '确认入住'}}
+        </view>
+      </view>
+    </view>
+  </view>
+
+</view>

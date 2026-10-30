@@ -1,0 +1,114 @@
+<!--
+  pages/profile/profile.wxml —— 患者端「我的 / 个人中心」（TabBar 页）
+
+  版式逐项对照 design-output/患者端/07-个人中心.png 与「页面复刻文档」§四.6：
+    ① 用户信息头区：左侧 128rpx 圆形头像（浅灰底 + 灰色人形剪影占位）+ 姓名 44rpx/700
+       + 状态「已登录 · 健康档案已同步」24rpx 灰蓝 + 右上「就诊人管理 ›」浅蓝胶囊
+    ② 主功能列表卡（白卡 5 行）：健康档案 / 我的预约 / 我的问诊（右上未读小圆点）/ 报告查询 / 就诊人管理
+       —— 每行：蓝色线性图标 + 标题 + 右箭头；行高 ~92rpx；分割线**从文字左边缘起，到卡片右边缘止**
+    ③ 通用卡片：卡片内顶部浅灰分组标题条「通用」+ 消息通知 / 隐私设置 / 账号安全
+    ④ 协议卡片：用户协议 / 隐私政策
+    ⑤ 底部版本号：居中弱文字色
+
+  ⚠️ 默认头像不用 assets/img/avatar-default.png（蓝底白人形，与本页设计稿的「浅灰底 + 灰色线性人形占位」
+     不符），改取 utils 图标表里的 userGray 字形（线性风格，与设计稿同一画法）并压到 0.62 不透明度；
+     有真实头像时仍渲染 <image> 覆盖占位。
+  ⚠️ 设计稿没有的入口，本页不新增；设计稿里有但暂无落地页的两行（消息通知 / 账号安全）显式降级为提示。
+-->
+<view class="page theme-{{theme}} pf-page">
+
+  <!-- ============ ① 用户信息头区（无卡片外壳：落在页底淡蓝渐变上）============ -->
+  <view class="pf-hero anim-rise">
+    <view class="pf-avatar pressable" bindtap="goPersonalInfo" aria-role="button" aria-label="编辑个人信息">
+      <image wx:if="{{user.avatarUrl}}" class="pf-avatar-img" src="{{user.avatarUrl}}" mode="aspectFill" />
+      <image wx:else class="pf-avatar-ph" src="{{icons.userGray}}" mode="aspectFit" />
+    </view>
+
+    <view class="pf-info">
+      <view class="hero-title-lg pf-name">{{user.name}}</view>
+      <view class="pf-meta">{{user.metaText}}</view>
+    </view>
+
+    <view class="pf-patient-capsule pressable" bindtap="goFamily" aria-role="button" aria-label="就诊人管理">
+      <text>就诊人管理</text>
+      <image class="pf-capsule-arrow" src="{{icons.chevronRight}}" />
+    </view>
+  </view>
+
+  <!-- ============ ② 主功能列表（白卡 5 行）============ -->
+  <view class="card pf-card anim-rise anim-d1">
+    <view class="li-row pressable" bindtap="goHealthRecords">
+      <image class="pf-row-ic" src="{{icons.archive}}" />
+      <view class="li-text"><view class="li-t">健康档案</view></view>
+      <image class="li-arrow" src="{{icons.chevronRight}}" />
+    </view>
+    <view class="li-row pressable" bindtap="goRecords">
+      <image class="pf-row-ic" src="{{icons.calendar}}" />
+      <view class="li-text"><view class="li-t">我的预约</view></view>
+      <image class="li-arrow" src="{{icons.chevronRight}}" />
+    </view>
+    <!-- 我的问诊：未读小圆点在**箭头右上方**（设计稿位置），不是与箭头同排。
+         ⚠️ 只在真有「未结束的问诊」时出现，不做静态假红点（见 profile.js#_loadBadges） -->
+    <view class="li-row pressable pf-row-dot" bindtap="goConsultations">
+      <image class="pf-row-ic" src="{{icons.chat}}" />
+      <view class="li-text"><view class="li-t">我的问诊</view></view>
+      <view wx:if="{{unread}}" class="pf-unread"></view>
+      <image class="li-arrow" src="{{icons.chevronRight}}" />
+    </view>
+    <view class="li-row pressable" bindtap="goHealthRecords">
+      <image class="pf-row-ic" src="{{icons.fileText}}" />
+      <view class="li-text"><view class="li-t">报告查询</view></view>
+      <image class="li-arrow" src="{{icons.chevronRight}}" />
+    </view>
+    <view class="li-row pressable" bindtap="goFamily">
+      <image class="pf-row-ic" src="{{icons.users}}" />
+      <view class="li-text"><view class="li-t">就诊人管理</view></view>
+      <image class="li-arrow" src="{{icons.chevronRight}}" />
+    </view>
+  </view>
+
+  <!-- ============ ③ 通用（分组标题条在**卡片内顶部**，不是卡外浮动小字）============ -->
+  <view class="card pf-card pf-group anim-rise anim-d3">
+    <view class="group-head">通用</view>
+    <view class="li-row pressable" bindtap="onTodo">
+      <image class="pf-row-ic" src="{{icons.bell}}" />
+      <view class="li-text"><view class="li-t">消息通知</view></view>
+      <image class="li-arrow" src="{{icons.chevronRight}}" />
+    </view>
+    <view class="li-row pressable" bindtap="goSettings">
+      <image class="pf-row-ic" src="{{icons.lock}}" />
+      <view class="li-text"><view class="li-t">系统设置</view></view>
+      <image class="li-arrow" src="{{icons.chevronRight}}" />
+    </view>
+    <view class="li-row pressable" bindtap="onTodo">
+      <image class="pf-row-ic" src="{{icons.shield}}" />
+      <view class="li-text"><view class="li-t">账号安全</view></view>
+      <image class="li-arrow" src="{{icons.chevronRight}}" />
+    </view>
+  </view>
+
+  <!-- ============ ④ 协议（白卡 2 行）============ -->
+  <view class="card pf-card anim-rise anim-d4">
+    <view class="li-row pressable" bindtap="goAgreement">
+      <image class="pf-row-ic" src="{{icons.fileText}}" />
+      <view class="li-text"><view class="li-t">用户协议</view></view>
+      <image class="li-arrow" src="{{icons.chevronRight}}" />
+    </view>
+    <view class="li-row pressable" bindtap="goPrivacy">
+      <image class="pf-row-ic" src="{{icons.shield}}" />
+      <view class="li-text"><view class="li-t">隐私政策</view></view>
+      <image class="li-arrow" src="{{icons.chevronRight}}" />
+    </view>
+  </view>
+
+  <!-- 退出登录：设计稿 07 未画此入口，但它是当前**唯一的登出路径**
+       （账号安全页未落地，若删掉用户无路可退）。保持低调的浅蓝按钮形态，见「偏离说明」。 -->
+  <view class="btn btn-ghost logout-btn pressable anim-rise anim-d4" bindtap="onLogout" aria-role="button">
+    <image class="logout-ic" src="{{icons.logout}}" />
+    <text>退出登录</text>
+  </view>
+
+  <!-- ============ ⑤ 底部版本号（居中弱文字色；取真实版本，不硬编码）============ -->
+  <view class="pf-version anim-rise anim-d4">版本 {{appVersion}}</view>
+
+</view>

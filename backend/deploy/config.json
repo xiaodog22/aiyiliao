@@ -1,0 +1,61 @@
+{
+  "ports": { "gateway": 8080, "business": 8088, "ai": 8001 },
+  "upstreams": { "business": "http://127.0.0.1:8088", "ai": "http://127.0.0.1:8001" },
+  "proxyTimeoutSeconds": 220,
+  "probeTimeoutSeconds": 2,
+  "healthTimeoutSeconds": 90,
+  "rateLimit": { "enabled": false, "perMinute": 300, "windowSeconds": 60 },
+  "cors": { "enabled": false, "allowOrigins": [] },
+  "assets": { "dir": "backend/deploy/resources" },
+  "compat": { "legacyLoginEnabled": false },
+  "pipIndexUrl": "https://pypi.tuna.tsinghua.edu.cn/simple",
+  "mysql": { "host": "127.0.0.1", "port": 3306 },
+  "services": [
+    {
+      "name": "business",
+      "label": "业务服务 business-service (Spring Boot)",
+      "dir": "backend/business-service",
+      "runtime": "java",
+      "portKey": "business",
+      "start": { "exe": "cmd", "args": ["/c", "mvnw.cmd spring-boot:run"] },
+      "startJar": { "args": ["-jar", "{jar}"] },
+      "healthUrl": "http://127.0.0.1:8088/actuator/health",
+      "healthContains": "\"UP\""
+    },
+    {
+      "name": "ai",
+      "label": "AI 服务 ai-service (FastAPI)",
+      "dir": "backend/ai-service",
+      "runtime": "python",
+      "portKey": "ai",
+      "venvPython": ".venv/Scripts/python.exe",
+      "start": {
+        "exe": "{venvPython}",
+        "args": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8001"]
+      },
+      "healthUrl": "http://127.0.0.1:8001/internal/health/live",
+      "healthContains": "\"status\"",
+      "setup": { "requirements": "requirements.txt" }
+    },
+    {
+      "name": "gateway",
+      "label": "统一网关 edge-gateway (FastAPI)",
+      "dir": "backend/edge-gateway",
+      "runtime": "python",
+      "portKey": "gateway",
+      "venvPython": ".venv/Scripts/python.exe",
+      "start": {
+        "exe": "{venvPython}",
+        "args": ["-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+      },
+      "healthUrl": "http://127.0.0.1:8080/api/gw/health",
+      "healthContains": null,
+      "healthAcceptStatus": [200, 503],
+      "setup": { "requirements": "requirements.txt" }
+    }
+  ],
+  "smoke": [
+    { "name": "网关健康", "url": "http://127.0.0.1:8080/api/gw/health", "headers": {} },
+    { "name": "网关路由表", "url": "http://127.0.0.1:8080/api/gw/routes", "headers": { "Authorization": "Bearer smoke" } }
+  ]
+}

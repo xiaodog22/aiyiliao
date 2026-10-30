@@ -1,0 +1,127 @@
+<!-- 科普详情（设计稿 18 图文 / 19 视频）：同一页面按 type 分支承载两种版式
+     ⚠️ navigationStyle=custom（detail.json）：设计稿 18 的导航栏右侧是「收藏 + 分享」，
+        原生导航栏放不进自定义按钮，故自绘（与 triage/workbench/consultation 同范式）。
+     ⚠️ 根节点内联 padding-top: navH —— 吸顶导航栏不占流，内容必须自己让位。 -->
+<view class="page theme-{{theme}} dp-page" style="padding-top: {{navH}}px;">
+
+  <!-- ① 自定义导航栏（吸顶）：返回 + 居中标题 + 收藏 + 分享 -->
+  <view class="dp-nav" style="padding-top: {{statusBarHeight}}px;">
+    <view class="dp-nav-bar">
+      <view class="dp-nav-left" bindtap="onBack">
+        <image class="dp-nav-back" src="/assets/icons/chevronLeft.png" />
+      </view>
+      <view class="dp-nav-title">{{item && item.type === 'video' ? '视频科普' : '健康科普'}}</view>
+      <view class="dp-nav-right">
+        <view class="dp-nav-btn" bindtap="onToggleStar">
+          <image class="dp-nav-ic" src="{{starred ? icons.star : icons.starGray}}" />
+        </view>
+        <!-- 分享必须走 open-type=share（普通 view 触发不了微信分享面板） -->
+        <button class="dp-nav-btn dp-nav-share" open-type="share" hover-class="none">
+          <image class="dp-nav-ic" src="{{icons.shareGray}}" />
+        </button>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{missing}}" class="empty">内容不存在或已下架</view>
+
+  <block wx:else>
+
+    <!-- ② 视频：通栏黑底播放器（设计稿 19：播放器贴边、黑底 letterbox） -->
+    <block wx:if="{{item.type === 'video'}}">
+      <view class="dp-video-wrap">
+        <!-- src/poster 由 detail.js 解析：远端签名 URL 优先，失败回退分包内 mp4 -->
+        <video class="dp-video" src="{{item.videoSrc}}" poster="{{item.posterSrc}}"
+               object-fit="contain" show-center-play-btn="{{true}}"
+               enable-play-gesture="{{true}}" show-fullscreen-btn="{{true}}"
+               binderror="onVideoError" />
+      </view>
+      <view wx:if="{{videoErr}}" class="dp-video-err">
+        视频加载失败，请稍后重试；需要现场指导可到护士站咨询。
+      </view>
+
+      <!-- 白卡：标题 / 分类 + 元信息 / 摘要 -->
+      <view class="dp-card">
+        <view class="dp-title">{{item.title}}</view>
+        <view class="dp-meta">
+          <view class="dp-chip">{{item.category}}</view>
+          <text class="dp-meta-t">{{item.metaLine}}</text>
+        </view>
+        <view class="dp-summary">{{item.summary}}</view>
+      </view>
+    </block>
+
+    <!-- ③ 图文：标题 → 元信息 → 通栏封面 → 分节正文（设计稿 18 的实际读序） -->
+    <block wx:else>
+      <view class="dp-head">
+        <view class="dp-title">{{item.title}}</view>
+        <view class="dp-meta">
+          <view class="dp-chip">{{item.category}}</view>
+          <text class="dp-meta-t">{{item.metaLine}}</text>
+        </view>
+      </view>
+
+      <!-- cover 缺省时整块不渲染（不塞占位图、不留空框）；widthFix 不裁切插画主体 -->
+      <view wx:if="{{item.hero || item.cover}}" class="dp-hero">
+        <image class="dp-hero-img" src="{{item.hero || item.cover}}" mode="widthFix" />
+      </view>
+
+      <view class="dp-sec" wx:for="{{item.sections}}" wx:for-item="sec" wx:key="h">
+        <view class="dp-sec-h">{{sec.h}}</view>
+        <view class="dp-sec-p" wx:for="{{sec.p}}" wx:for-item="para" wx:key="*this">{{para}}</view>
+      </view>
+
+      <!-- 小贴士（设计稿 18：浅蓝底圆角块 + 图标 + 一句话）。
+           设计稿把它插在第二、三节之间；这里放正文末尾 —— 不按节数硬编码位置。 -->
+      <view wx:if="{{item.tip}}" class="dp-tip">
+        <image class="dp-tip-ic" src="{{icons.sparkles}}" />
+        <text class="dp-tip-t">小贴士：{{item.tip}}</text>
+      </view>
+    </block>
+
+    <!-- ④ 观看提示（仅视频有 tips 数据；图文用 sections 承载正文，不再重复 keyPoints） -->
+    <view wx:if="{{item.type === 'video' && tipList.length > 0}}" class="dp-tip dp-tip-video">
+      <image class="dp-tip-ic" src="{{icons.sparkles}}" />
+      <view class="dp-tip-body">
+        <view class="dp-tip-h">观看提示</view>
+        <view class="dp-tip-i" wx:for="{{tipList}}" wx:for-item="tp" wx:key="*this">{{tp}}</view>
+      </view>
+    </view>
+
+    <!-- ⑤ 相关推荐：同分类的其他科普（设计稿 19：区块标题 + 两列卡片） -->
+    <view wx:if="{{related.length > 0}}" class="dp-rel">
+      <view class="dp-rel-h">相关推荐</view>
+      <view class="dp-rel-grid">
+        <view wx:for="{{related}}" wx:for-item="rel" wx:key="id" class="dp-rel-card pressable"
+              data-id="{{rel.id}}" bindtap="goRelated">
+          <view class="dp-rel-cover">
+            <image wx:if="{{rel.cover}}" class="dp-rel-img" src="{{rel.cover}}" mode="aspectFill" />
+            <view wx:else class="dp-rel-art"><image class="dp-rel-ic" src="{{rel.iconPath}}" /></view>
+          </view>
+          <view class="dp-rel-t">{{rel.title}}</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="dp-note">{{disclaimer}}</view>
+
+  </block>
+
+  <!-- ⑥ 底部互动栏（固定）：点赞 / 收藏 / 分享（设计稿未画，按复刻要求补；
+         分享按钮同样必须 button open-type=share） -->
+  <view wx:if="{{!missing}}" class="dp-bar">
+    <view class="dp-bar-i {{liked ? 'dp-bar-on' : ''}}" bindtap="onToggleLike">
+      <image class="dp-bar-ic" src="{{liked ? icons.thumbUp : icons.thumbUpGray}}" />
+      <text class="dp-bar-t">{{liked ? '已点赞' : '点赞'}}</text>
+    </view>
+    <view class="dp-bar-i {{starred ? 'dp-bar-on-star' : ''}}" bindtap="onToggleStar">
+      <image class="dp-bar-ic" src="{{starred ? icons.star : icons.starGray}}" />
+      <text class="dp-bar-t">{{starred ? '已收藏' : '收藏'}}</text>
+    </view>
+    <button class="dp-bar-i dp-bar-share" open-type="share" hover-class="none">
+      <image class="dp-bar-ic" src="{{icons.shareGray}}" />
+      <text class="dp-bar-t">分享</text>
+    </button>
+  </view>
+
+</view>

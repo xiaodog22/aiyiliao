@@ -1,0 +1,10 @@
+{
+  "navigationBarTitleText": "健康档案",
+  "navigationBarBackgroundColor": "#FFFFFF",
+  "navigationBarTextStyle": "black",
+  "backgroundColor": "#F3F8FF",
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "skeleton": "/components/skeleton/skeleton"
+  }
+}

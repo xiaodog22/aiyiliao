@@ -1,0 +1,212 @@
+/* pages/consult/picker —— 选择医生（在线问诊发起） */
+
+.cp-page {
+  min-height: 100vh;
+  background: #f5f7fa;
+}
+
+/* 导航栏 */
+.cp-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: #fff;
+  border-bottom: 1rpx solid #eef0f3;
+}
+.cp-nav-bar {
+  position: relative;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+}
+.cp-nav-back-wrap {
+  position: absolute;
+  left: 8rpx;
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cp-nav-back {
+  width: 44rpx;
+  height: 44rpx;
+}
+.cp-nav-title {
+  flex: 1;
+  text-align: center;
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #17233d;
+}
+.cp-nav-hover { opacity: 0.6; }
+
+/* 状态 */
+.cp-state {
+  padding: 120rpx 48rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.cp-state-badge {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 48rpx;
+  background: #0b6ef8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 28rpx;
+}
+.cp-state-ic { width: 48rpx; height: 48rpx; }
+.cp-state-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #17233d;
+  margin-bottom: 12rpx;
+}
+.cp-state-sub {
+  font-size: 28rpx;
+  color: #86909c;
+  text-align: center;
+  line-height: 1.6;
+  margin-bottom: 32rpx;
+}
+.cp-state-inline { padding: 80rpx 48rpx; }
+.cp-btn {
+  min-width: 240rpx;
+  height: 88rpx;
+  border-radius: 44rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30rpx;
+}
+.cp-btn-primary { background: #0b6ef8; color: #fff; }
+.cp-state-btn { margin-top: 8rpx; }
+
+/* 科室筛选 */
+.cp-depts {
+  background: #fff;
+  padding: 20rpx 0 8rpx;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.cp-depts-scroll { white-space: nowrap; }
+.cp-depts-row { display: inline-flex; padding: 0 24rpx; }
+.cp-dept {
+  height: 64rpx;
+  line-height: 64rpx;
+  padding: 0 32rpx;
+  margin-right: 20rpx;
+  border-radius: 32rpx;
+  font-size: 28rpx;
+  color: #4e5969;
+  background: #f2f3f5;
+}
+.cp-dept-on {
+  background: #0b6ef8;
+  color: #fff;
+  font-weight: 600;
+}
+
+/* 医生列表 */
+.cp-list { padding: 16rpx 24rpx 160rpx; }
+.cp-doc {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 28rpx 24rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 2rpx 12rpx rgba(23, 35, 61, 0.05);
+}
+.cp-doc-hover { opacity: 0.85; }
+.cp-doc-face {
+  width: 104rpx;
+  height: 104rpx;
+  border-radius: 52rpx;
+  background: #e8f1fe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 24rpx;
+  flex-shrink: 0;
+}
+.cp-doc-face-ic { width: 56rpx; height: 56rpx; opacity: 0.75; }
+.cp-doc-body { flex: 1; min-width: 0; }
+.cp-doc-top {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8rpx;
+}
+.cp-doc-name {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #17233d;
+  max-width: 320rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-doc-chip {
+  margin-left: 16rpx;
+  font-size: 22rpx;
+  color: #0b6ef8;
+  background: #e8f1fe;
+  border-radius: 8rpx;
+  padding: 4rpx 12rpx;
+  flex-shrink: 0;
+}
+.cp-doc-sub {
+  font-size: 26rpx;
+  color: #86909c;
+  margin-bottom: 6rpx;
+}
+.cp-doc-spec {
+  font-size: 24rpx;
+  color: #4e5969;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-doc-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: 16rpx;
+  flex-shrink: 0;
+}
+.cp-doc-slot {
+  font-size: 22rpx;
+  color: #00b42a;
+  margin-bottom: 8rpx;
+}
+.cp-doc-pick {
+  font-size: 26rpx;
+  color: #0b6ef8;
+  font-weight: 600;
+}
+
+/* 底部：不指定医生 */
+.cp-foot {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 104rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border-top: 1rpx solid #eef0f3;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.cp-foot-t {
+  font-size: 28rpx;
+  color: #0b6ef8;
+  font-weight: 600;
+}

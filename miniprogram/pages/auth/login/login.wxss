@@ -1,0 +1,354 @@
+/* ============================================================================
+   pages/auth/login —— 登录主界面（患者端 A-认证 01-登录页）
+   逐项尺寸取自设计稿 1391×3014（750rpx 宽，1rpx = 1.8547px）实测；
+   色彩只引用 app.wxss 令牌（--primary / --accent / --bg / --card / --text-*），
+   仅"语义白"与"叠加 rgba"出现字面色值。字体/圆角/按钮高度跟 --font-* / --radius-* / --btn-height。
+   ⚠️ 本页不复用 auth-common.wxss（患者/医生手输页仍用它），避免改一处影响三页。
+   ⚠️ 尺寸口径：手机档写 rpx；文件末尾的 ≥600px 断点把**每一处**硬编码 rpx 折成 px（÷2），
+      与前六页同一口径。改样式后请用脚本核对断点覆盖（勿只改基础段）。
+   （注：注释里刻意不写 media 关键字，避免外部构建脚本按关键字切块时误伤本文件。）
+   ============================================================================ */
+
+/* ============ 页面骨架 + 全页深蓝渐变 ============
+   设计实测（x=20 纵向采样）：顶部 #1368E5 ≈ --primary；卡片上沿附近 #237FEE ≈ --accent；
+   卡片下沿以深的侧边只剩 #9CC7FA，底部 #F0F3FA ≈ --bg —— 即"蓝 → 浅蓝 → 白"三段，
+   且右下角更亮（y=1700 左侧 #338BEF vs 右侧 #61ADFB），故用「右下白色柔光 + 纵向白色渐显」
+   两层叠加在「--primary → --accent」基础渐变之上，同时满足规范里的 #0B6EF8 → #3E8CFF 基调。 */
+.lg-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background-color: var(--primary);
+  background-image:
+    /* 右下柔光：还原设计稿右下更亮的走向 */
+    radial-gradient(120% 70% at 104% 74%, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0) 72%),
+    /* 纵向白色渐显：卡片上沿 54% 起抬亮，80% 近白（此时已被白卡盖住，只在两侧窄边可见） */
+    linear-gradient(180deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0) 54%,
+      rgba(255, 255, 255, 0.62) 68%,
+      rgba(255, 255, 255, 0.92) 80%,
+      var(--bg) 92%),
+    /* 基础品牌渐变（规范 §一：--primary → --accent） */
+    linear-gradient(180deg, var(--primary) 0%, var(--accent) 62%);
+}
+
+/* ============ ② 品牌区 ============
+   设计实测：标题字面顶端 274rpx（含状态栏/胶囊区），左边距 50rpx。
+   取 padding-top 256rpx（= 状态栏 88rpx + 胶囊行 88rpx + 80rpx 视觉留白）后，
+   108rpx/1.2 行高的一半行距正好把字面落到 274rpx 附近。 */
+.lg-sky {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  padding: 256rpx 48rpx 0;
+  box-sizing: border-box;
+}
+
+.lg-head {
+  position: relative;
+  z-index: 1;
+}
+
+/* 大标题：设计实测字距 = 196.7px/字 = 106rpx，取 108rpx；字重 900，纯白 */
+.lg-title {
+  font-size: 108rpx;
+  font-weight: 900;
+  color: #FFFFFF;
+  line-height: 1.2;
+  letter-spacing: 1rpx;
+  text-shadow: 0 2rpx 12rpx rgba(3, 48, 130, 0.18);
+}
+
+/* 副标题：设计实测字距 95px = 51rpx，取 52rpx；白色 92%（设计实测比标题更柔）
+   ⚠️ 上边距 32rpx（设计稿字面间距 52rpx，因标题按"字宽"取 108rpx 而设计稿是窄体字面更高，
+      故这里多补 12rpx，使副标题字面仍落在设计实测的 434rpx 位置）。 */
+.lg-slogan {
+  margin-top: 32rpx;
+  font-size: 52rpx;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.92);
+  line-height: 1.4;
+  letter-spacing: 1rpx;
+}
+
+/* ---- 装饰层：不承载信息、不参与点击 ---- */
+.lg-deco {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+/* 心电图折线：设计实测基线在卡片上沿上方 136rpx（= 距品牌区底部 40 + 盒内 96），
+   折线形态按实测采样点重建（小凸 → 小凹 → 高压尖峰 → 深谷 → 小凸 → 基线）。
+   颜色：设计实测线心 ≈ #4EAFFF（青蓝），用 rgba 叠加实现，不引入新字面色值。 */
+.lg-ecg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 40rpx;
+  height: 300rpx;
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  background-size: 100% 100%;
+  background-image: url("data:image/svg+xml;charset=utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20750%20300'%20preserveAspectRatio='none'%3E%3Cpolyline%20points='0,204%2060,204%2072,176%2084,216%2096,208%20104,150%20120,99%20128,140%20136,205%20146,268%20152,277%20162,220%20176,185%20190,204%20750,204'%20fill='none'%20stroke='rgba(120,205,255,0.85)'%20stroke-width='4'%20stroke-linecap='round'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* 白色描边十字：设计实测 31rpx 见方，左低右高（左 543rpx / 右 472rpx，非对称） */
+.lg-cross {
+  position: absolute;
+  width: 32rpx;
+  height: 32rpx;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% 100%;
+  background-image: url("data:image/svg+xml;charset=utf8,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Cpath%20d='M37%206H63V37H94V63H63V94H37V63H6V37H37Z'%20fill='none'%20stroke='%23FFFFFF'%20stroke-width='9'%20stroke-linejoin='round'/%3E%3C/svg%3E");
+  opacity: 0.8;
+}
+
+.lg-cross-l { left: 29rpx; top: 543rpx; }
+
+.lg-cross-r {
+  right: 31rpx;
+  top: 472rpx;
+  opacity: 0.7;
+}
+
+/* 机器人「小安」：设计实测宽 348rpx（高按素材 720×911 等比 = 440rpx）、右内边距 31rpx、
+   底边压到卡片上沿之下 90rpx（腿被白卡截断）。
+   ⚠️ 高度用 vh 而非固定 rpx：812pt 参考机型上 27vh = 440rpx 完全一致，
+      换成 vh 后小屏（如 568pt）插画同比缩小，不会顶到标题 —— 历史上这里出过顶字缺陷。 */
+.lg-art {
+  position: absolute;
+  right: 31rpx;
+  bottom: -90rpx;
+  width: 21.3vh;
+  height: 27vh;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* 对话气泡：设计实测 270×79rpx，左内边距 164rpx、底边距卡片上沿 218rpx；
+   圆角实测 ≈26rpx（取 24rpx），右下角切平并接一个指向右下的尖尾巴。 */
+.lg-bubble {
+  position: absolute;
+  left: 164rpx;
+  bottom: 13.4vh;
+  padding: 20rpx 26rpx;
+  background: var(--card);
+  color: var(--primary-dark);
+  font-size: calc(var(--font-body) + 2rpx);
+  font-weight: 600;
+  line-height: 1.2;
+  border-radius: 24rpx 24rpx 0 24rpx;
+  box-shadow: 0 8rpx 24rpx rgba(7, 68, 160, 0.18);
+  white-space: nowrap;
+  /* 气泡压在插画之上（设计稿里气泡挡住机器人头部左缘）；卡片 z-index 2 仍在两者之上 */
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* 气泡尾巴：顶边贴气泡底边、尖角指向右下（border-top + border-left 拼直角三角形） */
+.lg-bubble::after {
+  content: '';
+  position: absolute;
+  right: 20rpx;
+  bottom: -16rpx;
+  width: 0;
+  height: 0;
+  border-top: 16rpx solid var(--card);
+  border-left: 24rpx solid transparent;
+}
+
+/* ============ ④ 登录卡 ============
+   设计实测：卡片左右内边距 24rpx、圆角 ≈31rpx（= --radius-lg 32rpx）、
+   顶 96rpx / 左右 56rpx / 底 84rpx 内边距；卡片底边距屏底 62rpx（≈ 安全区高度）。 */
+.lg-card {
+  position: relative;
+  z-index: 2;
+  margin: 0 24rpx 62rpx;
+  /* 设计实测底边距 62rpx（比 iPhone X 安全区 68rpx 略小，仍高过 home indicator）。
+     第二行只在"安全区比 62rpx 还大"的机型上抬高卡片；老 webview 不认 max() 时整行丢弃 →
+     保留上面的 62rpx，不会贴底。 */
+  margin-bottom: max(62rpx, env(safe-area-inset-bottom));
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  padding: 96rpx 56rpx 84rpx;
+  box-shadow: 0 -8rpx 32rpx rgba(7, 68, 160, 0.16);
+}
+
+/* 「欢迎登录」：设计实测字距 103px = 55.5rpx → 56rpx，字重 700，--text-main */
+.lg-welcome {
+  margin-bottom: 104rpx;
+  text-align: center;
+  font-size: 56rpx;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.3;
+}
+
+/* 药丸按钮：设计实测 592×99rpx、左右内缩 55rpx（卡片内边距）、圆角全圆，
+   主按钮实心 --primary、次按钮 2rpx 描边（.btn-outline 已是 2rpx，无需覆盖）。 */
+.lg-btn {
+  width: 100%;
+  height: 99rpx;
+  border-radius: 999rpx;
+  font-size: var(--font-title);
+  font-weight: 600;
+  padding: 0;
+}
+
+.lg-btn + .lg-btn { margin-top: 44rpx; }
+
+/* 微信 button 默认 ::after 边框会与外层描边重叠，去掉（.btn 已含，这里再兜底一次） */
+.lg-btn::after { border: none; }
+
+/* 协议行：设计实测整行居中、宽 555rpx、字号 26rpx；灰色说明 + 两个蓝色链接，间距 24rpx */
+.lg-agree {
+  margin-top: 54rpx;
+  text-align: center;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+
+.lg-link {
+  margin-left: 24rpx;
+  color: var(--primary);
+}
+
+/* =====================================================================
+   矮屏机（屏高 ≤800px：iPhone SE/8 类 667、常见安卓 640~780）：
+   设计稿是 812pt 参考机的固定构图 —— 品牌区（顶部固定）+ 插画（贴卡片底部），
+   屏一矮两者就会相撞（真机目检确认会压住标题）。此档整体收窄品牌区 + 同比缩小插画，
+   让"标题—标语—气泡—机器人"四层仍按序排开；内容不变，只改尺寸。
+   ⚠️ 本块必须在 ≥600px 块**之前**：宽屏矮屏（如 1024×768 平板）应走平板档的 px 口径。
+   ===================================================================== */
+@media (max-height: 800px) {
+  .lg-sky { padding-top: 15.5vh; }
+
+  .lg-title { font-size: 88rpx; }
+  .lg-slogan { margin-top: 16rpx; font-size: calc(var(--font-title) + 2rpx); }
+
+  .lg-cross-l { top: 420rpx; }
+  .lg-cross-r { top: 330rpx; }
+
+  .lg-ecg { bottom: 24rpx; height: 220rpx; }
+
+  .lg-art {
+    right: 24rpx;
+    bottom: -40rpx;
+    width: 12.6vh;
+    height: 16vh;
+  }
+
+  .lg-bubble {
+    left: 324rpx;
+    bottom: 7.5vh;
+    padding: 12rpx 20rpx;
+    font-size: calc(var(--font-caption) + 2rpx);
+    border-radius: 20rpx 20rpx 0 20rpx;
+  }
+
+  .lg-bubble::after {
+    right: 16rpx;
+    bottom: -14rpx;
+    border-top: 14rpx solid var(--card);
+    border-left: 20rpx solid transparent;
+  }
+}
+
+/* =====================================================================
+   平板档（≥600px）：本页所有硬编码 rpx 折成 px（÷2），与前六页同一口径；
+   版式收成一列居中的 375px 宽栏（= 750rpx 设计宽 ÷2），渐变的通栏观感不变。
+   ⚠️ 已删除原有的「横屏左右分栏」分支：小程序默认竖屏（app.json 无 pageOrientation），
+      且分栏版式与设计稿无关，改为一列居中后各宽度表现一致。
+   ===================================================================== */
+@media (min-width: 600px) {
+  .lg-sky {
+    max-width: 375px;
+    margin: 0 auto;
+    padding: 128px 24px 0;
+  }
+
+  .lg-title {
+    font-size: 54px;
+    letter-spacing: 0.5px;
+    text-shadow: 0 1px 6px rgba(3, 48, 130, 0.18);
+  }
+
+  .lg-slogan {
+    margin-top: 16px;
+    font-size: 26px;
+    letter-spacing: 0.5px;
+  }
+
+  .lg-ecg { bottom: 20px; height: 150px; }
+
+  .lg-cross { width: 16px; height: 16px; }
+  .lg-cross-l { left: 15px; top: 272px; }
+  .lg-cross-r { right: 15px; top: 236px; }
+
+  .lg-art { right: 15px; bottom: -45px; width: 174px; height: 220px; }
+
+  .lg-bubble {
+    left: 82px;
+    bottom: 109px;
+    padding: 10px 13px;
+    font-size: 16px;
+    border-radius: 12px 12px 0 12px;
+    box-shadow: 0 4px 12px rgba(7, 68, 160, 0.18);
+  }
+
+  .lg-bubble::after {
+    right: 10px;
+    bottom: -8px;
+    border-top: 8px solid var(--card);
+    border-left: 12px solid transparent;
+  }
+
+  .lg-card {
+    max-width: 351px;
+    margin: 0 auto 31px;
+    margin-bottom: max(31px, env(safe-area-inset-bottom));
+    padding: 48px 28px 42px;
+    box-shadow: 0 -4px 16px rgba(7, 68, 160, 0.16);
+  }
+
+  .lg-welcome { margin-bottom: 52px; font-size: 28px; }
+
+  .lg-btn { height: 50px; font-size: 20px; }
+  .lg-btn + .lg-btn { margin-top: 22px; }
+
+  .lg-agree { margin-top: 27px; font-size: 13px; }
+  .lg-link { margin-left: 12px; }
+}
+
+/* =====================================================================
+   平板 + 矮屏（≥600px 且屏高 ≤820px，典型 1024×768 / 1280×800 横放）：
+   一列居中的版式在纵向空间不足时，插画会顶到副标题，此档把品牌区与插画再收一档，
+   卡片仍完整落在视口内（不产生滚动）。
+   ===================================================================== */
+@media (min-width: 600px) and (max-height: 820px) {
+  .lg-sky { padding-top: 96px; }
+
+  .lg-title { font-size: 46px; }
+  .lg-slogan { margin-top: 10px; font-size: 22px; }
+
+  .lg-cross-l { top: 200px; }
+  .lg-cross-r { top: 168px; }
+  .lg-ecg { bottom: 16px; height: 120px; }
+
+  .lg-art { right: 12px; bottom: -34px; width: 134px; height: 170px; }
+
+  .lg-bubble {
+    left: 103px;
+    bottom: 84px;
+    padding: 8px 11px;
+    font-size: 14px;
+  }
+}

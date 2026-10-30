@@ -1,0 +1,197 @@
+server:
+  port: ${SERVER_PORT:8088}
+
+spring:
+  application:
+    name: business-service
+  profiles:
+    # ⚠️ 2026-10-29 安全默认（后端 P0 加固第一道）：
+    #   原为 `default: dev` —— 任何未显式指定档位的部署都会装配 DevWechatSessionProvider，
+    #   经内网穿透暴露时等于「任何人 curl code=dev-user-1 即得真会话」。
+    #   现改为 prod：dev 必须由部署侧**显式**打开（backend/deploy/env.local 里
+    #   SPRING_PROFILES_ACTIVE=dev），漏配的部署 fail-closed 到生产实现
+    #   （缺 AppID/Secret 时登录如实 503，不会退化成假身份）。
+    #   注意：dev 档才加载 classpath:db/dev 种子（V9000/V9001），切档前确认本地库已应用。
+    default: prod
+  mvc:
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      add-mappings: false
+  # MySQL 为硬依赖（docs/v4/08 §7）：连不上就启动失败并明确报错，不用降级掩盖。
+  # 生产必须覆盖 MYSQL_URL / MYSQL_USER / MYSQL_PASSWORD（见 README §环境变量清单）。
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/wechar_dev?useUnicode=true&characterEncoding=UTF-8&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true}
+    username: ${MYSQL_USER:wechar_dev}
+    password: ${MYSQL_PASSWORD:}
+  flyway:
+    locations: classpath:db/migration
+
+# 手机号 AES-GCM 密钥（Base64，须为 32 字节）。dev 有占位默认值（见 application-dev 段与 README）；
+# 生产必须用 PHONE_KEY_BASE64 覆盖，未覆盖时 PhoneCrypto 启动即失败（不降级、不掩盖）。
+phone:
+  key-base64: ${PHONE_KEY_BASE64:}
+
+# 微信小程序登录（生产档必需；生产 Provider 走 code2session/getuserphonenumber）。
+# AppID/AppSecret 只能由运行环境注入：**任何文件里都不得写入真实值**（本文件、测试夹具、env.example 均只留空）。
+# 缺失时的行为：登录返回 503 WECHAT_PROVIDER_UNAVAILABLE（retryable=false），绝不回退到模拟登录/固定用户。
+# 超时：建连 3s / 读取 5s 为默认；调大只会拖长登录请求占用，调小易把正常抖动误判为不可用。
+wechat:
+  miniprogram:
+    app-id: ${WECHAT_MINIPROGRAM_APP_ID:}
+    app-secret: ${WECHAT_MINIPROGRAM_APP_SECRET:}
+    api-base-url: ${WECHAT_MINIPROGRAM_API_BASE_URL:https://api.weixin.qq.com}
+    connect-timeout-ms: ${WECHAT_MINIPROGRAM_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${WECHAT_MINIPROGRAM_READ_TIMEOUT_MS:5000}
+
+# 鉴权模式（M4 收口，见 AuthInterceptor）：
+#   strict = 仅会话 Bearer 可认证，X-User-Id 被忽略（**生产必须档，dev 档亦然**）；
+#   header = 开发/集成测试档，X-User-Id 仍为开发身份源（仅 itest profile 使用），但无任何身份仍 401；
+#   off    = M1 历史占位档（不拦截），仅留作本地脚本/单测兼容。
+#          ⚠️ 生产严禁设置 off：关闭鉴权会让预约记录与健康信息失去身份保护，
+#          禁止以关闭/放宽鉴权作为回滚或止血手段（回滚请恢复上一稳定版本，或做功能级降级）。
+# 基线默认 strict（缺配置即最严）；仅 itest profile 显式降为 header（见文末 profile 段）。
+app:
+  auth:
+    mode: ${APP_AUTH_MODE:strict}
+  # 资源库（V14）：图片/图标元数据登记在 resource_asset 表，二进制留在文件系统（**不存 BLOB**）。
+  # public-base-url 配置后，资源清单 items[].url 拼为 {base}/api/v1/resources/{key}（绝对 HTTPS，
+  # 供 <image> 与 wx.downloadFile；小程序后台 downloadFile 合法域名需与之一致）。留空 → url=null，
+  # 前端回退包内 bundlePath，行为与改造前一致（也是灰度回滚开关）。
+  resources:
+    public-base-url: ${APP_RESOURCES_PUBLIC_BASE_URL:}
+    # 资源根目录：相对 business-service 工作目录（mvnw spring-boot:run 时为 backend/business-service），
+    # 部署可用 APP_RESOURCES_DIR 覆盖为绝对路径。路径穿越防护以本目录为边界。
+    dir: ${APP_RESOURCES_DIR:../deploy/resources}
+  # 头像等用户上传文件根目录（V8）：business 进程工作目录相对路径；生产可挂独立卷。
+  upload:
+    dir: ${APP_UPLOAD_DIR:./run/uploads}
+  # 健康档案附件签名与限额（V9；2026-10-19 阶段一支持 mp4）
+  # ⚠️ sign-secret 生产必须固定且多实例一致（2026-10-23 收口）：缺省空值时代码**启动即失败**
+  #    （fail-fast，不再生成进程内随机密钥），必须用 APP_ATTACHMENT_SIGN_SECRET 注入强随机值。
+  attachment:
+    sign-secret: ${APP_ATTACHMENT_SIGN_SECRET:}
+    # 图片/PDF 上限（字节），默认 10MB
+    max-bytes: ${APP_ATTACHMENT_MAX_BYTES:10485760}
+    # 视频上限（字节），默认 50MB —— 单独配置，**不要**用它去放开图片/PDF
+    video-max-bytes: ${APP_ATTACHMENT_VIDEO_MAX_BYTES:52428800}
+    # 图片/PDF 签名 TTL（秒），默认 15 分钟
+    url-ttl-seconds: ${APP_ATTACHMENT_URL_TTL_SECONDS:900}
+    # 视频签名 TTL（秒），默认 2 小时（覆盖停留 + 完整播放 + 拖动；过期拖动会 403）
+    video-ttl-seconds: ${APP_ATTACHMENT_VIDEO_TTL_SECONDS:7200}
+  # 审计（M4，docs/v4/03 §39）：只追加 audit_events；写操作全记录、只读仅记非 2xx。
+  # 不记录请求/响应正文（天然不含健康内容）；关闭用 APP_AUDIT_ENABLED=false。
+  audit:
+    enabled: ${APP_AUDIT_ENABLED:true}
+  # 限流（M4，docs/v4/03 §145）：仅覆盖契约声明 429 的路径（登录/刷新、短信下发、账号登录、
+  # 预约/邀请/会话与消息/AI 提交/导诊急症/care-plan/ASR/TTS/音色预览）。
+  # 键：登录类=IP，提交类=认证主体；429 信封与网关口径一致（RATE_LIMITED + Retry-After）。
+  # 与网关 GW_RATE_LIMIT_* 分层并存；关闭用 APP_RATE_LIMIT_ENABLED=false。
+  rate-limit:
+    enabled: ${APP_RATE_LIMIT_ENABLED:true}
+    window-seconds: ${APP_RATE_LIMIT_WINDOW:60}
+    login-per-window: ${APP_RATE_LIMIT_LOGIN:30}
+    submit-per-window: ${APP_RATE_LIMIT_SUBMIT:60}
+  # 短信验证码（N9/N8，2026-10-19）：验证码只存 SHA-256，明文不入日志、不回响应。
+  # provider：dev = 落库 + 脱敏日志（默认，供本地/集成测试）；prod = 生产档占位，
+  #   真实网关接入前如实 503 SMS_UNAVAILABLE（不伪造发送成功）。
+  # cooldown-seconds：同一手机号下发冷却（契约 60s）；max-attempts：连续输错上限（5 次即废）。
+  sms:
+    provider: ${APP_SMS_PROVIDER:dev}
+    ttl-seconds: ${APP_SMS_TTL_SECONDS:300}
+    cooldown-seconds: ${APP_SMS_COOLDOWN_SECONDS:60}
+    max-attempts: ${APP_SMS_MAX_ATTEMPTS:5}
+
+# 语音域（M2）：内置音色清单来自服务端配置（契约：客户端不得把列表写死在包里，须容忍未知值）。
+# 引擎字段只是适配器标识，对外不构成 SLA；TTS/ASR 能力状态由 /voice/models 如实反映。
+voice:
+  builtin:
+    - id: qwen3-female-1
+      display-name: 温柔女声
+      locale: zh-CN
+      gender: female
+      default: true
+      available: true
+    - id: qwen3-male-1
+      display-name: 沉稳男声
+      locale: zh-CN
+      gender: male
+      default: false
+      available: true
+
+# 照护建议等待预算（秒）。约束：必须 > ai-service 的 CARE_PLAN 执行超时
+# （AI_CAREPLAN_TIMEOUT_SECONDS，默认 60），否则上游还在跑本层就先 503；
+# 同时必须 < 网关代理超时（GW_PROXY_TIMEOUT_SECONDS，220）与前端超时（180）。
+# 缺省 75 = 上游 60 + 15 余量。调低会重现"能成功却报不可用"，调高只会多占请求线程。
+wechar:
+  care-plan:
+    await-seconds: ${WECHAR_CAREPLAN_AWAIT_SECONDS:75}
+
+# AI 编排（ai-openapi 内网地址；不进对外响应/日志正文）。token 为空 = D 侧 off 开发档。
+ai:
+  client:
+    base-url: ${AI_SERVICE_URL:http://127.0.0.1:8001}
+    token: ${AI_SERVICE_TOKEN:}
+    policy-version: ${AI_POLICY_VERSION:POLICY-v1}
+    tenant-id: ${AI_TENANT_ID:wechar-dev}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name},%X{requestId:-}]"
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  flyway:
+    locations: classpath:db/migration,classpath:db/dev
+    # 本地 dev 库在 V3 落地前已应用 dev 种子（V9000/V9001）：允许 V3 补跑到已应用的更高等级之后。
+    # 仅 dev 打开；生产迁移顺序恒为 V1→V2→V3，无 out-of-order。
+    out-of-order: true
+
+# dev 占位密钥（仅 "0123456789abcdef..." 的 Base64）；生产必须用环境变量 PHONE_KEY_BASE64 覆盖。
+phone:
+  key-base64: ${PHONE_KEY_BASE64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
+
+# dev 档鉴权：与生产同档 strict（会话 Bearer 为唯一身份源），不再接受 X-User-Id，
+# 避免本地留下「客户端自报身份」旁路；真机 E2E 需改用会话 Bearer。
+app:
+  auth:
+    mode: ${APP_AUTH_MODE:strict}
+    # 联调登录闸门（2026-10-29）：dev 派生 code（dev-user-* / dev-phone-*）必须带
+    # 请求头 X-Dev-Login-Key 且与 key 恒定时间相等，否则 403 DEV_LOGIN_FORBIDDEN。
+    # 默认关闭 —— 即使误以 dev 档暴露公网，不带密钥也拿不到会话。
+    # 开启方式：backend/deploy/env.local 里同时设 enabled=true 与一个随机 key，
+    # 并把同一 key 写进小程序 config/env.js 的 DEV_LOGIN_KEY（仅 local/development 档）。
+    dev-login:
+      enabled: ${APP_AUTH_DEV_LOGIN_ENABLED:false}
+      key: ${APP_AUTH_DEV_LOGIN_KEY:}
+
+---
+# 集成测试档（@SpringBootTest spring.profiles.active=itest）：**唯一**保留 header 档的 profile，
+# 既有 103+ 用例通过 X-User-Id 造身份；无身份 401 与 strict 语义分别由
+# M4AuthTest / M4StrictAuthTest 显式覆盖。
+spring:
+  config:
+    activate:
+      on-profile: itest
+
+app:
+  auth:
+    mode: header
+  # itest 档放宽限流阈值：既有用例（M1~M4 合计 119+）共享拦截器实例，
+  # 避免被开发阈值误伤；限流语义本身由 M4RateLimitTest 以专属小阈值上下文覆盖。
+  rate-limit:
+    login-per-window: 100000
+    submit-per-window: 100000

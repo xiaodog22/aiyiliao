@@ -1,0 +1,249 @@
+<!--
+  pages/appointment —— 预约挂号
+  版式（对齐 design-output/患者端/03-预约挂号.png，逐项对照「页面复刻文档」§四.3）：
+    **单页常驻** —— 搜索栏 / 本院区·全科室筛选 / 横向 7 天日期条 / 科室 chip / 医生卡列表 一屏呈现，
+    确认信息以**底部半模态抽屉**浮在列表之上，而不是整页切走。
+  导航栏由 appointment.json 的原生导航提供（返回箭头 + 居中「预约挂号」），与效果图一致，故不在页面内重复画。
+  ⚠️ 业务逻辑不变：step 状态机（dept → doctor → time → confirm → done）与
+     services/appointment.js 的调用方式保持原样，这里只重排**视图层**。
+-->
+<view class="page theme-{{theme}} page-shell apt-page">
+
+  <view class="shell-cols">
+
+    <view class="shell-main">
+
+      <!-- ============================================================
+           ① 搜索栏（文档 §四.3-①：白底圆角胶囊 + 左侧放大镜 + 占位文字
+              「搜索医院、院区、科室或医生」 + 右侧「搜索」蓝色文字按钮）
+           ⚠️ 纯本地过滤，不发请求；未命中时列表为空态，不伪造结果
+           ============================================================ -->
+      <view class="ap-search">
+        <image class="ap-search-ic" src="{{icons.search}}" />
+        <input
+          class="ap-search-in"
+          placeholder="搜索医院、院区、科室或医生"
+          placeholder-class="ap-search-ph"
+          value="{{keyword}}"
+          bindinput="onSearch"
+          confirm-type="search"
+          bindconfirm="onSearchSubmit"
+        />
+        <view wx:if="{{keyword}}" class="ap-search-clear" bindtap="onClearSearch">清空</view>
+        <view class="ap-search-div"></view>
+        <view class="ap-search-btn" bindtap="onSearchSubmit">搜索</view>
+      </view>
+
+      <!-- ============================================================
+           ② 筛选按钮组（文档 §四.3-②：两个白底胶囊「本院区 ▾」「全科室 ▾」，带下拉箭头）
+           选中态用**胶囊下方圆点**表示（效果图 03 本院区下方那枚蓝点），不填色 —— 与效果图一致。
+           ⚠️ 当前后端为单院区演示口径 —— 院区恒定「本院区」，点击给可见提示，
+              不伪造多院区数据；科室筛选走本地过滤。
+           ============================================================ -->
+      <view class="ap-filters">
+        <view class="ap-filter ap-filter-cur" data-type="campus" bindtap="onFilter">
+          <image class="ap-filter-ic" src="{{icons.hospital}}" />
+          <text>本院区</text>
+          <image class="ap-filter-caret" src="{{icons.chevronRight}}" />
+          <view class="ap-filter-dot"></view>
+        </view>
+        <view class="ap-filter {{deptFilterOn ? 'ap-filter-cur' : ''}}" data-type="dept" bindtap="onFilter">
+          <image class="ap-filter-ic" src="{{icons.layoutGrid}}" />
+          <text>全科室</text>
+          <image class="ap-filter-caret" src="{{icons.chevronRight}}" />
+          <view wx:if="{{deptFilterOn}}" class="ap-filter-dot"></view>
+        </view>
+      </view>
+
+      <!-- ============================================================
+           ③ 日期条（文档 §四.3-③：白色卡片容器，横向 7 天，
+              上排「星期」+ 下排「日期数字」，选中 = 蓝实心 #0B6EF8 + 白字 + 圆角 24rpx）
+           ============================================================ -->
+      <view class="card ap-card">
+        <view class="date-row">
+          <view
+            wx:for="{{dates}}"
+            wx:key="value"
+            class="date-item {{selDate === item.value ? 'date-on' : ''}}"
+            data-value="{{item.value}}"
+            data-text="{{item.full}}"
+            bindtap="pickDate"
+          >
+            <view class="date-label">{{item.label}}</view>
+            <view class="date-value">{{item.day}}</view>
+          </view>
+        </view>
+      </view>
+
+      <!-- ============================================================
+           ④ 科室横向标签（文档 §四.3-④：横滑胶囊，选中蓝底白字，未选中白底）
+           ============================================================ -->
+      <scroll-view class="ap-depts" scroll-x show-scrollbar="{{false}}">
+        <view class="ap-depts-in">
+          <block wx:if="{{loadingDept}}">
+            <view wx:for="{{[1,2,3,4]}}" wx:key="*this" class="ap-dept ap-dept-skel"></view>
+          </block>
+          <block wx:else>
+            <view
+              wx:for="{{departments}}"
+              wx:key="id"
+              class="ap-dept {{selDeptId === item.id ? 'ap-dept-on' : ''}}"
+              data-id="{{item.id}}"
+              bindtap="pickDept"
+            >{{item.name}}</view>
+          </block>
+        </view>
+      </scroll-view>
+
+      <!-- 科室加载失败：可见错误 + 重试（不混入演示数据） -->
+      <view wx:if="{{deptError}}" class="error-card">
+        <view class="error-text">{{deptError}}</view>
+        <view class="btn btn-outline error-retry" bindtap="retryDepartments">重新加载</view>
+      </view>
+
+      <!-- ============================================================
+           ⑤ 医生列表卡片（文档 §四.3-⑤）
+              左头像 120rpx 圆形浅灰底 / 中间「姓名 34rpx·700 + 职称徽标」、
+              「科室·院区 26rpx 灰蓝」、「号源状态」/ 右侧「预约」实心蓝胶囊（约满=灰禁用）
+           ============================================================ -->
+      <view wx:if="{{loadingDoctors}}" class="doc-list">
+        <view wx:for="{{[1,2]}}" wx:key="*this" class="doc-card skeleton-card">
+          <view class="skeleton skeleton-face"></view>
+          <view class="doc-main"><view class="skeleton skeleton-line"></view></view>
+        </view>
+      </view>
+
+      <view wx:elif="{{!selDeptId}}" class="hint-card">请先在上方选择科室，这里会显示可预约的医生。</view>
+
+      <view wx:elif="{{selDoctors.length === 0}}" class="error-card">
+        <view class="error-text">该科室暂无可预约医生，请返回重选科室。</view>
+      </view>
+
+      <view wx:else class="doc-list">
+        <view
+          wx:for="{{selDoctors}}"
+          wx:key="id"
+          class="doc-card {{selDoctorId === item.id ? 'doc-on' : ''}}"
+          data-id="{{item.id}}"
+          bindtap="pickDoctor"
+        >
+          <view class="doc-face"><image class="doc-face-img" src="/assets/img/avatar-default.png" mode="aspectFill" /></view>
+          <view class="doc-main">
+            <view class="doc-name-row">
+              <text class="doc-name">{{item.name}}</text>
+              <view wx:if="{{item.title}}" class="doc-title-chip">{{item.title}}</view>
+            </view>
+            <view class="doc-meta">{{item.deptName}} · 本院区</view>
+            <view wx:if="{{item.statusText}}" class="doc-status {{item.statusCls}}">{{item.statusText}}</view>
+          </view>
+          <view class="doc-op {{item.bookable ? '' : 'doc-op-off'}}" data-id="{{item.id}}" catchtap="pickDoctor">
+            {{item.bookable ? '预约' : '约满'}}
+          </view>
+        </view>
+      </view>
+
+      <!-- 号源（选日期后拉取）：余号为快照，约满禁选；下单以服务端原子扣减为准 -->
+      <block wx:if="{{selDate && selDoctorId}}">
+        <view class="section-header section-header-plain">选择时间</view>
+        <skeleton wx:if="{{loadingSlots}}" type="list" rows="3" />
+        <view wx:elif="{{filteredSlots.length === 0}}" class="hint-card">该时段暂无号源，请换一天或切换时段试试。</view>
+        <view wx:else class="slot-grid">
+          <view
+            wx:for="{{filteredSlots}}"
+            wx:key="id"
+            class="slot {{selSlotId === item.id ? 'slot-on' : ''}} {{item.remaining <= 0 ? 'slot-full' : ''}}"
+            data-id="{{item.id}}"
+            data-time="{{item.time}}"
+            data-remaining="{{item.remaining}}"
+            bindtap="pickTime"
+          >
+            <view class="slot-time">{{item.time}}</view>
+            <view class="slot-left {{item.remaining <= 0 ? 'slot-left-full' : ''}}">{{item.remaining <= 0 ? '约满' : '余' + item.remaining}}</view>
+          </view>
+        </view>
+      </block>
+
+      <view wx:if="{{step !== 'done'}}" class="btn btn-primary act-btn" bindtap="goConfirm">
+        下一步：确认挂号
+      </view>
+
+    </view>
+
+    <!-- ===== 侧栏：预约摘要（仅平板；选一步更新一次）===== -->
+    <view class="shell-side side-only sum-card">
+      <view class="sum-head">{{step === 'done' ? '已完成的预约' : '当前预约'}}</view>
+      <view class="sum-row">
+        <text class="sum-k">科室</text>
+        <text class="sum-v {{selDept ? '' : 'sum-empty'}}">{{selDept || '未选择'}}</text>
+      </view>
+      <view class="sum-row">
+        <text class="sum-k">医生</text>
+        <text class="sum-v {{selDoctor ? '' : 'sum-empty'}}">{{selDoctor || '未选择'}}</text>
+      </view>
+      <view class="sum-row">
+        <text class="sum-k">日期</text>
+        <text class="sum-v {{selDate ? '' : 'sum-empty'}}">{{selDateText || selDate || '未选择'}}</text>
+      </view>
+      <view class="sum-row">
+        <text class="sum-k">时间</text>
+        <text class="sum-v {{selTime ? '' : 'sum-empty'}}">{{selTime || '未选择'}}</text>
+      </view>
+      <view class="sum-row">
+        <text class="sum-k">就诊人</text>
+        <text class="sum-v">{{patient.name || '—'}}</text>
+      </view>
+    </view>
+
+  </view>
+
+  <!-- ============================================================
+       ⑥ 确认抽屉（文档 §四.3-⑥：半模态 + 顶部圆角 32rpx + 拖拽手柄 72×8rpx
+          + 居中标题 34rpx/700 + 信息行「左灰标签 / 右深内容」+ 就诊时段两枚胶囊
+          + 底部说明 + 全宽实心蓝按钮 88rpx）
+       ⚠️ 抽屉打开时页面内容仍可滚动（视觉上在抽屉之后），与效果图一致。
+       ============================================================ -->
+  <view wx:if="{{showConfirm}}" class="ap-mask" bindtap="onCloseConfirm"></view>
+  <view wx:if="{{showConfirm}}" class="sheet ap-sheet">
+    <view class="sheet-handle"></view>
+    <view class="sheet-title">确认预约信息</view>
+
+    <view class="ap-kv">
+      <text class="ap-k">就诊人</text>
+      <view class="ap-v-row" bindtap="onSwitchPatient">
+        <text class="ap-v">{{patient.name || '未登录'}}</text>
+        <image class="ap-v-arrow" src="{{icons.chevronRight}}" />
+      </view>
+    </view>
+    <view class="ap-kv"><text class="ap-k">医院院区</text><text class="ap-v">本院区 · 门诊楼</text></view>
+    <view class="ap-kv">
+      <text class="ap-k">科室医生</text>
+      <text class="ap-v">{{selDept}} · {{selDoctor}}{{selDoctorTitle ? ' ' + selDoctorTitle : ''}}</text>
+    </view>
+    <view class="ap-kv"><text class="ap-k">预约日期</text><text class="ap-v">{{selDateText || selDate}}</text></view>
+
+    <view class="ap-kv"><text class="ap-k">预约时间</text><text class="ap-v">{{selTime}}</text></view>
+
+    <view class="ap-disclaimer">提交即代表您已知晓就诊须知，号源以实际锁定为准</view>
+
+    <view class="btn btn-primary ap-confirm-btn {{submitting ? 'btn-disabled' : ''}}" bindtap="onSubmit">
+      {{submitting ? '提交中…' : '确认预约'}}
+    </view>
+  </view>
+
+  <!-- 成功态：整页替换（效果图无此图，保留既有成功页以保证流程闭环） -->
+  <view wx:if="{{step === 'done'}}" class="ap-done-mask">
+    <view class="card success-card">
+      <view class="success-icon"><image class="success-icon-img" src="{{icons.checkWhite}}" /></view>
+      <view class="success-title">挂号成功</view>
+      <view class="success-line">{{selDept}} · {{selDoctor}}</view>
+      <view class="success-line">{{selDateText || selDate}} {{selTime}}</view>
+      <view wx:if="{{orderNo}}" class="success-no">预约号 {{orderNo}}</view>
+    </view>
+    <view class="btn btn-outline act-btn" bindtap="goNav">
+      <image class="ic-sm" src="{{icons.mapPin}}" /> 查看院内路线
+    </view>
+    <view wx:if="{{selDoctorId}}" class="btn btn-primary act-btn" bindtap="goConsult">向 {{selDoctor}} 发起在线问诊</view>
+    <view class="btn btn-primary act-btn" bindtap="goHome">返回首页</view>
+  </view>
+
+</view>

@@ -1,0 +1,28 @@
+# ai-service 可选依赖：本地语音识别（FunASR）
+#
+# 为什么单独一个文件：torch 在 Windows 上解压后 300MB+，未启用 ASR 的环境不该背这个体积。
+# 安装（必须装进 ai-service 自己的 venv，否则服务进程 import 不到）：
+#   cd backend/ai-service
+#   ./.venv/Scripts/python.exe -m pip install -r requirements-asr.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+# 校验（必须打印版本号，不能有 traceback）：
+#   ./.venv/Scripts/python.exe -c "import torch, funasr; print(torch.__version__, funasr.__version__)"
+#
+# 版本口径：**不锁版本**。torch 的可用版本随 Python 版本与镜像源变化（本机 Python 3.12），
+# 盲目锁死会导致换机安装失败；装好后把 `pip show torch funasr modelscope` 的实际版本
+# 回填到 docs/后端接入文档_20261021_V21.md §2.2 的实测表，作为该机的既成事实。
+# 若需要 CPU-only 的 torch（无 CUDA 环境推荐，体积更小）：
+#   ./.venv/Scripts/python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+#
+# 装完还需配置（backend/deploy/env.local）：
+#   AI_ASR_ENGINE=funasr
+#   AI_ASR_MODEL_PATH=<本地权重目录；留空则首次运行从 ModelScope 拉取>
+#   AI_ASR_AUDIO_DIR=<Java 写入 / ai-service 只读的音频中转目录>
+#
+# 引擎判定口径见 docs/后端接入文档_20261021_V21.md §2。
+
+torch
+funasr
+modelscope
+# FunASR 特征提取（fbank）后端：torch.2.14 + 现有 torchaudio 不匹配，用 knf 更稳（体积小、纯 CPU）。
+# 缺它会报：torchaudio is not installed and neither is the kaldi-native-fbank fallback backend。
+kaldi-native-fbank

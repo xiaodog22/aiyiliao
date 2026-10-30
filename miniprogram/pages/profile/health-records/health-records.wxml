@@ -1,0 +1,138 @@
+<!-- 健康档案（设计稿 05）：个人信息卡 + 分类宫格 + 报告卡流 + 底部加密说明
+     ⚠️ 保留原生导航栏（设计稿 05 就是「返回 + 健康档案 + 胶囊」的原生形态）。
+     ⚠️ 分类格子由**后端实际返回的类别**动态生成，不硬编码设计稿那 5 个固定入口 ——
+        否则会点出"没有数据"的假入口（见 README §8.31 偏离项 1）。 -->
+<view class="page theme-{{theme}} hrc-page">
+
+  <!-- 骨架屏：加载中 -->
+  <skeleton wx:if="{{loading}}" type="list" rows="4" />
+
+  <!-- 上线档错误态（开发档由 withFallback 兜底演示数据，不会走到这里） -->
+  <view wx:elif="{{error}}" class="state">
+    <view class="state-badge state-badge-primary"><image class="state-ic" src="{{icons.alertWhite}}" /></view>
+    <view class="state-title">健康档案加载失败</view>
+    <view class="state-sub">{{error}}</view>
+    <view class="btn btn-primary state-btn" bindtap="fetch">重新加载</view>
+  </view>
+
+  <block wx:elif="{{items.length > 0}}">
+
+    <!-- ① 个人信息卡（设计稿 05：浅蓝底 + 圆头像 + 姓名 + 「本人」+ 同步说明 + 右箭头）
+         姓名为空时整卡不渲染（不占位、不兜假名）。 -->
+    <view wx:if="{{patient.name}}" class="hrc-patient" bindtap="onOpenProfile">
+      <view class="hrc-av">
+        <image wx:if="{{patient.avatarUrl}}" class="hrc-av-img" src="{{patient.avatarUrl}}" mode="aspectFill" />
+        <image wx:else class="hrc-av-img" src="/assets/img/avatar-default.png" mode="aspectFill" />
+      </view>
+      <view class="hrc-patient-body">
+        <view class="hrc-patient-top">
+          <text class="hrc-name">{{patient.name}}</text>
+          <text class="hrc-self">本人</text>
+        </view>
+        <view class="hrc-patient-sub">档案已同步 · 数据加密保护</view>
+      </view>
+      <image class="hrc-arrow" src="{{icons.chevronRight}}" />
+    </view>
+
+    <!-- ② 分类宫格（设计稿 05：白卡 + 图标底板 + 两字标签；3 列自动换行）
+         选中态 = 主色描边底板 + 主色文字；再点一次取消回到「全部」。 -->
+    <view class="hrc-grid">
+      <view
+        wx:for="{{filters}}"
+        wx:key="key"
+        class="hrc-cell {{activeKey === item.key ? 'hrc-cell-on' : ''}}"
+        data-key="{{item.key}}"
+        bindtap="onFilter"
+      >
+        <view class="hrc-tile"><image class="hrc-cell-ic" src="{{item.icon}}" /></view>
+        <text class="hrc-cell-t">{{item.label}}</text>
+      </view>
+    </view>
+
+    <!-- ③ 报告 / 记录卡流（设计稿 05：无时间轴，白卡逐张排列）
+         每张卡：标题 + 右上状态徽章 + 副信息两行 + 摘要 + 附件缩略 + 操作按钮。 -->
+    <view wx:for="{{view}}" wx:key="id" class="hrc-rec">
+
+      <view class="hrc-rec-top">
+        <view class="hrc-rec-title">{{item.title}}</view>
+        <!-- 报告状态（设计稿「已出结果 / 待审核」）：后端未下发 → 整块不渲染，不默认成已出结果 -->
+        <view wx:if="{{item.hasReport}}" class="hrc-state {{item.reportStatusCls}}">
+          <view class="hrc-state-dot"></view>
+          <text class="hrc-state-t">{{item.reportStatusText}}</text>
+        </view>
+      </view>
+
+      <!-- 副信息：类别 · 日期（契约无机构/科室字段，不编造"本院区 · 门诊检验"） -->
+      <view class="hrc-rec-meta">{{item.category}}{{item.dateText ? ' · ' + item.dateText : ''}}</view>
+      <!-- 摘要（诊断摘要 / 医嘱）：契约可选字段，未返回时整行不显示 -->
+      <view wx:if="{{item.summary}}" class="hrc-rec-sum">{{item.summary}}</view>
+
+      <!-- 检查资料附件（V9）：缩略图横滑 + 删除；url 为后端短期签名链接 -->
+      <scroll-view wx:if="{{item.attachments.length > 0}}" class="hrc-att" scroll-x show-scrollbar="{{false}}">
+        <view
+          wx:for="{{item.attachments}}"
+          wx:for-item="att"
+          wx:key="id"
+          class="hrc-att-item"
+          data-url="{{att.url}}"
+          data-pdf="{{att.isPdf}}"
+          bindtap="onPreviewAttachment"
+        >
+          <image wx:if="{{!att.isPdf}}" class="hrc-att-img" src="{{att.url}}" mode="aspectFill" />
+          <view wx:else class="hrc-att-pdf">
+            <image class="hrc-att-pdf-ic" src="{{icons.fileText}}" />
+            <text class="hrc-att-pdf-t">PDF</text>
+          </view>
+          <view class="hrc-att-del" catchtap="onDeleteAttachment"
+                data-recordid="{{item.id}}" data-id="{{att.id}}" data-name="{{att.fileName}}">
+            <image class="hrc-att-del-ic" src="{{icons.trashWhite}}" />
+          </view>
+        </view>
+      </scroll-view>
+
+      <!-- 操作行（设计稿 05：两枚等宽胶囊按钮 —— 查看报告=描边 / AI解读=浅蓝底）。
+           ⚠️ 设计稿按钮实高仅 43rpx，低于 88rpx 触控线 → 这里折中到 72rpx。 -->
+      <view class="hrc-actions">
+        <view class="hrc-btn {{item.locked ? 'hrc-btn-locked' : 'hrc-btn-outline'}}"
+              data-id="{{item.id}}" bindtap="onViewReport">查看报告</view>
+        <view class="hrc-btn {{item.locked ? 'hrc-btn-locked-soft' : 'hrc-btn-soft'}} {{interpreting === item.id ? 'hrc-btn-busy' : ''}}"
+              data-id="{{item.id}}" bindtap="onInterpret">
+          {{interpreting === item.id ? '解读中…' : 'AI 解读'}}
+        </view>
+      </view>
+
+      <!-- 上传检查资料（V9 既有能力；设计稿未画，弱化为卡内文字链接，见偏离项 3） -->
+      <view class="hrc-add {{uploading ? 'hrc-add-busy' : ''}}" data-id="{{item.id}}" bindtap="onUploadAttachment">
+        ＋ 上传检查资料
+      </view>
+
+      <!-- AI 解读结果：后端未实现时返回 501 → 显示可见中文降级提示，
+           不得用本地假文本冒充解读结果（违反「禁止伪造业务数据」红线）。 -->
+      <view wx:if="{{interpretFail}}" class="hrc-ai-fail">{{interpretFail}}</view>
+      <view wx:elif="{{interpretation && interpretation.recordId === item.id}}" class="hrc-ai-box">
+        <view wx:if="{{interpretation.summary}}" class="hrc-ai-sum">{{interpretation.summary}}</view>
+        <view wx:for="{{interpretation.sections}}" wx:for-item="sec" wx:key="title" class="hrc-ai-sec">
+          <view class="hrc-ai-sec-t">{{sec.title}}</view>
+          <view class="hrc-ai-sec-b">{{sec.body}}</view>
+        </view>
+        <view wx:if="{{interpretation.disclaimer}}" class="hrc-ai-dis">{{interpretation.disclaimer}}</view>
+      </view>
+
+    </view>
+
+    <!-- ④ 加密说明条（设计稿 05 底部）：纯合规文案，不含任何业务数据 -->
+    <view class="notice-bar hrc-secure">
+      <image class="notice-bar-ic" src="{{icons.lock}}" />
+      <view class="notice-bar-text">健康档案数据已加密存储，仅本人授权后可查看。AI解读结果仅供参考，不替代医生诊断。</view>
+    </view>
+
+  </block>
+
+  <!-- 空态：后端返回空列表 -->
+  <view wx:else class="state">
+    <view class="state-badge state-badge-gray"><image class="state-ic" src="{{icons.searchGray}}" /></view>
+    <view class="state-title">暂无健康档案</view>
+    <view class="state-sub">就诊后的记录与报告会显示在这里</view>
+  </view>
+
+</view>

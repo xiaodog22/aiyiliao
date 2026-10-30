@@ -1,0 +1,4658 @@
+openapi: 3.1.0
+
+info:
+  title: 医疗 AI 智能健康小程序 · 业务后端接口契约（Spring Boot）
+  version: 0.1.0-draft
+  summary: 小程序可见的全部业务接口的目标态契约，由 Spring Boot 实现，经统一网关暴露。
+  description: |
+    ## 这份文件是什么
+
+    这是**目标态契约（to-be）**，不是对现有服务的描述。仓库当前没有完整的 Spring Boot
+    业务实现，本文声明的任何路径都不得被表述为"已上线"或"已实现"。判断实现进度必须依据
+    代码、测试与运行结果，而不是这份文件。
+
+    ## 覆盖范围
+
+    本文覆盖**小程序能够直接调用的全部路径**，包括 AI 与语音——按 `docs/v4/03` 第 1 节，
+    客户端不得绕过 Spring Boot 访问 FastAPI、Ollama、Qdrant、Redis 或 TTS 第三方，
+    因此连语音与问诊这类 AI 能力也以 Spring Boot 为唯一入口，由它编排内部 FastAPI。
+    FastAPI 的内部接口面见 `ai-openapi.yaml`。
+
+    统一网关自身的 `/api/gw/**` 也列在本文（`edge-gateway` 标签），因为客户端同样直接调用
+    它们；这样 `miniprogram/config/api.js` 注册表里的每一条路径都能在契约里有唯一归属。
+
+    ## 与现有注册表的差异
+
+    现有 `miniprogram/config/api.js` 中 `base: 'python'` 的客户端路径与上述边界冲突，
+    属于**迁移债**，逐条映射见文档级扩展 `x-migration`。这些路径在新契约里不再出现；
+    迁移完成前网关仍需保留转发，但不得新增同类路径。
+
+    ## 通用约定
+
+    - 所有响应（含错误）使用统一信封；二进制媒体不内联，改走短期签名 URL。
+    - 写操作要求 `Idempotency-Key`；相同键不同载荷返回 `409`。
+    - `404` 不用于区分"不存在"与"不属于你"，避免对象存在性泄漏。
+    - 严禁捕获异常后返回 `200` + 空对象。
+    - 具体数值（超时、TTL、保留期、限流阈值）属部署配置，不在契约中承诺。
+
+    ## 尚未定稿的部分
+
+    带 `x-status: provisional` 的条目**尚未定稿**，实现方不得据其单独开工：
+
+    - `POST /internal/v1/callbacks/task-events`（待决事项 O-02）：回调路径与载荷未定稿，
+      在定稿前 Spring Boot 侧以**轮询** `GET /internal/v1/tasks/{taskId}` 为唯一权威路径。
+
+    另有两条尚未定稿，影响实现方式而非路径：
+
+    - **对象存储上传方式（待决事项 O-01）。** 客户端直传 MinIO 与经 Spring Boot 代理
+      两条路线未定。无论走哪条，对象键都必须由服务端签发，类型与大小都必须经过校验；
+      不得存在绕过校验的直传通道。本契约不承诺其中任一条。
+    - **TTS 合成引擎（待决事项 O-10）。** V4 计划改用 `edge-tts` 适配器，而仓库当前
+      README 记录的实现是 Qwen3-TTS(WAV)，两者方向相反。契约只约定 `engine` 字段如实
+      返回实际引擎，**不约定具体引擎**；在 O-10 关闭前不得按任一侧的假设改客户端。
+
+  contact:
+    name: 待确认（运营主体与联系方式未提供，见待决事项 O-06）
+  license:
+    name: 待确认（许可证未提供）
+
+servers:
+  - url: https://{gatewayHost}
+    description: |
+      生产唯一入口：统一网关。小程序只配置这一个地址。
+      正式域名与备案未提供（待决事项 O-04），此处使用保留 TLD `.invalid` 占位——
+      禁止使用临时隧道域名（ngrok / natapp / vicp.fun 之类）作为生产入口。
+    variables:
+      gatewayHost:
+        default: gw.example.invalid
+        description: 占位主机名，实施前替换为已备案的正式 HTTPS 域名（O-04）。
+  - url: https://{gatewayHost}/api/gw
+    description: 网关自身路由（`/api/gw/**`）的基准地址，仅用于文档分组展示，不改变 paths 中的完整路径。
+    variables:
+      gatewayHost:
+        default: gw.example.invalid
+        description: 同上的占位主机名。
+
+tags:
+  - name: auth
+    description: 登录、令牌轮换、注销。微信凭证只在服务端换取。
+  - name: me
+    description: 当前用户、同意记录、注销与删除申请。
+  - name: catalog
+    description: 医院科室、医生、号源等只读目录。
+  - name: appointment
+    description: 预约挂号的创建、查询与取消。幂等与并发正确性由数据库约束保证。
+  - name: patient
+    description: 本人健康档案与家庭成员。
+  - name: consultation
+    description: AI 问诊会话与消息。权威记录在 MySQL，生成在 FastAPI。
+  - name: message
+    description: 消息中心（挂号通知/系统通知）。未读数是红点唯一数据源。
+  - name: ai-task
+    description: AI 任务状态、事件流与取消。断线后一律回到本组查询终态。
+  - name: triage
+    description: 导诊与急症检查。本地红旗规则优先，远端不得降低已命中等级。
+  - name: care-plan
+    description: 养生/照护建议。输出为生活方式建议，不构成处方。
+  - name: voice
+    description: 语音识别与合成。合成依赖联网第三方适配器，失败只降级为文字。
+  - name: content
+    description: 健康科普内容与资源清单。
+  - name: doctor
+    description: 医生工作台、挂号状态流转与床位管理。
+  - name: home
+    description: 首页聚合。不返回超出展示所必需的健康明细。
+  - name: internal
+    description: 服务间接口。仅内网可达，客户端永不调用。
+  - name: edge-gateway
+    description: 统一网关自身路由。由网关进程提供，不由 Spring Boot 提供。
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  # ==========================================================================
+  # auth
+  # ==========================================================================
+
+  /api/v1/auth/wechat/login:
+    post:
+      operationId: wechatLogin
+      x-idempotency: not-required
+      tags: [auth]
+      summary: 微信登录
+      description: |
+        用 `wx.login` 的临时 code 换取会话。code 只在服务端消费，客户端不接触
+        AppSecret、openid 或 session_key 原文。手机号绑定走 `phoneCode`（微信
+        `getPhoneNumber` 返回的动态令牌），服务端解密并加密存储。
+        登录本身不构成隐私政策同意——`consentVersion` 必须是用户在独立界面确认过的版本。
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ClientVersion'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WechatLoginRequest'}
+      responses:
+        '200':
+          description: 登录成功，返回令牌与当前用户。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkSession'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/auth/refresh:
+    post:
+      operationId: refreshSession
+      x-idempotency: not-required
+      tags: [auth]
+      summary: 轮换访问令牌
+      description: |
+        刷新令牌一次一换（轮换即失效）。使用已失效令牌属于重放信号：服务端应撤销该
+        会话链并返回 `401`。客户端只允许单飞刷新，不得并发发起多个 refresh。
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: {type: string, minLength: 16, description: 上一次签发的刷新令牌原文；服务端只保存其哈希。}
+      responses:
+        '200':
+          description: 轮换成功。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkSession'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: 注销当前会话
+      description: 撤销当前刷新令牌链。注销不等于删除账号数据，删除走 `createDeletionRequest`。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: 已注销。重复调用同样返回成功（幂等）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkLogoutResult'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /api/v1/auth/sms/send:
+    post:
+      operationId: sendSmsChallenge
+      tags: [auth]
+      summary: 发送短信验证码
+      description: |
+        医生账号登录（`login-by-account`）的二次校验凭证下发。`challengeId` **一次性**
+        （登录成功即作废）；同一手机号 60 秒内不重复下发（`429`）；验证码默认 5 分钟有效、
+        连续错 5 次作废。短信网关由服务端选型（`app.sms.provider`）：dev 档只落库并打印
+        脱敏日志，生产实现接入后前端不感知；服务端不回显验证码原文。
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, scene]
+              properties:
+                phone: {type: string, pattern: '^1[3-9]\d{9}$', description: 接收验证码的手机号（11 位大陆号码）。}
+                scene:
+                  type: string
+                  enum: [DOCTOR_LOGIN, ACCOUNT_DELETION]
+                  description: 使用场景；验证码按场景隔离（N8 医生登录 / N10 账号注销二次校验），不得跨场景复用。
+              additionalProperties: false
+      responses:
+        '200':
+          description: 已下发（含按 60s 冷却静默抑制后的可重试语义由 429 表达）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkSmsChallenge'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+
+  /api/v1/doctor/login:
+    post:
+      operationId: doctorLogin
+      x-idempotency: not-required
+      tags: [auth]
+      summary: 医生端登录
+      description: |
+        与患者登录同一套令牌机制，但**角色只能由服务端根据数据库中的任职关系判定**，
+        请求体里没有角色字段，客户端也无法通过参数提升权限。医生身份需院方预先登记。
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ClientVersion'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WechatLoginRequest'}
+      responses:
+        '200':
+          description: 登录成功。返回的 `user.roles` 由服务端下发。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkSession'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/doctor/login-by-account:
+    post:
+      operationId: doctorLoginByAccount
+      tags: [auth]
+      summary: 医生账号登录（工号/手机号 + 短信验证码）
+      description: |
+        design 03-医生登录的单输入框版式：`account` 为**工号或手机号**，`credential` 为
+        `POST /api/v1/auth/sms/send` 下发的 6 位验证码 + `challengeId`。
+        与微信登录同一套令牌机制（响应同构 `SessionData`）；角色仍只由服务端按
+        `doctors` 任职关系判定：验证码有效但账号无医生任职 → `403`。
+        `challengeId` 一次性，登录成功即作废；验证码错/过期/已用 → `401`（不区分原因，不泄露存在性）。
+        验证码手机号必须与账号绑定手机号一致（工号登录同样校验），否则 `401`。
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ClientVersion'
+        - $ref: '#/components/parameters/Platform'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DoctorAccountLogin'}
+      responses:
+        '200':
+          description: 登录成功，返回与微信登录同构的会话（`user.roles` 由服务端下发）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkSession'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+
+  # ==========================================================================
+  # me
+  # ==========================================================================
+
+  /api/v1/me:
+    get:
+      operationId: getCurrentUser
+      tags: [me]
+      summary: 当前用户
+      description: 返回服务端认定的身份与角色。客户端不得用本地缓存覆盖 `roles` 或 `consents`。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 当前用户。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkUser'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  # ---------- 个人信息设置扩展（V8，实现见 MeController）----------
+  # 登记原则：只描述后端**已实现**的行为。以下四类写操作均为"整体覆盖写"，
+  # 服务端未校验 Idempotency-Key（IdempotencyKeys 只在 appointment/consent/家庭成员创建中使用），
+  # 因此一律标注 x-idempotency: not-required，而不是声明一个服务端并不兑现的幂等承诺。
+
+  /api/v1/me/extended:
+    get:
+      operationId: getExtendedProfile
+      tags: [me]
+      summary: 个人信息扩展资料
+      description: |
+        返回联系方式与住址明文，以及证件号/医保号的**掩码与绑定状态**。
+        证件号与医保号的原文、密文一律不回显；明文只在写入请求里出现一次。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 扩展资料。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkExtendedProfile'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    put:
+      operationId: updateExtendedProfile
+      tags: [me]
+      summary: 更新联系方式 / 住址 / 户籍
+      description: |
+        逐字段覆盖写：字段缺省或显式 `null` 表示**保留原值**，不是清空。
+        同载荷重复提交得到同一终态，因此不要求幂等键。
+      x-idempotency: not-required
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ExtendedProfileUpdate'}
+      responses:
+        '200':
+          description: 更新后的扩展资料。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkExtendedProfile'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/me/identity:
+    post:
+      operationId: bindIdentity
+      tags: [me]
+      summary: 身份证实名绑定
+      description: |
+        服务端按 GB 11643 校验 18 位号码与校验码，通过后**密文落库**，
+        本接口只回掩码与 `idCardVerified`。同一用户再次提交为覆盖写（同证件 → 同一终态）。
+      x-idempotency: not-required
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/IdentityBind'}
+      responses:
+        '200':
+          description: 绑定后的扩展资料（含掩码与验证状态）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkExtendedProfile'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/me/insurance:
+    post:
+      operationId: bindInsurance
+      tags: [me]
+      summary: 医保绑定
+      description: |
+        医保类型受枚举约束，医保号仅存密文、只回掩码与 `insuranceBound`。
+        重复提交为覆盖写。
+      x-idempotency: not-required
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InsuranceBind'}
+      responses:
+        '200':
+          description: 绑定后的扩展资料。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkExtendedProfile'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/me/account:
+    put:
+      operationId: updateAccount
+      tags: [me]
+      summary: 更新账号基本信息（姓名）
+      description: |
+        只改账号层基本信息（当前仅 `displayName`），与健康档案 `PATCH /me/profile` 分离。
+        返回更新后的契约 `User`，客户端据此刷新本地展示名。覆盖写，幂等。
+      x-idempotency: not-required
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AccountUpdate'}
+      responses:
+        '200':
+          description: 更新后的当前用户。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkUser'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/me/avatar:
+    post:
+      operationId: uploadAvatar
+      tags: [me]
+      summary: 上传头像
+      description: |
+        `multipart/form-data`，part 名固定为 `file`（不是 `avatar`）。
+        成功返回更新后的契约 `User`，`avatarUrl` 为站内相对路径
+        （`/api/v1/avatars/{name}`），客户端须拼接网关基址后再展示。
+        每次上传生成新文件名，旧文件由服务端回收；因此不是"同一请求同一结果"，
+        不承诺幂等。
+      x-idempotency: not-required
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 头像图片；格式与大小上限以服务端配置为准，超限返回 `413`。
+      responses:
+        '200':
+          description: 更新后的当前用户（`avatarUrl` 指向新文件）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkUser'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/consents:
+    get:
+      operationId: listConsents
+      tags: [me]
+      summary: 同意记录列表
+      description: 返回当前用户各处理目的的同意状态与政策版本。撤回记录同样返回，不原地覆盖。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 同意记录。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkConsentRecordList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: grantConsent
+      tags: [me]
+      summary: 记录一项同意
+      description: |
+        系统权限同意（如"允许录音"）不等于敏感个人信息单独同意。本接口记录的是**处理目的**
+        维度的单独同意，必须由用户在独立界面主动确认，且携带用户实际看到的政策版本。
+        政策版本升级后旧同意不自动延续。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ConsentGrantRequest'}
+      responses:
+        '200':
+          description: 同意已记录。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkConsentRecord'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/consents/{purpose}/withdraw:
+    post:
+      operationId: withdrawConsent
+      tags: [me]
+      summary: 撤回一项同意
+      description: |
+        撤回立即生效并触发下游后果：相关缓存失效、进行中的 AI 任务终止、依赖该同意的
+        数据进入删除流程。撤回记录不可删除，仅可追加。
+      parameters:
+        - name: purpose
+          in: path
+          required: true
+          description: 处理目的，取值与 `ConsentPurpose` 一致。
+          schema: {$ref: '#/components/schemas/ConsentPurpose'}
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: {type: string, maxLength: 200, description: 可选的撤回原因，仅用于运营分析，不影响撤回效力。}
+      responses:
+        '200':
+          description: 已撤回。重复撤回返回同一终态（幂等）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkConsentRecord'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /api/v1/me/deletion-requests:
+    post:
+      operationId: createDeletionRequest
+      tags: [me]
+      summary: 提交删除/注销申请
+      description: |
+        异步工作流，返回受理状态而非"已删除"。法定保留例外（如诊疗记录留存义务）必须
+        在响应中逐项说明范围与依据，不能以"已全部删除"笼统表述。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeletionRequestCreate'}
+      responses:
+        '200':
+          description: 申请已受理。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkDeletionRequest'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /api/v1/me/deletion-requests/{requestId}:
+    get:
+      operationId: getDeletionRequest
+      tags: [me]
+      summary: 查询删除申请进度
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 申请状态。他人的申请一律返回 `404`，不返回 `403`。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkDeletionRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  # ---------- 账号注销 / 授权撤回（N10/N11，2026-10-19）----------
+
+  /api/v1/user/account:
+    delete:
+      operationId: deleteAccount
+      tags: [me]
+      summary: 账号注销（软删 + 30 天冷静期）
+      description: |
+        design 10 系统设置红色入口。**红线：软删**——`users.status=DELETION_PENDING` +
+        `deletion_requested_at / deletion_effective_at`（冷静期 30 天），**不物理删库**；
+        当前会话链立即撤销，冷静期内该账号不可再次登录（403）。
+
+        二次校验：请求体携带 N9 短信验证码（`scene=ACCOUNT_DELETION` 的 `challengeId` + `code`），
+        验证码手机号必须是账号绑定手机号；缺失/错误/过期 → `422`（需先获取验证码）。
+
+        未完成业务 → `409`（前端引导先处理）：预约 `PENDING/CONFIRMED/CHECKED_IN`，
+        或问诊 `ACTIVE` 且 24 小时内有消息（问诊无关闭端点，以时间窗判定"进行中"，
+        避免历史问诊永久阻塞注销——口径显式登记于此）。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AccountDeletionVerify'}
+      responses:
+        '200':
+          description: 已受理注销（软删进入 30 天冷静期，当前会话已撤销）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAccountDeleted'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/user/auth/revoke:
+    post:
+      operationId: revokeAuthorization
+      tags: [me]
+      summary: 撤回授权同意
+      description: |
+        design 10 系统设置「撤回授权同意」。按 scope 撤回对应处理目的的同意
+        （`PROFILE→PRIVACY_POLICY`、`HEALTH_RECORDS→HEALTH_DATA_PROCESSING`、
+        `FAMILY→FAMILY_PROXY`），同意记录**只追加 WITHDRAWN 行**（不原地覆盖）。
+
+        红线：撤回后服务端**停止**该目的下的后续处理（已建立门禁的处理路径即时生效，
+        如报告 AI 解读在 HEALTH_RECORDS 撤回后返回 422）；**已合法收集的数据不主动删除**。
+        从未授意的 scope 撤回为幂等终态（同样返回 `revoked:true`，不报错）。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AuthRevokeRequest'}
+      responses:
+        '200':
+          description: 撤回已生效（幂等终态）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAuthRevoked'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  # ==========================================================================
+  # catalog
+  # ==========================================================================
+
+  /api/v1/hospitals:
+    get:
+      operationId: listHospitals
+      tags: [catalog]
+      summary: 院区列表
+      description: |
+        供挂号页顶部「本院区▾」筛选（效果图对齐，N7）。院区**由 ACTIVE 科室归属去重派生**
+        （无科室归属的院区不可知，不臆造）；名称取 `departments.hospital_name`，
+        历史行缺失时按 hospital_id 归一（与科室列表同一口径）。匿名只读。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 院区列表（可能为空数组）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkHospitalList'}
+
+  /api/v1/departments:
+    get:
+      operationId: listDepartments
+      tags: [catalog]
+      summary: 科室列表
+      description: 只读目录。前端不得内置科室清单作为权威数据，只能缓存展示。
+      parameters:
+        - name: hospitalId
+          in: query
+          required: false
+          schema: {type: string, maxLength: 64}
+        - name: keyword
+          in: query
+          required: false
+          schema: {type: string, maxLength: 40}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 科室列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkDepartmentList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/departments/{departmentId}/doctors:
+    get:
+      operationId: listDepartmentDoctors
+      tags: [catalog]
+      summary: 科室下的医生
+      parameters:
+        - name: departmentId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - name: date
+          in: query
+          required: false
+          description: 只返回该日期有号的医生；缺省表示不按日期过滤。
+          schema: {type: string, format: date}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 医生列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkDoctorList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/doctors:
+    get:
+      operationId: listDoctors
+      tags: [catalog]
+      summary: 医生列表（全量/按医院筛选）
+      description: |
+        兼容层 `/api/v1/doctor/list`、`/api/v1/doctor/by-department` 的实际翻译目标；
+        此前只在实现中存在、契约未登记（docs/前端数据依赖与后端接口需求_20261017.md §5.2）。
+        与 `{departmentId}/doctors` 同源同形，匿名只读。
+      parameters:
+        - name: hospitalId
+          in: query
+          required: false
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 医生列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkDoctorList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/doctors/{doctorId}/slots:
+    get:
+      operationId: listDoctorSlots
+      tags: [catalog]
+      summary: 医生号源
+      description: |
+        `remaining` 是某一时刻的快照，**不构成预留**。真正的可用性以 `createAppointment`
+        的原子扣减结果为准；下单失败必须回退到本接口重新取号，不得沿用旧快照。
+      parameters:
+        - name: doctorId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - name: from
+          in: query
+          required: false
+          schema: {type: string, format: date}
+        - name: to
+          in: query
+          required: false
+          schema: {type: string, format: date}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 号源列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkSlotList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  # ---------- 院内导航数据（N17，2026-10-19，P3）----------
+
+  /api/v1/indoor-map/floors:
+    get:
+      operationId: listIndoorFloors
+      tags: [catalog]
+      summary: 楼层平面图列表
+      description: |
+        服务端下发楼层清单（与前端 `packageNav/data/indoor-map.js` 同源数据），
+        接口落地后前端无缝切换；本地数据仍可演示。匿名只读。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 楼层列表（可能为空数组）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkIndoorFloorList'}
+
+  /api/v1/indoor-map/route:
+    get:
+      operationId: getIndoorRoute
+      tags: [catalog]
+      summary: 院内路径规划
+      description: |
+        按服务端平面图数据计算 `from → to` 路径（坐标为底图百分比，与前端画布同源）。
+        数据内路径经由医院大门（ORIGIN）连通：大门↔目的地为直达段，目的地↔目的地为
+        经大门两段拼接。`from`/`to` 不存在 → 404；不臆造不可达路径。
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: {type: string, maxLength: 64, description: 起点节点 ID（如 gate 或目的地 ID）。}
+        - name: to
+          in: query
+          required: true
+          schema: {type: string, maxLength: 64, description: 终点节点 ID。}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 路径（折线点 + 分步指引 + 距离）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkIndoorRoute'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  # ==========================================================================
+  # appointment
+  # ==========================================================================
+
+  /api/v1/appointments:
+    post:
+      operationId: createAppointment
+      tags: [appointment]
+      summary: 创建预约
+      description: |
+        正确性由 **数据库唯一约束 + 原子扣号 + 事务** 保证；Redis 锁只是性能优化，
+        不得作为唯一防线。
+
+        幂等语义：同一 `Idempotency-Key` 重复提交且载荷一致时，返回**首次的最终结果**
+        （含被拒的结果），不重复扣号；同一键但载荷不同返回 `409`。号源已满返回 `409`
+        并在 `details` 中给出 `slotId`，客户端应回退到号源列表重新选择。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AppointmentCreate'}
+      responses:
+        '200':
+          description: |
+            预约已创建，或为该幂等键的首次结果重放。客户端不得依据 `200` 推断"本次是新建"，
+            应读 `data.replayed`。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAppointment'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+
+  /api/v1/appointments/me:
+    get:
+      operationId: listMyAppointments
+      tags: [appointment]
+      summary: 我的预约
+      description: |
+        永远以服务端身份范围过滤，不接受客户端传入 `patientId`/`userId`。范围过滤必须
+        发生在查询条件里，不能只在返回前过滤列表。
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/AppointmentStatus'}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 本人预约列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAppointmentList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/appointments/by-idempotency-key/{key}:
+    get:
+      operationId: getAppointmentByIdempotencyKey
+      tags: [appointment]
+      summary: 按幂等键查询预约最终状态
+      description: |
+        创建预约超时或网络中断后的恢复路径。只返回**当前用户**在该键下创建的记录，
+        键本身不构成读取凭证。
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: {type: string, minLength: 8, maxLength: 128}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 该键对应的预约。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAppointment'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/v1/appointments/{appointmentId}/cancel:
+    post:
+      operationId: cancelAppointment
+      tags: [appointment]
+      summary: 取消预约
+      description: 状态机驱动：只有允许取消的状态才接受取消。重复取消返回同一终态而非报错。
+      parameters:
+        - name: appointmentId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: {type: string, maxLength: 200}
+      responses:
+        '200':
+          description: 取消后的预约。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAppointment'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /api/v1/appointments/{appointmentId}:
+    delete:
+      operationId: deleteAppointment
+      tags: [appointment]
+      summary: 删除（取消）预约
+      description: |
+        患者侧删除预约：语义与 POST .../cancel 一致（状态机驱动 + 幂等 + 号源回补）。
+        仅当前用户资源（他人 404）；已处 CANCELLED 等终态 → 200 同终态；
+        不可取消状态（如 CHECKED_IN/COMPLETED）→ 409。
+      parameters:
+        - name: appointmentId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: 取消后的预约。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAppointment'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  # ==========================================================================
+  # patient
+  # ==========================================================================
+
+  /api/v1/health-records:
+    get:
+      operationId: listHealthRecords
+      tags: [patient]
+      summary: 健康档案列表
+      parameters:
+        - name: familyMemberId
+          in: query
+          required: false
+          description: 家庭代理场景；服务端必须校验当前用户对该成员的有效授权，否则返回 `404`。
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 档案列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkHealthRecordList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      operationId: createHealthRecord
+      tags: [patient]
+      summary: 新增健康档案
+      description: 只收集功能确需的字段；字段必要性由医疗与法律分别确认。附件走上传意图 + 短期签名 URL，不在此接口内联传输。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/HealthRecordCreate'}
+      responses:
+        '200':
+          description: 建档结果。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkHealthRecord'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  # ---------- 健康档案附件（V9 · 2026-10-18）----------
+  # 两段式上传：先 POST /api/v1/attachments 拿 objectKey（暂存），建档时以
+  # HealthRecordCreate.attachmentKeys 挂载；或对既有档案直接
+  # POST /api/v1/health-records/{recordId}/attachments 上传即挂载。
+  # ⚠️ 路径字面量 /attachments 与 /attachments/{objectKey} 不冲突（集合 POST vs 条目 GET）。
+  /api/v1/attachments:
+    post:
+      operationId: uploadAttachment
+      tags: [patient]
+      summary: 上传检查资料（暂存，产出 objectKey）
+      description: |
+        `multipart/form-data`，part 名固定为 `file`。返回 objectKey 与元数据（含短期签名 URL）。
+        objectKey 供建档时以 `HealthRecordCreate.attachmentKeys` 挂载；暂存文件不与任何档案关联，
+        弃用会留孤儿文件（V1 已知限制，运维定期清理）。
+        格式与大小：≤10MB，jpg/jpeg/png/webp/pdf；超限 `413`，格式不符 `415`。
+      x-idempotency: not-required
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 检查资料文件；格式与大小上限以服务端配置为准。
+      responses:
+        '200':
+          description: 上传结果（objectKey + 元数据 + 短期签名 URL）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAttachment'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '415': {$ref: '#/components/responses/UnsupportedMediaType'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/attachments/{objectKey}:
+    get:
+      operationId: readAttachment
+      tags: [patient]
+      summary: 读取附件（匿名 + 短期签名 URL）
+      description: |
+        匿名可访问（`<image>` 组件直连无法携带 Authorization；签名即鉴权）。
+        URL 必须携带 `expires`（unix 秒）与 `sig`（HMAC-SHA256(secret, objectKey + "|" + expires)），
+        TTL 默认 15 分钟。过期 `410`、签名不符 `403`、文件不存在 `404`。
+        档案列表/详情响应中的 `attachments[].url` 即此类签名 URL，过期后重新拉取档案即得新 URL。
+      security: []
+      parameters:
+        - name: objectKey
+          in: path
+          required: true
+          description: 服务端生成的文件名（32 位 hex + 白名单扩展名）。
+          schema: {type: string, pattern: '^[0-9a-f]{32}\.(jpg|jpeg|png|webp|pdf)$'}
+        - name: expires
+          in: query
+          required: true
+          description: 过期时间（unix 秒）。
+          schema: {type: integer}
+        - name: sig
+          in: query
+          required: true
+          description: HMAC-SHA256 签名（hex）。
+          schema: {type: string}
+      responses:
+        '200':
+          description: 文件二进制（Content-Type 按扩展名）。
+          content:
+            image/jpeg: {schema: {type: string, format: binary}}
+            image/png: {schema: {type: string, format: binary}}
+            image/webp: {schema: {type: string, format: binary}}
+            application/pdf: {schema: {type: string, format: binary}}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '410':
+          description: 签名 URL 已过期；重新拉取档案获取新 URL。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
+
+  /api/v1/health-records/{recordId}/attachments:
+    get:
+      operationId: listRecordAttachments
+      tags: [patient]
+      summary: 档案附件列表（含短期签名 URL）
+      description: 不存在/越权 → `404`（不泄露存在性）。`url` 可能已过期，过期时重新拉取。
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 附件列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAttachmentList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      operationId: uploadRecordAttachment
+      tags: [patient]
+      summary: 上传附件并挂到既有档案
+      description: |
+        `multipart/form-data`，part 名固定为 `file`。先校验档案归属（含家庭成员
+        GRANTED 代理授权），再落盘 + 插行，返回带短期签名 URL 的附件元数据。
+        格式与大小同暂存上传（≤10MB，jpg/jpeg/png/webp/pdf）。
+      x-idempotency: not-required
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: 附件元数据（含短期签名 URL）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAttachment'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '415': {$ref: '#/components/responses/UnsupportedMediaType'}
+
+  /api/v1/health-records/{recordId}/attachments/{attachmentId}:
+    delete:
+      operationId: deleteRecordAttachment
+      tags: [patient]
+      summary: 删除附件
+      description: 不存在/越权 → `404`。物理删除文件与行；前端负责二次确认。
+      x-idempotency: not-required
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - name: attachmentId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 删除成功（data 为 null）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkEmpty'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+
+  /api/v1/health-records/{recordId}/interpret:
+    post:
+      operationId: interpretHealthRecord
+      tags: [patient]
+      summary: 报告 AI 解读
+      description: |
+        对单条健康档案（通常是检验/检查报告）生成**面向患者的通俗解释**。
+        属医疗建议边界，服务端必须在响应里携带免责声明，客户端必须原样展示。
+
+        ⚠️ 红线：解读结果**不得给出诊断结论、用药剂量或处方**；不得修改原记录内容。
+        ⚠️ 幂等：同一 `Idempotency-Key` 重复请求应返回首次结果，不重复计费、不重复生成。
+        ⚠️ 未就绪：报告尚在 `PENDING/REVIEWING` 时返回 `422`，客户端显示「报告尚未出具」。
+        422 同样覆盖：不支持的 `scope`，以及 HEALTH_DATA_PROCESSING 同意**已撤回**（N11）——
+        撤回即停止处理，客户端引导到设置重新授权。
+
+        客户端口径：本接口未实现前返回 501，前端必须显示可见的降级提示，
+        **不得**用本地假数据冒充解读结果（违反"禁止伪造业务数据"红线）。
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InterpretationRequest'}
+      responses:
+        '200':
+          description: 解读结果（可能仍在生成，见 `data.status`）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkInterpretation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/family-members:
+    get:
+      operationId: listFamilyMembers
+      tags: [patient]
+      summary: 家庭成员列表
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 成员列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkFamilyMemberList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: createFamilyMember
+      tags: [patient]
+      summary: 添加家庭成员
+      description: 添加不等于获得代理权限；代理权限需经成员本人或被授权监护人确认后由服务端生效。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FamilyMemberCreate'}
+      responses:
+        '200':
+          description: 成员已添加。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkFamilyMember'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  # 单成员路径（实现见 PatientController）：GET/PATCH/DELETE 三个方法均已在后端落地。
+  # ⚠️ 字面量路径 /family-members/invitations 必须优先于本路径匹配（Spring 按字面量优先）。
+  /api/v1/family-members/{memberId}:
+    get:
+      operationId: getFamilyMember
+      tags: [patient]
+      summary: 家庭成员详情
+      description: 只返回当前用户名下的成员；"不存在"与"不属于当前用户"同样返回 `404`，不泄漏存在性。
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 成员资料。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkFamilyMember'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      operationId: updateFamilyMember
+      tags: [patient]
+      summary: 更新家庭成员资料
+      description: |
+        逐字段更新，缺省字段保留原值。**不含 `proxyStatus`**——代理权限只能由成员确认或撤回，
+        客户端不得通过本接口自授权。服务端宽松接收未知字段（忽略而非 422）。
+      x-idempotency: not-required
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FamilyMemberUpdate'}
+      responses:
+        '200':
+          description: 更新后的成员资料。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkFamilyMember'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    delete:
+      operationId: deleteFamilyMember
+      tags: [patient]
+      summary: 删除家庭成员
+      description: |
+        解除本人对该成员的代管关系与档案可见性。重复删除返回同一终态（`data: null`），
+        因此不要求幂等键。
+      x-idempotency: not-required
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 已删除，`data` 为 `null`。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkEmpty'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/v1/family-members/invitations:
+    get:
+      operationId: listFamilyInvitations
+      tags: [patient]
+      summary: 我发出的家庭成员邀请
+      description: |
+        只回邀请元数据；token/tokenHash/phoneHash 一律不下发（令牌仅在创建响应出现一次）。
+        修复 §2.4：字面量路径曾被 `GET /family-members/{memberId}` 吞掉返回 404。
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 邀请列表（新的在前）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkFamilyInvitationSummaryList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: createFamilyInvitation
+      tags: [patient]
+      summary: 发起家庭成员绑定邀请
+      description: 邀请令牌有时效且一次性；令牌不得包含明文身份信息，服务端只保存哈希。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [relation]
+              properties:
+                relation: {type: string, maxLength: 20, description: 关系标签，由前端枚举下发，不作为权限依据。}
+                channel: {type: string, enum: [QRCODE, PHONE_DEEPLINK], description: 邀请分发渠道。}
+                phone: {type: [string, 'null'], maxLength: 20, description: 可选；若提供则仅以哈希保存用于比对，不回显原文。}
+      responses:
+        '200':
+          description: 邀请已创建。返回的令牌只在此次响应中出现。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkFamilyInvitation'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+
+  # ==========================================================================
+  # consultation
+  # ==========================================================================
+
+  /api/v1/consultations:
+    get:
+      operationId: listConsultations
+      tags: [consultation]
+      summary: 我的问诊会话
+      description: 返回元数据与摘要，不返回完整消息正文；正文按会话单独拉取。
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 会话列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkConsultationList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+    post:
+      operationId: createConsultation
+      tags: [consultation]
+      summary: 创建问诊会话并发起首个 AI 任务
+      description: |
+        返回会话与任务两个对象。任务进入 `QUEUED`，结果通过 `GET /api/v1/ai/tasks/{taskId}/events`
+        或轮询 `GET /api/v1/ai/tasks/{taskId}` 获得。
+
+        **急症优先**：若输入命中红线症状，本接口先返回安全提示（`data.safety.emergency = true`），
+        生成结果不阻塞该提示的展示，也不得让用户等待模型输出来决定是否就医。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ConsultationCreate'}
+      responses:
+        '200':
+          description: 会话与任务已创建。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkConsultationCreated'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/consultations/{consultationId}:
+    get:
+      operationId: getConsultation
+      tags: [consultation]
+      summary: 会话详情与消息
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 会话与其消息（分页）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkConsultation'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/v1/consultations/{consultationId}/messages:
+    get:
+      operationId: listConsultationMessages
+      tags: [consultation]
+      summary: 拉取会话消息正文
+      description: |
+        `GET /api/v1/consultations` 只返回元数据与摘要，正文须由本接口单独拉取
+        （2026-10-19 补齐：原契约只有发送端，重进会话后无法恢复历史消息，
+         导致「在线问诊」页面只能显示当次会话内容）。
+        按 `createdAt` 升序返回，支持游标分页。不存在或越权 → `404`（不泄露存在性）。
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 消息列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkMessageList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      operationId: sendConsultationMessage
+      tags: [consultation]
+      summary: 发送消息
+      description: |
+        用户消息先落库（权威记录在 MySQL），再创建 AI 任务。生成失败不影响用户消息的
+        持久化，客户端应能看到自己发出的内容并重试生成。
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MessageCreate'}
+      responses:
+        '200':
+          description: 消息已保存并已创建生成任务。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkMessageSent'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/consultations/{consultationId}/confirmations:
+    post:
+      operationId: confirmConsultationInput
+      tags: [consultation]
+      summary: 确认转写或结构化输入
+      description: |
+        语音转写与图片识别结果在进入诊疗相关流程前必须由用户核对确认，尤其是症状、
+        药品、剂量和时间。未确认的转写只能作为草稿存在，不得据此生成结论。
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InputConfirmation'}
+      responses:
+        '200':
+          description: 已确认。若来源任务仍在运行，服务端应终止其后续生成。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkMessage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  # ==========================================================================
+  # ai-task
+  # ==========================================================================
+
+  /api/v1/ai/tasks/{taskId}:
+    get:
+      operationId: getAiTask
+      tags: [ai-task]
+      summary: 查询 AI 任务状态与结果
+      description: |
+        **断线恢复的权威路径。** SSE 连接中断、页面重进、超时之后，一律回到本接口取终态；
+        绝不允许把"连接断了"当成成功，也不允许用 `QUEUED` 无限轮询掩盖失败。
+        任务终态为 `SUCCEEDED | FAILED | CANCELLED | EXPIRED`。
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 任务状态。`data.result` 仅在 `SUCCEEDED` 时出现。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAiTask'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+    delete:
+      operationId: cancelAiTask
+      x-idempotency: not-required
+      tags: [ai-task]
+      summary: 取消 AI 任务
+      description: |
+        尽力取消：服务端向下游传递取消信号，但已产生的部分结果不回滚。状态转换幂等——
+        对已处于终态的任务重复调用返回同一终态，不报错。
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 取消后的任务终态。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAiTask'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/v1/ai/tasks/{taskId}/events:
+    get:
+      operationId: streamAiTaskEvents
+      tags: [ai-task]
+      summary: 订阅 AI 任务事件流（SSE）
+      description: |
+        `text/event-stream`。事件类型固定为
+        `accepted` `status` `delta` `citation` `safety` `tts` `completed` `cancelled` `error`，
+        载荷结构见 `AiTaskEvent`。
+
+        流**只是增量通道**：收到 `completed` 后客户端仍需以 `GET /api/v1/ai/tasks/{taskId}`
+        的终态为准，避免丢帧导致的半截内容被当成完整结果。服务端不得伪造模型不提供的
+        精确进度百分比，`progressPhase` 只能是阶段名。
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - name: Last-Event-ID
+          in: header
+          required: false
+          description: 断线续传游标。服务端可据此补发，但补发失败时客户端必须回退到状态轮询。
+          schema: {type: string, maxLength: 128}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 事件流。每个事件为 `id:` + `event:` + `data:`(JSON `AiTaskEvent`)。
+          headers:
+            Cache-Control:
+              schema: {type: string, const: 'no-store'}
+            X-Accel-Buffering:
+              description: 反向代理必须关闭缓冲，否则事件会被攒到最后一次性下发。
+              schema: {type: string, const: 'no'}
+          content:
+            text/event-stream:
+              schema: {type: string, description: SSE 帧文本；`data:` 部分为 `AiTaskEvent` 的 JSON 序列化。}
+              example: |
+                id: 41
+                event: delta
+                data: {"taskId":"t_1","seq":41,"type":"delta","text":"建议先补充","occurredAt":"2026-10-14T10:30:02+08:00"}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  # ==========================================================================
+  # triage
+  # ==========================================================================
+
+  /api/v1/triage/recommendations:
+    post:
+      operationId: recommendDepartment
+      tags: [triage]
+      summary: 推荐就诊科室
+      description: |
+        服务端编排：本地红旗规则先跑，远端模型只做补充。**已命中的本地红旗等级不得被
+        远端结果降低。** 响应必须区分 `RULE_RESULT` 与 `AI_GENERATED` 来源，且只给
+        科室建议与就医指引，不给诊断。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TriageRequest'}
+      responses:
+        '200':
+          description: 导诊建议。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkTriageResult'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/triage/emergency-checks:
+    post:
+      operationId: checkEmergency
+      x-idempotency: not-required
+      tags: [triage]
+      summary: 急症信号检查
+      description: |
+        轻量、快速、无生成的端点，供页面在输入过程中调用。红线词表与阈值属医疗审核内容
+        （待决事项 O-07），当前仅为占位契约。客户端**必须**保留本地规则做断网兜底：
+        本接口失败时不得让急症提示消失。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: {type: string, maxLength: 500}
+                locale: {type: string, maxLength: 20, default: zh-CN}
+      responses:
+        '200':
+          description: 检查结果。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkEmergencyCheck'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  # ==========================================================================
+  # care-plan
+  # ==========================================================================
+
+  /api/v1/care-plans:
+    post:
+      operationId: createCarePlan
+      tags: [care-plan]
+      summary: 生成养生/照护建议
+      description: |
+        输出定位为**生活方式与膳食参考**，不得表述为处方、治疗方案或用药指导。
+        响应中的每条建议都必须带来源标识与边界提示；证据不足时返回结构化拒答，
+        不得用通用养生话术填充。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CarePlanRequest'}
+      responses:
+        '200':
+          description: '照护建议。幂等重放时响应头带 Idempotency-Replayed: true。'
+          headers:
+            Idempotency-Replayed:
+              description: 同键同载荷重放时为 `true`；首次执行不返回该头。
+              schema: {type: string, enum: ['true']}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkCarePlan'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  # ==========================================================================
+  # message（消息中心，V21 医生-患者互通）
+  # ==========================================================================
+
+  /api/v1/messages:
+    get:
+      operationId: listMessages
+      tags: [message]
+      summary: 消息列表（分页）
+      description: |
+        当前用户消息中心列表。支持 `read` 过滤（true/false/all）与 keyset 游标分页。
+        消息类型 `type`：APPOINTMENT（挂号状态变更通知）· SYSTEM（系统通知）。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: read
+          in: query
+          required: false
+          schema: {type: string, enum: [all, true, false], default: all}
+          description: all=全部 / true=仅已读 / false=仅未读。
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: 消息列表（含 keyset 下一页游标）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkMessageCenterList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /api/v1/messages/unread-count:
+    get:
+      operationId: getUnreadCount
+      tags: [message]
+      summary: 未读消息数
+      responses:
+        '200':
+          description: 未读数（红点）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkMessageUnreadCount'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /api/v1/messages/{messageId}/read:
+    post:
+      operationId: markMessageRead
+      tags: [message]
+      summary: 标记消息已读
+      description: 幂等：重复标记同一消息仍为 200；消息不存在或非本人同样返回 200（不泄露存在性）。
+      x-idempotency: not-required
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 标记成功。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkMessageCenter'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  # ==========================================================================
+  # voice
+  # ==========================================================================
+
+  /api/v1/voice/asr:
+    post:
+      operationId: recognizeSpeech
+      tags: [voice]
+      summary: 语音识别
+      description: |
+        本地 `qwen3-asr-0.6b`，音频不出服务器。识别文本**必须由用户确认后**才能进入
+        诊疗相关流程（见 `confirmConsultationInput`）。
+
+        默认不保存音频与识别文本；音频在受控临时目录中于任务结束后清理。
+        繁忙或超时分别返回 `ASR_BUSY` / `ASR_TIMEOUT`，客户端保留重录与文字输入，
+        不得自动改走第三方云 ASR。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [audio]
+              properties:
+                audio: {type: string, format: binary, description: 16kHz 单声道；服务端负责转码与校验，不信任客户端声明的格式。}
+                durationMs: {type: integer, minimum: 1, maximum: 60000, description: 客户端声明时长，仅用于提前拒绝，服务端仍需自行测量。}
+                locale: {type: string, maxLength: 20, default: zh-CN}
+                consultationId: {type: [string, 'null'], maxLength: 64}
+      responses:
+        '200':
+          description: 识别结果。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAsrResult'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+        '504': {$ref: '#/components/responses/GatewayTimeout'}
+
+  /api/v1/voice/tts:
+    post:
+      operationId: synthesizeSpeech
+      tags: [voice]
+      summary: 语音合成
+      description: |
+        合成由**服务端配置的适配器**承担，实际引擎在 `engine` 字段中如实返回。两种情形
+        都必须注意：
+
+        - 若使用 `edge-tts`，它是**联网第三方库**，不是本项目购买并受 SLA 约束的 Azure
+          正式商业 API，可用性、音色列表与数据处理方式都可能变化；
+        - 不论使用哪种引擎，客户端都不得据 `engine` 值宣称任何 SLA，也不得把本地或
+          第三方实现描述成 Azure 正式商业服务。
+
+        无论引擎为何：
+
+        - 文本在送出前先脱敏（姓名、手机号、证件号、病历号等）；
+        - 失败返回 `TTS_UNAVAILABLE`，页面保留文字，不播放占位音频，不阻断对话；
+        - 响应不内联音频字节，而是返回短期签名 URL，命中缓存时同样返回 URL 并置 `cached: true`。
+
+        **缓存键**对引擎版本、音色、语速、格式、规范化文本与隐私作用域做 HMAC-SHA-256；
+        规范化不得改变医学含义。
+
+        ⚠️ 引擎取值与仓库当前实现不一致（待决事项 O-10），迁移前不得按本段的引擎假设
+        去改客户端。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TtsRequest'}
+      responses:
+        '200':
+          description: 合成结果（音频以短期签名 URL 交付）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkTtsResult'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+        '504': {$ref: '#/components/responses/GatewayTimeout'}
+
+  /api/v1/voice/voices:
+    get:
+      operationId: listVoices
+      tags: [voice]
+      summary: 可用音色
+      description: 音色列表可能来自第三方且随时变化，客户端必须容忍未知值并回退到默认音色，不得把列表写死在包里。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 音色列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkVoiceList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+    post:
+      operationId: saveVoicePreference
+      tags: [voice]
+      summary: 保存自定义音色偏好
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VoicePreference'}
+      responses:
+        '200':
+          description: 已保存。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkVoice'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/voice/voices/default:
+    get:
+      operationId: getDefaultVoice
+      tags: [voice]
+      summary: 默认音色
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 默认音色。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkVoice'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+    put:
+      operationId: setDefaultVoice
+      tags: [voice]
+      summary: 设默认音色（覆盖当前账号的音色偏好）
+      description: |
+        语义明确为"覆盖账号级默认音色"，换机后随账号恢复；与 `POST /voices` 同义，
+        保留 POST 仅为兼容旧客户端（docs/前端数据依赖与后端接口需求_20261017.md §4.4）。
+        覆盖写：同 body 重复提交得到同一终态，服务端未校验幂等键。
+      x-idempotency: not-required
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VoicePreference'}
+      responses:
+        '200':
+          description: 已保存。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkVoice'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/voice/voices/{voiceId}:
+    delete:
+      operationId: deleteVoice
+      x-idempotency: not-required
+      tags: [voice]
+      summary: 删除自定义音色
+      parameters:
+        - name: voiceId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 已删除（幂等：不存在的音色同样返回成功，避免探测他人音色 ID）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkDeleted'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /api/v1/voice/voices/{voiceId}/previews:
+    post:
+      operationId: previewVoice
+      x-idempotency: not-required
+      tags: [voice]
+      summary: 试听音色
+      description: 使用固定、非敏感的示例文本试听，不接受任意文本，避免把试听接口变成任意合成通道。
+      parameters:
+        - name: voiceId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 试听音频（短期签名 URL）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkTtsResult'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+
+  /api/v1/voice/models:
+    get:
+      operationId: listVoiceModels
+      tags: [voice]
+      summary: 可用语音模型与能力状态
+      description: |
+        返回**能力状态**而非承诺：`available` / `degraded` / `unavailable`。
+        模型权重缺失时这里如实反映，客户端据此隐藏或禁用相应入口，而不是等到调用才失败。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 模型清单与能力状态。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkVoiceModelList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  # ==========================================================================
+  # content
+  # ==========================================================================
+
+  # ---------- 健康科普（N12/N13，2026-10-19）----------
+
+  /api/v1/health-articles:
+    get:
+      operationId: listHealthArticles
+      tags: [content]
+      summary: 科普文章列表（分页 + 分类 + 搜索）
+      description: |
+        服务端下发动态科普内容（分类/搜索/游标分页），替代仅靠本地
+        `utils/knowledge-kb.js` 的静态清单；本地 KB 仍是**离线降级**，列表为空或
+        不可用时前端降级到本地内容并显式提示，不伪造服务端数据。
+        封面 `coverUrl` 为 Attachment 签名 URL（HMAC 短 TTL）；缺失时前端不渲染封面占位图以外的内容。
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema: {type: string, maxLength: 32, description: 分类筛选（如 sleep/digest 等运营分类键）。}
+        - name: type
+          in: query
+          required: false
+          schema: {type: string, enum: [article, video]}
+        - name: kw
+          in: query
+          required: false
+          schema: {type: string, maxLength: 40, description: 标题/摘要关键词搜索。}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 文章列表（可能为空数组）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkArticleList'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/health-articles/{articleId}:
+    get:
+      operationId: getHealthArticle
+      tags: [content]
+      summary: 科普文章详情（分节正文 + tip + 封面）
+      description: 不存在或未上架一律 404；`sections` 分节正文、`tip` 为小贴士、`related[]` 为相关文章 ID。
+      parameters:
+        - name: articleId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 文章详情。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkArticle'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/contents:
+    get:
+      operationId: listContents
+      tags: [content]
+      summary: 健康科普列表
+      description: 只返回已通过医疗审核且在有效期内的内容；草稿、过期与已撤回内容不得出现在列表里。
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema: {type: string, maxLength: 40}
+        - name: keyword
+          in: query
+          required: false
+          schema: {type: string, maxLength: 60}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 内容列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkContentList'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/contents/{contentId}:
+    get:
+      operationId: getContent
+      tags: [content]
+      summary: 科普详情
+      parameters:
+        - name: contentId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 内容详情，含来源、审核状态与生效期。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkContent'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/resources/manifest:
+    get:
+      operationId: getResourceManifest
+      tags: [content]
+      summary: 客户端资源清单
+      description: |
+        返回远侧资源的版本、ETag、SHA-256、MIME、大小、关键级与过期信息，客户端据此
+        后台更新可缓存资源。**清单损坏或不可用时，客户端必须以内置资源继续运行**——
+        图片、图标或清单失败不得阻断启动、登录与业务 API。
+
+        禁止通过本清单下发可执行 JS/WXML 或未签名的安全规则（如红旗词表）。
+      parameters:
+        - name: platform
+          in: query
+          required: false
+          schema: {type: string, const: wechat-miniprogram}
+        - name: clientVersion
+          in: query
+          required: false
+          schema: {type: string, maxLength: 20}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 资源清单。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkResourceManifest'}
+        '304':
+          description: 清单未变化（配合 `If-None-Match`）。
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  # 单资源读取：清单 items[].url 的目标，也是清单未配 public-base-url 时客户端的直取通道。
+  # 与 /manifest 的关系：清单负责"有哪些、什么时候换"，本端点负责"把字节取回来"。
+  /api/v1/resources/{key}:
+    get:
+      operationId: readResource
+      tags: [content]
+      summary: 按 key 读取资源二进制（匿名）
+      description: |
+        匿名可访问：`<image>` / `wx.downloadFile` 无法携带 Authorization，而资源本身是
+        公开的图标与插画（无隐私属性），故与 `/manifest` 同属 `AuthInterceptor` 匿名白名单。
+        选"匿名直取"而非"HMAC 签名 URL"：签名会让 URL 每次都变，从而丢掉 `ETag`/`304`
+        与 7 天 `Cache-Control` 的收益；私密文件走 `/api/v1/attachments/{objectKey}` 的签名通道。
+
+        响应头：`Content-Type` 取库内 `mime_type`（不统一 octet-stream，否则微信端不渲染）、
+        显式 `Content-Length`、`ETag` = sha256、`Cache-Control` public（图片 7 天 / 视频 1 天）。
+        只暴露 `status=1` 的资源；停用与不存在一律 `404`（不泄露存在性）。
+
+        客户端缓存注意：微信按 URL 缓存图片，远端内容替换后建议在 URL 追加内容指纹
+        （如 `?v={sha256 前 12 位}`），否则旧图最多残留 7 天；服务端忽略未知 query。
+      security: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          description: 资源键，如 `home.xiaoan-robot`、`icons.chat`。
+          schema: {type: string, maxLength: 64}
+      responses:
+        '200':
+          description: 资源二进制（Content-Type 取库内 mime）。
+          content:
+            image/png: {schema: {type: string, format: binary}}
+            image/jpeg: {schema: {type: string, format: binary}}
+            image/webp: {schema: {type: string, format: binary}}
+            image/gif: {schema: {type: string, format: binary}}
+            video/mp4: {schema: {type: string, format: binary}}
+        '304':
+          description: 资源未变化（配合 `If-None-Match`）。
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  # ==========================================================================
+  # doctor
+  # ==========================================================================
+
+  /api/v1/doctor/me:
+    get:
+      operationId: getDoctorMe
+      tags: [doctor]
+      summary: 当前医生自述资料
+      description: |
+        返回当前登录医生的基本任职信息（科室、职称、工号、姓名、头像），
+        供医生端工作台顶部展示与问诊归属使用。无 ACTIVE 任职 → 403。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 医生自述资料。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkDoctorProfile'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /api/v1/doctor/overview:
+    get:
+      operationId: getDoctorOverview
+      tags: [doctor]
+      summary: 医生统计概览
+      description: |
+        工作台/挂号页统计骨架（效果图 01/13），一次取回聚合计数，替代全量拉列表前端聚合。
+
+        计数口径（均按 UTC 日窗口，与 workbench 一致）：`waiting` = 今日已签到候诊
+        （CHECKED_IN）、`done` = 今日已完成（COMPLETED）、`todayTotal` = 今日挂号总数、
+        `pendingTodos` = `listDoctorTodos` 可判定待办条数。
+
+        ⚠️ `inProgress`（接诊中）：当前挂号状态机 `AppointmentStatus` 无「接诊中」状态，
+        服务端**不可判定** → 恒为 `null`，前端不渲染该统计卡（不以 0 冒充）。
+        子块独立降级：单个计数失败时该字段为 `null`（同样不渲染），其余字段照常返回。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 统计概览（不可判定/降级字段为 null）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkDoctorOverview'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /api/v1/doctor/todos:
+    get:
+      operationId: listDoctorTodos
+      tags: [doctor]
+      summary: 医生待处理事项
+      description: |
+        工作台「待处理事项」卡数据源（效果图 01）。只返回**服务端可判定**的待办，
+        不做客户端猜测；空数组表示确实没有待办（客户端展示空态，不得伪造条目）。
+
+        `kind` 语义：`CONSULT_REPLY` 在线问诊待回复 · `CHECKIN_CONFIRM` 预约签到待确认 ·
+        `REPORT_REVIEW` 检查报告待审核。
+        `route` 由服务端给出跳转目标（含所需参数），客户端**不得自行拼业务路径**；
+        为 `null` 时该项不可点击。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 待办列表（可能为空数组）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkTodoList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+
+  /api/v1/doctor/workbench:
+    get:
+      operationId: getDoctorWorkbench
+      tags: [doctor]
+      summary: 医生工作台概览
+      description: 数据范围限定在登录医生被授权的科室/病区内，由服务端按任职关系裁剪，不接受客户端传入范围参数。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 工作台概览。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkDoctorWorkbench'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/doctor/appointments:
+    get:
+      operationId: listDoctorAppointments
+      tags: [doctor]
+      summary: 医生挂号列表
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/AppointmentStatus'}
+        - name: date
+          in: query
+          required: false
+          schema: {type: string, format: date}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 挂号列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAppointmentList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /api/v1/doctor/appointments/{appointmentId}/status:
+    post:
+      operationId: updateAppointmentStatus
+      tags: [doctor]
+      summary: 流转挂号状态
+      description: |
+        状态机驱动，服务端校验合法转换；非法转换返回 `409` 而不是静默忽略。
+        每次流转写入 `appointment_status_events`，记录操作者、时间与服务端时间戳。
+      parameters:
+        - name: appointmentId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [toStatus, expectedVersion]
+              properties:
+                toStatus: {$ref: '#/components/schemas/AppointmentStatus'}
+                expectedVersion:
+                  type: integer
+                  minimum: 1
+                  description: 乐观锁版本。不匹配返回 `409`，用于阻止并发覆盖。
+                note: {type: string, maxLength: 200}
+      responses:
+        '200':
+          description: '流转后的预约。幂等重放时响应头带 Idempotency-Replayed: true（2026-10-18 D1 与 care-plan 等端点统一）。'
+          headers:
+            Idempotency-Replayed:
+              description: 同键同资源同载荷重放时为 `true`；首次流转不返回该头。
+              schema: {type: string, enum: ['true']}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAppointment'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/doctor/consultations:
+    get:
+      operationId: listDoctorConsultations
+      tags: [doctor]
+      summary: 医生问诊会话列表（仅本医生名下 ACTIVE）
+      description: |
+        V21 医生回复闭环（2026-10-23 实现，2026-10-29 回写契约）：非医生用户 `403`；
+        只返回当前医生名下的 ACTIVE 会话，含就诊人姓名/头像（医生端识别就诊人所需），
+        不含医生卡字段。cursor 为双键游标（createdAt + id），limit 取 1~50，缺省 20。
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 会话列表；`meta.cursor` 非空表示还有下一页。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkDoctorConsultationList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /api/v1/doctor/consultations/{consultationId}/messages:
+    get:
+      operationId: listDoctorConsultationMessages
+      tags: [doctor]
+      summary: 医生视角拉取会话消息（旧→新）
+      description: |
+        仅会话归属医生可见；他人 / 未分配 / 不存在一律 `404`（不泄露存在性）。
+        与患者侧 `/consultations/{id}/messages` 同构，返回同一 `Message` 结构。
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 消息列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkMessageList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/v1/doctor/consultations/{consultationId}/accept:
+    post:
+      operationId: acceptDoctorConsultation
+      tags: [doctor]
+      summary: 认领未分配咨询
+      description: |
+        未分配 → 绑定当前医生；已归本人 → 幂等重放（`replayed=true`）；
+        已归他人或会话已结束 → `409`。响应 `X-Idempotency-Replayed` 头标注是否重放。
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: 认领结果。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkConsultationAccept'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /api/v1/doctor/consultations/{consultationId}/close:
+    post:
+      operationId: closeDoctorConsultation
+      tags: [doctor]
+      summary: 结束在线问诊
+      description: |
+        status → CLOSED，写一条双方可见的 system_notice 并给患者发消息中心通知。
+        仅归属医生可结束；已结束 → `409 CONSULTATION_CLOSED`；不存在 / 非本人 → `404`。
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: 结束结果。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkConsultationClose'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /api/v1/consultations/{consultationId}/doctor-reply:
+    post:
+      operationId: doctorReplyConsultation
+      tags: [consultation, doctor]
+      summary: 医生回复患者问诊
+      description: |
+        必须为会话归属医生（否则 `404`，防探测）。消息先独立落库（权威），再写患者消息中心通知。
+        重复提交同一 Idempotency-Key → `replayed=true`，不产生第二条消息。
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DoctorReplyRequest'}
+      responses:
+        '200':
+          description: 已发送。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkDoctorReplySent'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/consultations/{consultationId}/triage:
+    post:
+      operationId: requestConsultationTriage
+      x-idempotency: not-required
+      tags: [consultation]
+      summary: 会话内 AI 分诊建议（只建任务，不同步等模型）
+      description: |
+        把会话内患者全部描述聚合成症状文本交远端模型，返回 `AiTask`（轮询
+        `GET /api/v1/ai/tasks/{taskId}` 取结果）。只建任务不写业务数据，
+        同会话 60s 内重复调用复用既有任务，故不要求 Idempotency-Key。
+        会话不属于当前用户 → `404`。
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                requestedProfile: {type: string, maxLength: 40, description: 期望的分诊档位（缺省由服务端决定）。}
+      responses:
+        '200':
+          description: 已建任务。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAiTask'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+
+  /api/v1/beds:
+    get:
+      operationId: listBeds
+      tags: [doctor]
+      summary: 床位列表
+      description: 范围限定在登录医生被授权的病区。
+      parameters:
+        - name: wardId
+          in: query
+          required: false
+          schema: {type: string, maxLength: 64}
+        - name: status
+          in: query
+          required: false
+          schema: {type: string, enum: [AVAILABLE, OCCUPIED, RESERVED, CLEANING, OUT_OF_SERVICE]}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 床位列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkBedList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+
+  /api/v1/beds/{bedId}/assignment:
+    post:
+      operationId: assignBed
+      tags: [doctor]
+      summary: 变更床位分配
+      description: 并发冲突由乐观锁 + 唯一约束裁决；同一床位同一时段不得存在两条有效分配。
+      parameters:
+        - name: bedId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BedAssignmentRequest'}
+      responses:
+        '200':
+          description: 变更后的床位。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkBed'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  # ==========================================================================
+  # home
+  # ==========================================================================
+
+  /api/v1/home/summary:
+    get:
+      operationId: getHomeSummary
+      tags: [home]
+      summary: 首页聚合
+      description: |
+        聚合接口只返回首屏展示所必需的字段。不做"顺手多返回一些"——首页不返回健康
+        明细、报告正文或消息全文。各子块独立降级：其中一块不可用时用 `blocks[].status`
+        标注，不影响整页渲染。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 首页聚合数据。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkHomeSummary'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  # ==========================================================================
+  # internal（仅内网；客户端永不调用）
+  # ==========================================================================
+
+  /internal/v1/callbacks/task-events:
+    post:
+      x-status: provisional
+      x-open-item: O-02
+      operationId: receiveTaskEvent
+      x-idempotency: not-required
+      tags: [internal]
+      summary: 接收 FastAPI 任务终态回传（未定稿）
+      description: |
+        ⚠️ **未定稿（待决事项 O-02）。** 路径与载荷在 `docs/v4/04` 第 3 节中明确标注为
+        待定；在定稿之前，Spring Boot 侧以**轮询** `GET /internal/v1/tasks/{taskId}`
+        为唯一权威路径，本端点不得作为实现的依据。
+
+        定稿后必须满足：HMAC 签名 + 时间窗（建议 ±5 分钟）+ 按 `eventId` 幂等 +
+        未知任务不落库 + 仅内网可达。
+      security:
+        - serviceSignature: []
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskEventCallback'}
+      responses:
+        '200':
+          description: 已受理（含重复投递）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAccepted'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  # ==========================================================================
+  # edge-gateway（由网关进程提供，不由 Spring Boot 提供）
+  # ==========================================================================
+
+  # ---------- 投屏桥接（N14/N15/N16，2026-10-19；SSDP/DLNA 桥接在医院内网）----------
+
+  /api/gw/cast/devices:
+    get:
+      x-served-by: edge-gateway
+      operationId: listCastDevices
+      tags: [edge-gateway]
+      summary: 投屏设备发现（轮询）
+      description: |
+        每 3s 轮询的设备列表。**红线：SSDP/DLNA 发现由部署在医院内网的网关桥接完成，
+        前端只走统一网关反代，不直连局域网广播**；网关不可达或桥接未就绪时返回
+        `503`（前端显空态+提示，不伪造设备）。设备信息为发现快照，`status` 由
+        `ONLINE|PAIRED|OFFLINE` 三态表达。
+        鉴权：要求携带 `Authorization` 头（与 `/api/gw/routes` 同口径——网关做存在性检查，
+        会话有效性由 business-service 校验）。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 设备列表（可能为空数组 = 未发现设备）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkCastDeviceList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/gw/cast/pair:
+    post:
+      x-served-by: edge-gateway
+      operationId: pairCastDevice
+      tags: [edge-gateway]
+      summary: 投屏设备配对/绑定
+      description: |
+        将发现的设备绑定到当前使用方（配对码/确认动作在网关与屏端之间完成，前端只提交
+        `deviceId`）。设备不存在 → 404；已配对重复提交为幂等终态（同 deviceId 同结果）。
+        鉴权同 devices（Authorization 头存在性检查）。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deviceId]
+              properties:
+                deviceId: {type: string, minLength: 1, maxLength: 64, description: 设备发现返回的 ID。}
+              additionalProperties: false
+      responses:
+        '200':
+          description: 配对成功（或幂等终态）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkCastPair'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/gw/cast/push:
+    post:
+      x-served-by: edge-gateway
+      operationId: pushCastContent
+      tags: [edge-gateway]
+      summary: 推送内容到屏（叫号/就诊/科普）
+      description: |
+        `contentType`: `QUEUE` 叫号 · `PATIENT` 就诊指引 · `KB` 科普内容。
+        `payload` 为对应内容的展示数据（网关不解读业务语义，只做大小与类型校验后转发到屏）。
+        设备不存在/离线 → 404；载荷超限 → 413。**payload 不落网关日志**（含就诊信息，红线）。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deviceId, contentType, payload]
+              properties:
+                deviceId: {type: string, minLength: 1, maxLength: 64}
+                contentType: {type: string, enum: [QUEUE, PATIENT, KB]}
+                payload:
+                  type: object
+                  description: 展示载荷（按 contentType 而定）；单请求总大小 ≤ 16KB。
+              additionalProperties: false
+      responses:
+        '200':
+          description: 已推送到屏。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAccepted'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+
+  /api/gw/health:
+    get:
+      x-served-by: edge-gateway
+      operationId: getGatewayHealth
+      tags: [edge-gateway]
+      summary: 网关健康
+      description: 网关自检与上游可达性摘要。不返回上游内部地址、版本细节或凭据信息。
+      security: []
+      responses:
+        '200':
+          description: 健康摘要。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkGatewayHealth'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/gw/routes:
+    get:
+      x-served-by: edge-gateway
+      operationId: getGatewayRoutes
+      tags: [edge-gateway]
+      summary: 网关路由表
+      description: 返回路由前缀与归属上游（java / python），用于联调排查。仅暴露前缀与归属，不暴露内网地址。
+      responses:
+        '200':
+          description: 路由表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkGatewayRoutes'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /api/gw/voices:
+    get:
+      x-served-by: edge-gateway
+      operationId: getGatewayVoices
+      tags: [edge-gateway]
+      summary: 网关域内的音色列表
+      description: 等价于 `/api/v1/voice/voices`，保留是为了兼容网关域内既有调用方。新代码应使用业务路径。
+      deprecated: true
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 音色列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkVoiceList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /api/v1/doctor/schedule:
+    get:
+      operationId: getDoctorSchedule
+      tags: [doctor]
+      summary: 医生周排班模板
+      description: |
+        医生本人周模板 + 实时在线状态（V22）。只下发**有排班的天**，无排班的天不下发，
+        客户端不得自造空时段；无排班时 `version=0`、`weekdays=[]`。
+        身份范围以服务端任职关系为准（`doctors.user_id` + `status=ACTIVE`），无任职 → 403。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 周模板与在线状态。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkDoctorSchedule'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    put:
+      operationId: replaceDoctorSchedule
+      tags: [doctor]
+      summary: 整体替换周排班模板
+      description: |
+        **整体替换**（不是增量补丁）：请求里没有的天/时段会被删除。
+
+        乐观锁：`expectedVersion` 与当前版本不符 → 409 `VERSION_CONFLICT`；
+        唯一例外是"上次已保存成功且内容完全一致"的重试 → 200，并回 `Idempotency-Replayed: true`
+        （避免"其实保存成功、重试却报冲突"）。
+
+        语义校验（422）：weekday 1~7 且不重复、每天最多 8 段、start<end、
+        `slotMinutes` 仅 10/15/20/30/60、`capacity` 1~50、同天时段不得重叠（`SCHEDULE_OVERLAP`）。
+        本接口**不生成号源**：号源仍以 `GET /api/v1/doctors/{doctorId}/slots` 为准。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DoctorScheduleUpdate'}
+      responses:
+        '200':
+          description: 保存后的周模板。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkDoctorSchedule'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/doctor/online-status:
+    post:
+      operationId: setDoctorOnlineStatus
+      tags: [doctor]
+      summary: 开关在线接诊
+      description: |
+        `online=true` → `online=accepting=true`；`online=false` → 两者同时置 0
+        （服务端拒绝"离线但仍接诊"的脏态，不接受客户端单独改 accepting）。
+
+        下线时若仍有待回复的在线问诊会话 → 409 `ONLINE_BUSY`（先回复完再下线），
+        避免患者对着"在线"医生干等。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DoctorOnlineStatusUpdate'}
+      responses:
+        '200':
+          description: 保存后的在线状态。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkDoctorOnlineStatus'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/doctors/{doctorId}/availability:
+    get:
+      operationId: getDoctorAvailability
+      tags: [catalog]
+      summary: 医生在线可用性（患者侧只读）
+      description: |
+        患者端「是否可发起在线问诊 / 下次什么时候出诊」的唯一数据源。
+        未开局 → `online=accepting=false`；排班为空或没有未来时段 → `nextSlotAt` 省略/null，
+        客户端显示「暂无排班」，不得编造时间。与 `/slots` 同口径：公开只读，不泄露排班明细。
+      security: []
+      parameters:
+        - name: doctorId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 在线可用性。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkDoctorAvailability'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        服务端签发的短期访问令牌。角色与数据范围一律以服务端为准，客户端无法通过
+        任何请求参数提升权限。令牌只放在 `Authorization` 头，不得放入 URL 或日志。
+    serviceSignature:
+      type: apiKey
+      in: header
+      name: X-Service-Signature
+      description: |
+        服务间调用签名（HMAC-SHA-256 over 方法+路径+时间戳+载荷摘要）。仅用于内网
+        服务身份，与用户令牌互不替代。密钥不得出现在日志或错误信息中。
+
+  parameters:
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: 客户端生成的追踪 ID（UUID）。服务端应回显并贯穿 FastAPI 与模型适配层。
+      schema: {type: string, minLength: 8, maxLength: 64}
+    ClientVersion:
+      name: X-Client-Version
+      in: header
+      required: true
+      description: 小程序版本，用于灰度与兼容判断。
+      schema: {type: string, maxLength: 20}
+    Platform:
+      name: X-Platform
+      in: header
+      required: true
+      description: 客户端平台标识，固定值。
+      schema: {type: string, const: wechat-miniprogram}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        客户端为本次**操作**生成的唯一键。重试必须复用同一个键；相同键不同载荷返回 `409`。
+        键本身不构成读取凭证。
+      schema: {type: string, minLength: 8, maxLength: 128}
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: 游标分页。不提供偏移量分页，避免深分页与数据漂移。
+      schema: {type: string, maxLength: 256}
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: 每页条数。上限由服务端配置约束，客户端传入更大值不会生效。
+      schema: {type: integer, minimum: 1, maximum: 50, default: 20}
+
+  responses:
+    BadRequest:
+      description: 参数格式或取值错误。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    Unauthorized:
+      description: 未认证、令牌过期或已撤销。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    Forbidden:
+      description: 身份已识别但无权访问该功能或对象。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    NotFound:
+      description: 资源不存在**或不属于当前用户**——两种情况返回相同响应，避免对象存在性泄漏。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    Conflict:
+      description: 幂等键载荷冲突、版本冲突、状态重复或资源竞争失败。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    PayloadTooLarge:
+      description: 请求体或上传文件超过限制。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    UnsupportedMediaType:
+      description: 上传文件格式不被支持（如可执行文件、非白名单扩展名）。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    ValidationFailed:
+      description: 业务校验失败，`details` 逐字段说明。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    TooManyRequests:
+      description: 触发限流。响应应给出可重试时间，客户端按退避重试。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    DependencyUnavailable:
+      description: 依赖不可用（数据库/对象存储/AI/第三方）。核心非相关功能应继续可用。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+    GatewayTimeout:
+      description: 等待下游超时。区别于失败：客户端应查询任务状态，而不是直接报"失败"。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ApiError'}
+
+  schemas:
+
+    # ---------- 信封 ----------
+
+    EnvelopeBase:
+      type: object
+      required: [code, message, requestId, serverTime]
+      properties:
+        code: {type: string, const: OK, description: 成功固定为 `OK`；失败时见 `ApiError`。}
+        message: {type: string, description: 面向用户或运维的简短说明，不含敏感信息。}
+        requestId: {type: string, description: 服务端生成的请求 ID，排障时提供给用户。}
+        serverTime: {type: string, format: date-time, description: 服务端时间，权威时间源。}
+        meta: {$ref: '#/components/schemas/ApiMeta'}
+
+    ApiMeta:
+      type: object
+      properties:
+        version: {type: [string, 'null'], description: 资源版本或快照标识，用于缓存与冲突判断。}
+        nextCursor: {type: [string, 'null'], description: 下一页游标；`null` 表示没有更多。}
+        total: {type: [integer, 'null'], description: 仅在廉价可得时返回，不承诺精确总数。}
+      additionalProperties: true
+
+    ApiError:
+      type: object
+      required: [code, message, requestId, retryable]
+      properties:
+        code:
+          type: string
+          description: 稳定错误码，客户端据此分支，不解析 `message` 文本。
+          examples: [VALIDATION_FAILED, CONSENT_REQUIRED, SLOT_UNAVAILABLE, IDEMPOTENCY_CONFLICT,
+                     AI_UNAVAILABLE, ASR_BUSY, ASR_TIMEOUT, TTS_UNAVAILABLE, CAPABILITY_UNAVAILABLE]
+        message: {type: string, description: 面向用户的中文说明，不含堆栈、SQL、内网地址或第三方原始报文。}
+        requestId: {type: string}
+        details:
+          type: array
+          items: {$ref: '#/components/schemas/ErrorDetail'}
+        retryable: {type: boolean, description: 客户端是否可以采用相同幂等键重试。}
+        serverTime: {type: string, format: date-time}
+
+    ErrorDetail:
+      type: object
+      properties:
+        field: {type: [string, 'null'], description: 出错字段路径；非字段级错误时为 `null`。}
+        reason: {type: string, description: 可展示的失败原因。}
+        code: {type: [string, 'null'], description: 字段级或对象级细分错误码。}
+      additionalProperties: false
+
+    OkAccepted:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [accepted], properties: {accepted: {type: boolean}}}}}]
+
+    OkDeleted:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [deleted], properties: {deleted: {type: boolean}}}}}]
+
+    OkLogoutResult:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [revoked], properties: {revoked: {type: boolean}}}}}]
+
+    SmsChallenge:
+      type: object
+      required: [challengeId, ttlSec]
+      properties:
+        challengeId: {type: string, maxLength: 64, description: 一次性挑战 ID；登录时回传，成功后作废。}
+        ttlSec: {type: integer, description: 验证码有效期（秒），默认 300。}
+      additionalProperties: false
+
+    OkSmsChallenge:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/SmsChallenge'}}}]
+
+    DoctorAccountLogin:
+      type: object
+      required: [account, credential, challengeId]
+      properties:
+        account: {type: string, minLength: 1, maxLength: 64, description: 医生工号或绑定手机号。}
+        credential: {type: string, minLength: 1, maxLength: 16, description: 短信验证码（6 位数字）；错误/过期/已用统一 401，不区分原因。}
+        challengeId: {type: string, minLength: 1, maxLength: 64, description: POST /api/v1/auth/sms/send 返回的一次性挑战 ID。}
+      additionalProperties: false
+
+    AccountDeletionVerify:
+      type: object
+      required: [challengeId, code]
+      properties:
+        challengeId: {type: string, minLength: 1, maxLength: 64, description: N9 下发（scene=ACCOUNT_DELETION）的挑战 ID。}
+        code: {type: string, minLength: 6, maxLength: 6, description: 6 位短信验证码；缺失/错误/过期/手机号不匹配一律 422（二次校验失败）。}
+      additionalProperties: false
+
+    OkAccountDeleted:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [ok], properties: {ok: {type: boolean, const: true}}}}}]
+
+    AuthRevokeRequest:
+      type: object
+      required: [scope]
+      properties:
+        scope:
+          type: string
+          enum: [PROFILE, HEALTH_RECORDS, FAMILY]
+          description: 撤回范围（映射处理目的见 revokeAuthorization 描述）；非法取值 → 422。
+      additionalProperties: false
+
+    OkAuthRevoked:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [revoked], properties: {revoked: {type: boolean, const: true}}}}}]
+
+    # ---------- 身份 ----------
+
+    WechatLoginRequest:
+      type: object
+      required: [code, consentVersion]
+      properties:
+        code: {type: string, minLength: 8, maxLength: 256, description: "`wx.login` 返回的临时 code，一次性且短期有效。"}
+        phoneCode: {type: [string, 'null'], maxLength: 256, description: 微信手机号快速验证的动态令牌；缺失表示用户未绑定手机号。}
+        consentVersion:
+          type: string
+          minLength: 1
+          maxLength: 20
+          description: |
+            用户在独立界面实际看到的隐私政策版本。服务端校验版本有效，不接受"登录即同意"。
+            服务端记录该版本（`users.login_consent_version`，F7）用于合规审计——只记录版本号，
+            不代表服务端据此替代独立同意界面。
+        deviceId: {type: [string, 'null'], maxLength: 64, description: 仅用于风控与登录审计，不作为身份标识。}
+      additionalProperties: false
+
+    Session:
+      type: object
+      required: [accessToken, refreshToken, expiresIn, tokenType, user]
+      properties:
+        accessToken: {type: string, description: 短期访问令牌，只出现在响应体，服务端不落明文。}
+        refreshToken: {type: string, description: 刷新令牌，一次一换；服务端只保存哈希。}
+        expiresIn: {type: integer, minimum: 60, description: 访问令牌剩余有效秒数。}
+        tokenType: {type: string, const: Bearer}
+        user: {$ref: '#/components/schemas/User'}
+
+    OkSession:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/Session'}}}]
+
+    User:
+      type: object
+      required: [id, displayName, roles, createdAt]
+      properties:
+        id: {type: string, description: 内部稳定 ID，不含手机号等可识别信息。}
+        displayName: {type: string, maxLength: 40}
+        avatarUrl: {type: [string, 'null'], description: 短期签名 URL；缺失时客户端使用内置默认头像，不阻断渲染。}
+        gender:
+          type: string
+          enum: [MALE, FEMALE, UNKNOWN]
+          description: 性别；未填写时为 UNKNOWN（不得据此推断其他信息）。2026-10-17 补，见 §3.1。
+        birthDate: {type: [string, 'null'], format: date, description: 出生日期（YYYY-MM-DD）；年龄由客户端计算。}
+        profileCompleteness: {type: integer, minimum: 0, maximum: 100, description: 档案完整度百分比，仅用于引导。}
+        roles:
+          type: array
+          description: 服务端认定的角色。客户端不得据此以外的来源做权限判断。
+          items: {type: string, enum: [PATIENT, DOCTOR, ADMIN]}
+        phoneBound: {type: boolean, description: 是否已绑定手机号，不返回号码本身。}
+        maskedPhone:
+          type: [string, 'null']
+          maxLength: 15
+          description: |
+            脱敏手机号 `138****1234`（F8，个人信息页展示）；未绑定或密钥轮换导致不可解密时为
+            `null`（前端不渲染）。原文永不出服务端，`phoneBound` 布尔保留用于布尔逻辑。
+        consents: {type: array, items: {$ref: '#/components/schemas/ConsentRecord'}}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: [string, 'null'], format: date-time}
+      additionalProperties: false
+
+    OkUser:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/User'}}}]
+
+    ConsentPurpose:
+      type: string
+      description: 处理目的。新增取值时客户端必须有未知值兜底，不得因未知枚举崩溃。
+      enum: [PRIVACY_POLICY, HEALTH_DATA_PROCESSING, VOICE_RECORDING, IMAGE_UPLOAD,
+             AI_GENERATION, THIRD_PARTY_TTS, FAMILY_PROXY, MARKETING]
+
+    ConsentRecord:
+      type: object
+      required: [purpose, policyVersion, status, updatedAt]
+      properties:
+        purpose: {$ref: '#/components/schemas/ConsentPurpose'}
+        policyVersion: {type: string, maxLength: 20, description: 用户确认时生效的政策版本。}
+        scope: {type: array, items: {type: string}, description: 同意覆盖的数据范围标签。}
+        status: {type: string, enum: [GRANTED, WITHDRAWN, EXPIRED]}
+        channel: {type: [string, 'null'], enum: [MINIPROGRAM, OFFLINE, PHONE, null], description: 同意的获取渠道。}
+        updatedAt: {type: string, format: date-time}
+        withdrawnAt: {type: [string, 'null'], format: date-time}
+
+    ConsentGrantRequest:
+      type: object
+      required: [purpose, policyVersion, channel]
+      properties:
+        purpose: {$ref: '#/components/schemas/ConsentPurpose'}
+        policyVersion: {type: string, maxLength: 20}
+        scope: {type: array, items: {type: string}}
+        channel: {type: string, enum: [MINIPROGRAM, OFFLINE, PHONE]}
+        evidenceDigest: {type: [string, 'null'], maxLength: 128, description: 用户确认动作的证据摘要（如界面版本+时间戳的哈希），不存原始截图。}
+      additionalProperties: false
+
+    OkConsentRecord:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/ConsentRecord'}}}]
+
+    OkConsentRecordList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/ConsentRecord'}}}}]
+
+    DeletionRequestCreate:
+      type: object
+      required: [scope]
+      properties:
+        scope:
+          type: array
+          minItems: 1
+          description: 申请删除的数据范围。
+          items: {type: string, enum: [ACCOUNT, PROFILE, HEALTH_RECORDS, CONSULTATIONS, VOICE_DATA, UPLOADS]}
+        reason: {type: [string, 'null'], maxLength: 200}
+      additionalProperties: false
+
+    DeletionRequest:
+      type: object
+      required: [requestId, scope, status, createdAt]
+      properties:
+        requestId: {type: string}
+        scope: {type: array, items: {type: string}}
+        status: {type: string, enum: [RECEIVED, IN_PROGRESS, PARTIALLY_COMPLETED, COMPLETED, REJECTED]}
+        retainedItems:
+          type: array
+          description: |
+            因法定保留义务而未删除的条目。必须逐项说明范围与依据，不能用
+            "已全部删除"概括，也不得为了好看而省略。
+          items:
+            type: object
+            required: [category, reason]
+            properties:
+              category: {type: string}
+              reason: {type: string, description: 保留依据（法规或业务规则的可读说明）。}
+              retainUntil: {type: [string, 'null'], format: date}
+        createdAt: {type: string, format: date-time}
+        completedAt: {type: [string, 'null'], format: date-time}
+
+    OkDeletionRequest:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/DeletionRequest'}}}]
+
+    # ---------- 目录 ----------
+
+    Department:
+      type: object
+      required: [id, name]
+      properties:
+        id: {type: string}
+        name: {type: string, maxLength: 40}
+        hospitalId: {type: string}
+        hospitalName: {type: string, maxLength: 60}
+        location: {type: [string, 'null'], maxLength: 80, description: 面向用户的整串位置描述，用于导诊与导航衔接。}
+        building: {type: [string, 'null'], maxLength: 40, description: 楼栋（如"门诊楼"）。}
+        floor: {type: [string, 'null'], maxLength: 20, description: 楼层（如"1F"）。}
+        area: {type: [string, 'null'], maxLength: 40, description: 区域（如"东区"）。}
+        roomNo: {type: [string, 'null'], maxLength: 20, description: 房间号；未分配时为 null。}
+        description: {type: [string, 'null'], maxLength: 200}
+        iconKey: {type: [string, 'null'], description: 图标资源键，指向资源清单而非外链 URL。缺失时用文字与内置占位。}
+      additionalProperties: false
+
+    OkDepartmentList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/Department'}}}}]
+
+    Hospital:
+      type: object
+      required: [id, name]
+      properties:
+        id: {type: string, maxLength: 64}
+        name: {type: string, maxLength: 60, description: 院区展示名；历史数据缺失时按 hospital_id 归一（与科室列表同口径）。}
+      additionalProperties: false
+
+    OkHospitalList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/Hospital'}}}}]
+
+    Doctor:
+      type: object
+      required: [id, name, departmentId, title]
+      properties:
+        id: {type: string}
+        name: {type: string, maxLength: 40}
+        departmentId: {type: string}
+        departmentName: {type: string, maxLength: 40}
+        title: {type: string, maxLength: 20, description: 职称。}
+        avatarUrl: {type: [string, 'null'], description: 短期签名 URL；失败时客户端用内置默认头像，不影响挂号流程。}
+        specialties: {type: array, items: {type: string, maxLength: 40}}
+        introduction: {type: [string, 'null'], maxLength: 500}
+        hasAvailableSlot: {type: boolean, description: 是否可挂号，仅作展示提示，不作为下单依据。}
+        slotStatus:
+          type: string
+          enum: [OPEN, FEW, FULL]
+          description: |
+            号源三态（N6）：OPEN=可预约 · FEW=号源紧张 · FULL=约满。按**今日（UTC 日窗口）**
+            OPEN 号源剩余量计算（无剩余或今日无号 → FULL）；阈值属部署配置，不在此承诺。
+            仅作展示提示，下单结果仍以 createAppointment 原子扣减为准。
+        slotStatusText:
+          type: string
+          maxLength: 16
+          description: 与 slotStatus 同步下发的中文文案（今日可预约 / 今日号源紧张 / 约满）——状态不靠颜色单独表达，客户端须原样展示该文案。
+      additionalProperties: false
+
+    OkDoctorList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/Doctor'}}}}]
+
+    DoctorProfile:
+      type: object
+      required: [userId, name, departmentId, departmentName, title, employeeNo]
+      properties:
+        userId: {type: string, description: 医生账号 ID（与 doctors.user_id 一致）。}
+        name: {type: string, maxLength: 40}
+        employeeNo: {type: [string, 'null'], maxLength: 32, description: 工号。}
+        departmentId: {type: string}
+        departmentName: {type: string, maxLength: 40}
+        title: {type: string, maxLength: 20, description: 职称。}
+      additionalProperties: false
+
+    OkDoctorProfile:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/DoctorProfile'}}}]
+
+    Slot:
+      type: object
+      required: [id, doctorId, startTime, endTime, remaining]
+      properties:
+        id: {type: string}
+        doctorId: {type: string}
+        startTime: {type: string, format: date-time}
+        endTime: {type: string, format: date-time}
+        remaining: {type: integer, minimum: 0, description: 快照值，不构成预留；以创建预约的原子扣减为准。}
+        fee: {type: [number, 'null'], description: 挂号费；`null` 表示未配置，界面不得显示猜测金额。}
+        currency: {type: [string, 'null'], maxLength: 8}
+      additionalProperties: false
+
+    OkSlotList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/Slot'}}}}]
+
+    # ---------- 院内导航（N17）----------
+
+    IndoorFloor:
+      type: object
+      required: [id, name]
+      properties:
+        id: {type: string, maxLength: 32, description: 楼层 ID（如 1F）。}
+        name: {type: string, maxLength: 40, description: 楼层展示名（如"门诊楼 1F"）。}
+        building: {type: [string, 'null'], maxLength: 40}
+        originId: {type: [string, 'null'], maxLength: 64, description: 默认起点节点 ID（医院大门）；未知时 null。}
+      additionalProperties: false
+
+    OkIndoorFloorList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/IndoorFloor'}}}}]
+
+    IndoorRoute:
+      type: object
+      required: [from, to, path, steps, distanceM]
+      properties:
+        from: {type: string}
+        to: {type: string}
+        path:
+          type: array
+          description: 折线坐标点（底图百分比 [x, y]，与前端画布同源）。
+          items: {type: array, items: {type: number}}
+        steps:
+          type: array
+          description: 分步中文指引（服务端下发，客户端不得自行拼路径文案）。
+          items: {type: string, maxLength: 120}
+        distanceM: {type: integer, minimum: 0, description: 预估距离（米），由数据源像素/米比换算，四舍五入。}
+      additionalProperties: false
+
+    OkIndoorRoute:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/IndoorRoute'}}}]
+
+    # ---------- 预约 ----------
+
+    AppointmentStatus:
+      type: string
+      enum: [PENDING, CONFIRMED, CHECKED_IN, COMPLETED, CANCELLED, NO_SHOW, EXPIRED]
+
+    AppointmentCreate:
+      type: object
+      required: [slotId, patientName]
+      properties:
+        slotId: {type: string, maxLength: 64}
+        familyMemberId: {type: [string, 'null'], maxLength: 64, description: 家庭代理场景；服务端校验有效授权，无授权按 `404` 处理。}
+        patientName: {type: string, maxLength: 40}
+        contactPhone: {type: [string, 'null'], maxLength: 20, description: 联系方式；存储时加密，日志与响应不回显原文。}
+        symptomSummary: {type: [string, 'null'], maxLength: 300, description: 可选主诉，属敏感健康信息，不进入埋点。}
+      additionalProperties: false
+
+    Appointment:
+      type: object
+      required: [id, status, slotId, doctorId, departmentId, version, createdAt]
+      properties:
+        id: {type: string}
+        status: {$ref: '#/components/schemas/AppointmentStatus'}
+        slotId: {type: string}
+        doctorId: {type: string}
+        doctorName: {type: string, maxLength: 40}
+        doctorTitle: {type: [string, 'null'], maxLength: 20, description: 医生职称（V21）。}
+        departmentId: {type: string}
+        departmentName: {type: string, maxLength: 40}
+        patientName: {type: string, maxLength: 40}
+        patientPhoneMasked: {type: [string, 'null'], maxLength: 20, description: 患者联系手机号脱敏值（V21）；医生接诊可见，明文永不出服务端。}
+        patientAvatarUrl: {type: [string, 'null'], description: 患者头像相对路径（V21）；匿名可读，无头像为 null。}
+        startTime: {type: string, format: date-time}
+        endTime: {type: string, format: date-time}
+        queueNumber: {type: [integer, 'null'], description: 候诊序号，可能在看诊前才分配。}
+        location: {type: [string, 'null'], maxLength: 80, description: 就诊地点快照（下单时冗余自科室）。}
+        hospitalName: {type: [string, 'null'], maxLength: 60, description: 医院名称快照。}
+        symptomSummary: {type: [string, 'null'], maxLength: 300, description: 主诉回显；属敏感健康信息，仅回本人或经授权代管人。}
+        version: {type: integer, minimum: 1, description: 乐观锁版本，用于状态流转与档案更新的冲突检测。}
+        replayed: {type: boolean, description: 仅创建接口返回：本次是否为幂等重放。}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: [string, 'null'], format: date-time}
+      additionalProperties: false
+
+    OkAppointment:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/Appointment'}}}]
+
+    OkAppointmentList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/Appointment'}}}}]
+
+    # ---------- 消息中心（V21 医生-患者互通）----------
+
+    MessageCenterItem:
+      type: object
+      required: [id, type, title, body, read, createdAt]
+      properties:
+        id: {type: string}
+        type: {type: string, enum: [APPOINTMENT, SYSTEM], description: APPOINTMENT=挂号状态变更通知 · SYSTEM=系统通知。}
+        title: {type: string, maxLength: 80}
+        body: {type: string, maxLength: 500}
+        read: {type: boolean, description: 是否已读。}
+        refType: {type: [string, 'null'], maxLength: 32, description: 关联业务类型（如 APPOINTMENT）。}
+        refId: {type: [string, 'null'], maxLength: 64, description: 关联业务 ID（如 appointmentId），供点击跳转。}
+        readAt: {type: [string, 'null'], format: date-time}
+        createdAt: {type: string, format: date-time}
+      additionalProperties: false
+
+    OkMessageCenter:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/MessageCenterItem'}}}]
+
+    OkMessageCenterList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/MessageCenterItem'}}}}]
+
+    OkMessageUnreadCount:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: integer, minimum: 0, description: 未读消息数（红点）。}}}]
+
+    # ---------- 患者 ----------
+
+    HealthRecord:
+      type: object
+      required: [id, category, recordedAt]
+      properties:
+        id: {type: string}
+        familyMemberId: {type: [string, 'null']}
+        category: {type: string, enum: [VITALS, ALLERGY, MEDICATION, HISTORY, EXAM, OTHER]}
+        title: {type: string, maxLength: 80}
+        summary: {type: [string, 'null'], maxLength: 500}
+        recordedAt: {type: string, format: date-time}
+        source: {type: [string, 'null'], maxLength: 120, description: 记录来源（医院/科室/体检机构）。}
+        doctorName: {type: [string, 'null'], maxLength: 40, description: 记录医生；未知时不填。}
+        abnormal:
+          type: [boolean, 'null']
+          description: |
+            是否异常。`null` = 未判定（客户端不得渲染"正常"或"异常"标记）；
+            `true/false` = 已由服务端判定。
+        attachments:
+          type: array
+          description: |
+            检查资料附件（V9 落地：上传/查看/删除）。只给对象引用与短期签名 URL，
+            不接受客户端构造的任意 URL；`url` 过期时重新拉取档案即得新 URL。
+          items:
+            $ref: '#/components/schemas/Attachment'
+        reportStatus:
+          type: [string, 'null']
+          enum: [READY, PENDING, REVIEWING, null]
+          description: |
+            报告出具状态（效果图 05「已出结果 / 待审核」）。
+            ⚠️ `null` = 该记录**不是报告类**或状态未知 —— 客户端必须**整个徽标不渲染**，
+            不得默认显示「已出结果」，也不得把未知状态渲染成中性灰冒充"已处理".
+        hospital:
+          type: [string, 'null']
+          maxLength: 60
+          description: 就诊机构（效果图卡片副行「本院区 · 门诊检验」）；`null` = 未记录，客户端不渲染该行。
+        version: {type: integer, minimum: 1}
+      additionalProperties: false
+
+    HealthRecordCreate:
+      type: object
+      required: [category, recordedAt]
+      properties:
+        familyMemberId: {type: [string, 'null'], maxLength: 64}
+        category: {type: string, enum: [VITALS, ALLERGY, MEDICATION, HISTORY, EXAM, OTHER]}
+        title: {type: string, maxLength: 80}
+        summary: {type: [string, 'null'], maxLength: 500}
+        recordedAt: {type: string, format: date-time}
+        source: {type: [string, 'null'], maxLength: 120}
+        doctorName: {type: [string, 'null'], maxLength: 40}
+        abnormal: {type: [boolean, 'null'], description: 可选；缺省表示未判定。}
+        attachmentKeys: {type: array, items: {type: string}, description: 已由上传流程校验为 `AVAILABLE` 的对象键。}
+      additionalProperties: false
+
+    OkHealthRecord:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/HealthRecord'}}}]
+
+    OkHealthRecordList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/HealthRecord'}}}}]
+
+    # ---------- 健康档案附件（V9）----------
+
+    Attachment:
+      type: object
+      required: [objectKey, mime, size]
+      properties:
+        id:
+          type: [string, 'null']
+          description: 附件行主键（删除时 `DELETE .../attachments/{id}` 使用；暂存上传未挂档时为 null）。
+        objectKey:
+          type: string
+          pattern: '^[0-9a-f]{32}\.(jpg|jpeg|png|webp|pdf)$'
+          description: 服务端生成的文件名（32 位 hex + 白名单扩展名）；客户端输入不参与路径。
+        url:
+          type: [string, 'null']
+          description: 短期签名 URL（HMAC + TTL 15min），可能已过期；过期时重新拉取档案即得新 URL。
+        fileName: {type: [string, 'null'], maxLength: 255, description: 客户端原始文件名（仅展示）。}
+        mime: {type: string, maxLength: 80}
+        size: {type: integer, minimum: 0, description: 字节数。}
+        sha256: {type: [string, 'null'], maxLength: 64, description: 文件内容 SHA-256（hex）。}
+        createdAt: {type: [string, 'null'], format: date-time}
+      additionalProperties: false
+
+    OkAttachment:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/Attachment'}}}]
+
+    OkAttachmentList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/Attachment'}}}}]
+
+    FamilyMember:
+      type: object
+      required: [id, displayName, relation, proxyStatus]
+      properties:
+        id: {type: string}
+        displayName: {type: string, maxLength: 40}
+        relation: {type: string, maxLength: 20}
+        proxyStatus:
+          type: string
+          enum: [NONE, PENDING, GRANTED, REVOKED]
+          description: 代理权限状态。添加成员不等于获得权限，只有 `GRANTED` 才可代其操作。
+        ageBand: {type: [string, 'null'], maxLength: 20, description: 年龄段而非精确生日，按最小必要原则收集。}
+        gender: {type: string, enum: [MALE, FEMALE, UNKNOWN]}
+        phoneMasked: {type: [string, 'null'], maxLength: 20, description: 脱敏展示号（138****0001）；明文手机号只存哈希。}
+        avatarUrl: {type: [string, 'null'], description: 短期签名 URL，失败时使用内置占位。}
+      additionalProperties: false
+
+    FamilyMemberCreate:
+      type: object
+      required: [displayName, relation]
+      properties:
+        displayName: {type: string, maxLength: 40}
+        relation: {type: string, maxLength: 20}
+        ageBand: {type: [string, 'null'], maxLength: 20}
+        gender: {type: [string, 'null'], maxLength: 8, description: 可选；服务端归一为 MALE/FEMALE/UNKNOWN。}
+        phone: {type: [string, 'null'], maxLength: 20, description: 可选，仅用于邀请比对；服务端只保存哈希。}
+      additionalProperties: false
+
+    OkFamilyMember:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/FamilyMember'}}}]
+
+    OkFamilyMemberList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/FamilyMember'}}}}]
+
+    FamilyInvitation:
+      type: object
+      required: [invitationId, token, expiresAt]
+      properties:
+        invitationId: {type: string}
+        token: {type: string, description: 一次性邀请令牌，仅本次响应返回；服务端只保存哈希。}
+        expiresAt: {type: string, format: date-time}
+        channel: {type: [string, 'null'], maxLength: 20}
+
+    OkFamilyInvitation:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/FamilyInvitation'}}}]
+
+    FamilyInvitationSummary:
+      type: object
+      required: [invitationId, relation, status, expiresAt, createdAt]
+      properties:
+        invitationId: {type: string}
+        relation: {type: string, maxLength: 20}
+        channel: {type: [string, 'null'], maxLength: 20}
+        status: {type: string, enum: [PENDING, ACCEPTED, EXPIRED, REVOKED]}
+        expiresAt: {type: string, format: date-time}
+        createdAt: {type: string, format: date-time}
+      additionalProperties: false
+
+    OkFamilyInvitationSummaryList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/FamilyInvitationSummary'}}}}]
+
+    # ---------- 问诊与 AI ----------
+
+    ProvenanceType:
+      type: string
+      description: |
+        内容的来源类型，必须随内容一起展示，用户有权知道自己看的是规则结果、AI 生成
+        还是人工审核过的内容。
+      enum: [USER_INPUT, RULE_RESULT, AI_GENERATED, HUMAN_REVIEWED]
+
+    Consultation:
+      type: object
+      required: [id, status, createdAt]
+      properties:
+        id: {type: string}
+        title: {type: string, maxLength: 60}
+        status: {type: string, enum: [ACTIVE, CLOSED, ARCHIVED]}
+        lastMessageAt: {type: [string, 'null'], format: date-time}
+        messageCount: {type: integer, minimum: 0}
+        summary: {type: [string, 'null'], maxLength: 200, description: 会话摘要，用于列表展示，不含完整正文。}
+        createdAt: {type: string, format: date-time}
+        # —— 2026-10-19 追加：在线问诊页医生卡所需（效果图 04）——
+        doctorName: {type: [string, 'null'], maxLength: 40, description: 接诊医生姓名；未知时不下发。}
+        doctorTitle: {type: [string, 'null'], maxLength: 40, description: 职称（主任医师/副主任医师…）。}
+        departmentName: {type: [string, 'null'], maxLength: 40, description: 科室名称。}
+        accepting:
+          type: [boolean, 'null']
+          description: |
+            是否接诊中。`null` = 状态未知 —— 客户端显示「待接诊」，
+            不得把未知当成「接诊中」（会误导用户以为医生在线等待）。
+        version: {type: [string, 'null'], minimum: 1}
+
+    Message:
+      type: object
+      required: [id, role, contentType, createdAt, provenance]
+      properties:
+        id: {type: string}
+        role: {type: string, enum: [user, assistant, system_notice]}
+        contentType: {type: string, enum: [TEXT, VOICE_TRANSCRIPT, IMAGE_NOTE, SAFETY_NOTICE]}
+        content: {type: string, maxLength: 4000}
+        provenance: {$ref: '#/components/schemas/ProvenanceType'}
+        citations: {type: array, items: {$ref: '#/components/schemas/Citation'}}
+        riskTags: {type: array, items: {type: string}, description: 风险标签枚举，不含用户原文。}
+        generationStatus: {type: [string, 'null'], enum: [DRAFT, CONFIRMED, REJECTED, FAILED, null]}
+        createdAt: {type: string, format: date-time}
+
+    DoctorConsultation:
+      type: object
+      description: |
+        医生视角问诊会话（`GET /api/v1/doctor/consultations` 列表项）。
+        与患者侧 `Consultation` 的差别：含就诊人姓名/头像，不含医生卡字段。
+        `assignedDoctorId=null` 表示认领池；`accepting` 与「已分配」不等价 ——
+        患者指定医生时分配即发生但医生尚未回复，故 accepting 仍为 false。
+      required: [id, status, createdAt]
+      properties:
+        id: {type: string}
+        title: {type: string, maxLength: 60}
+        status: {type: string, enum: [ACTIVE, CLOSED, ARCHIVED]}
+        lastMessageAt: {type: [string, 'null'], format: date-time}
+        messageCount: {type: integer, minimum: 0}
+        summary: {type: [string, 'null'], maxLength: 200}
+        createdAt: {type: string, format: date-time}
+        patientName: {type: [string, 'null'], maxLength: 40, description: 就诊人姓名（脱敏展示由客户端负责）。}
+        patientAvatarKey: {type: [string, 'null'], description: 头像对象键；null = 用户未设置。}
+        assignedDoctorId: {type: [string, 'null'], description: null = 未分配（认领池）；非 null = 已分配。}
+        accepting: {type: [boolean, 'null'], description: 会话内是否已出现医生侧消息；null 按 false 展示。}
+
+    OkDoctorConsultationList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/DoctorConsultation'}}}}]
+
+    DoctorReplyRequest:
+      type: object
+      additionalProperties: false
+      required: [content]
+      properties:
+        content: {type: string, minLength: 1, maxLength: 2000, description: 医生回复正文；属敏感健康信息，不进入埋点。}
+
+    DoctorReplySent:
+      type: object
+      required: [message, replayed]
+      properties:
+        message: {$ref: '#/components/schemas/Message'}
+        replayed: {type: boolean, description: true = 同一 Idempotency-Key 的重放，未新增消息。}
+
+    OkDoctorReplySent:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/DoctorReplySent'}}}]
+
+    ConsultationAcceptResult:
+      type: object
+      required: [replayed]
+      properties:
+        replayed: {type: boolean, description: true = 本次为幂等重放（此前已认领成功）。}
+
+    OkConsultationAccept:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/ConsultationAcceptResult'}}}]
+
+    ConsultationCloseResult:
+      type: object
+      required: [status]
+      properties:
+        status: {type: string, enum: [CLOSED], description: 结束后的会话状态，恒为 CLOSED。}
+
+    OkConsultationClose:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/ConsultationCloseResult'}}}]
+
+    Citation:
+      type: object
+      required: [sourceId, title]
+      properties:
+        sourceId: {type: string, description: 知识来源 ID，可回溯到经医学审核的资料。}
+        title: {type: string, maxLength: 120}
+        version: {type: [string, 'null'], maxLength: 40}
+        effectiveFrom: {type: [string, 'null'], format: date}
+        url: {type: [string, 'null'], description: 站内可读的来源链接；不得指向未经审核的外部页面。}
+
+    ConsultationCreate:
+      type: object
+      required: [initialMessage]
+      properties:
+        initialMessage: {type: string, minLength: 1, maxLength: 2000, description: 用户首条描述。属敏感健康信息，不进入埋点。}
+        inputMode: {type: string, enum: [TEXT, VOICE, IMAGE], default: TEXT}
+        requestedProfile:
+          type: string
+          enum: [small-default, large-upgrade]
+          default: small-default
+          description: |
+            仅表达"是否需要更强档位"的**期望**。实际模型档由服务端按任务复杂度、容量与
+            安全策略决定，客户端不能指定具体模型标签。
+        locale: {type: string, maxLength: 20, default: zh-CN}
+      additionalProperties: false
+
+    MessageCreate:
+      type: object
+      required: [content]
+      properties:
+        content: {type: string, minLength: 1, maxLength: 2000}
+        inputMode: {type: string, enum: [TEXT, VOICE, IMAGE], default: TEXT}
+        requestedProfile: {type: string, enum: [small-default, large-upgrade], default: small-default}
+        confirmedInputId: {type: [string, 'null'], maxLength: 64, description: 已确认的转写/识别结果 ID；携带时表示本条内容基于用户核对过的输入。}
+      additionalProperties: false
+
+    InputConfirmation:
+      type: object
+      required: [sourceTaskId, confirmedText]
+      properties:
+        sourceTaskId: {type: string, maxLength: 64, description: 产生该转写的 ASR/识别任务。}
+        confirmedText: {type: string, minLength: 1, maxLength: 2000, description: 用户核对或修正后的文本。与转写原文不一致时以本字段为准。}
+        corrections: {type: array, items: {type: string}, description: 用户修改点摘要，用于改进提示，不保存原文对照。}
+      additionalProperties: false
+
+    OkConsultation:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {allOf: [{$ref: '#/components/schemas/Consultation'}, {type: object, properties: {messages: {type: array, items: {$ref: '#/components/schemas/Message'}}}}]}}}]
+
+    OkConsultationList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/Consultation'}}}}]
+
+    SafetyNotice:
+      type: object
+      required: [emergency, level]
+      properties:
+        emergency: {type: boolean, description: 是否命中急症红线。为 `true` 时界面必须先展示就医/120 指引。}
+        level: {type: string, enum: [INFO, CAUTION, URGENT, EMERGENCY]}
+        message: {type: string, maxLength: 300, description: 面向用户的安全提示文案。}
+        provenance: {$ref: '#/components/schemas/ProvenanceType'}
+        ruleSetVersion: {type: [string, 'null'], maxLength: 40, description: 命中的本地规则集版本。}
+
+    OkConsultationCreated:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [consultation, task], properties: {consultation: {$ref: '#/components/schemas/Consultation'}, task: {$ref: '#/components/schemas/AiTask'}, safety: {$ref: '#/components/schemas/SafetyNotice'}}}}}]
+
+    OkMessage:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/Message'}}}]
+
+    OkMessageSent:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [message, task], properties: {message: {$ref: '#/components/schemas/Message'}, task: {$ref: '#/components/schemas/AiTask'}, safety: {$ref: '#/components/schemas/SafetyNotice'}}}}}]
+
+
+    # ==========================================================================
+    # 2026-10-19 追加（效果图对齐改造所需 · 待后端实现）
+    # ==========================================================================
+    OkMessageList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/Message'}}}}]
+
+    Interpretation:
+      type: object
+      required: [recordId, status, sections, disclaimer]
+      properties:
+        recordId: {type: string}
+        status: {type: string, enum: [READY, GENERATING, FAILED]}
+        summary: {type: [string, 'null'], maxLength: 300, description: 一句话通俗结论；不得使用确定性诊断措辞。}
+        sections:
+          type: array
+          description: 分节解读（指标 / 含义 / 建议）；为空且 status=READY 时客户端显示「暂无可解读内容」。
+          items:
+            type: object
+            required: [title, body]
+            properties:
+              title: {type: string, maxLength: 60}
+              body: {type: string, maxLength: 1000}
+              abnormal: {type: [boolean, 'null'], description: 该节是否指向异常指标；null = 未判定，不显示标记。}
+        disclaimer: {type: string, maxLength: 300, description: 免责声明，**客户端必须原样展示**，不得截断或改写。}
+        generatedAt: {type: [string, 'null'], format: date-time}
+
+    InterpretationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        scope:
+          type: string
+          enum: [SUMMARY, DETAIL]
+          default: SUMMARY
+          description: 解读范围：SUMMARY 通俗摘要 / DETAIL 逐指标详解；未支持的 scope 返回 422（不静默降级）。
+
+    OkInterpretation:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/Interpretation'}}}]
+
+    DoctorOverview:
+      type: object
+      required: [waiting, inProgress, done, todayTotal, pendingTodos]
+      properties:
+        waiting: {type: [integer, 'null'], description: 今日已签到候诊数（CHECKED_IN）；计数失败为 null（不渲染）。}
+        inProgress: {type: [integer, 'null'], description: 接诊中数；状态机无「接诊中」状态，服务端不可判定 → 恒为 null（不渲染，不以 0 冒充）。}
+        done: {type: [integer, 'null'], description: 今日已完成数（COMPLETED）。}
+        todayTotal: {type: [integer, 'null'], description: 今日挂号总数。}
+        pendingTodos: {type: [integer, 'null'], description: 待处理事项条数（listDoctorTodos 可判定口径）。}
+      additionalProperties: false
+
+    OkDoctorOverview:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/DoctorOverview'}}}]
+
+    DoctorTodo:
+      type: object
+      required: [id, kind, title]
+      properties:
+        id: {type: string}
+        kind: {type: string, enum: [CONSULT_REPLY, CHECKIN_CONFIRM, REPORT_REVIEW]}
+        title: {type: string, maxLength: 40, description: 待办标题，如「在线问诊待回复」。}
+        subtitle: {type: [string, 'null'], maxLength: 80, description: 补充说明，如「患者咨询等待医生处理」。}
+        count: {type: integer, minimum: 0, description: 同类待办数量；0 时客户端不显示角标。}
+        route:
+          type: [string, 'null']
+          maxLength: 200
+          description: |
+            服务端下发的跳转目标（如 `/pages/doctor/appointments/appointments?from=todo`）。
+            ⚠️ 客户端**不得自行拼业务路径**；为 `null` 时该项不可点击。
+        createdAt: {type: string, format: date-time}
+
+    OkTodoList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/DoctorTodo'}}}}]
+
+    AiTaskStatus:
+      type: string
+      description: 任务终态为 `SUCCEEDED | FAILED | CANCELLED | EXPIRED`；只有终态才允许结束等待。
+      enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED, EXPIRED]
+
+    AiTask:
+      type: object
+      required: [taskId, taskType, status, createdAt]
+      properties:
+        taskId: {type: string}
+        taskType: {type: string, enum: [TRIAGE, CHAT, RAG, CARE_PLAN, ASR, TTS]}
+        status: {$ref: '#/components/schemas/AiTaskStatus'}
+        progressPhase:
+          type: [string, 'null']
+          description: 阶段名（如 `safety_check`/`retrieval`/`generation`/`postprocess`），**不是百分比**——模型不提供的精度不得伪造。
+          enum: [safety_check, retrieval, generation, postprocess, synthesis, null]
+        modelProfile: {type: [string, 'null'], enum: [small-default, large-upgrade, null], description: 服务端实际使用的资源档。}
+        policyVersion: {type: [string, 'null'], maxLength: 40}
+        result: {$ref: '#/components/schemas/AiTaskResult'}
+        error: {$ref: '#/components/schemas/ApiError'}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: [string, 'null'], format: date-time}
+        expiresAt: {type: [string, 'null'], format: date-time, description: 过期后结果不再可取，避免长期留存生成内容。}
+
+    AiTaskResult:
+      type: [object, 'null']
+      description: 仅在 `SUCCEEDED` 时出现。结构随 `taskType` 变化，客户端按类型分支。
+      properties:
+        text: {type: [string, 'null'], maxLength: 8000}
+        citations: {type: array, items: {$ref: '#/components/schemas/Citation'}}
+        safety: {$ref: '#/components/schemas/SafetyNotice'}
+        provenance: {$ref: '#/components/schemas/ProvenanceType'}
+        audioUrl: {type: [string, 'null'], description: 语音合成结果的短期签名 URL。}
+        refused: {type: [boolean, 'null'], description: 是否因安全策略或证据不足而结构化拒答。}
+        refusalReason: {type: [string, 'null'], maxLength: 200}
+      additionalProperties: true
+
+    OkAiTask:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/AiTask'}}}]
+
+    AiTaskEvent:
+      type: object
+      required: [taskId, seq, type, occurredAt]
+      properties:
+        taskId: {type: string}
+        seq: {type: integer, minimum: 0, description: 单调递增序号，用于断线续传与去重。}
+        type:
+          type: string
+          enum: [accepted, status, delta, citation, safety, tts, completed, cancelled, error]
+        text: {type: [string, 'null'], description: "`delta` 事件的增量文本。"}
+        citation: {$ref: '#/components/schemas/Citation'}
+        safety: {$ref: '#/components/schemas/SafetyNotice'}
+        status: {$ref: '#/components/schemas/AiTaskStatus'}
+        audioUrl: {type: [string, 'null'], description: "`tts` 事件携带的短期签名 URL。"}
+        error: {$ref: '#/components/schemas/ApiError'}
+        occurredAt: {type: string, format: date-time}
+      additionalProperties: false
+
+    TaskEventCallback:
+      type: object
+      x-status: provisional
+      required: [eventId, taskId, tenantId, status, occurredAt, traceId]
+      properties:
+        eventId: {type: string, description: 幂等键：同一 `eventId` 重复投递只生效一次。}
+        taskId: {type: string}
+        tenantId: {type: string}
+        status: {$ref: '#/components/schemas/AiTaskStatus'}
+        resultRef: {type: [string, 'null'], description: 结果对象引用，不是内联正文。}
+        errorCode: {type: [string, 'null']}
+        policyVersion: {type: [string, 'null']}
+        occurredAt: {type: string, format: date-time}
+        traceId: {type: string}
+
+    # ---------- 导诊与照护 ----------
+
+    TriageRequest:
+      type: object
+      required: [symptoms]
+      properties:
+        symptoms: {type: string, minLength: 1, maxLength: 1000}
+        durationText: {type: [string, 'null'], maxLength: 60, description: 用户描述的自由文本时长，服务端不得据此换算为精确病程。}
+        ageBand: {type: [string, 'null'], maxLength: 20}
+        localRuleHits:
+          type: array
+          description: |
+            客户端本地规则命中的红旗项。远端结果**不得降低**这些命中项的等级——
+            断网或远端异常时本地规则是唯一防线。
+          items: {type: string, maxLength: 40}
+        rulesetVersion: {type: [string, 'null'], maxLength: 40}
+      additionalProperties: false
+
+    TriageResult:
+      type: object
+      required: [safety]
+      properties:
+        safety: {$ref: '#/components/schemas/SafetyNotice'}
+        recommendedDepartments:
+          type: array
+          items:
+            type: object
+            required: [departmentId, departmentName, provenance]
+            properties:
+              departmentId: {type: string}
+              departmentName: {type: string, maxLength: 40}
+              reason: {type: [string, 'null'], maxLength: 200}
+              provenance: {$ref: '#/components/schemas/ProvenanceType'}
+              confidence: {type: [number, 'null'], minimum: 0, maximum: 1, description: 模型自评的排序分数。**不是医学置信度**，不得展示为"确诊概率"。}
+        guidance: {type: [string, 'null'], maxLength: 600, description: 就医指引，不含诊断结论。}
+        limitations: {type: string, maxLength: 300, description: 必须出现的局限说明。}
+
+    OkTriageResult:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/TriageResult'}}}]
+
+    EmergencyCheck:
+      type: object
+      required: [emergency, matchedRules]
+      properties:
+        emergency: {type: boolean}
+        level: {type: string, enum: [INFO, CAUTION, URGENT, EMERGENCY]}
+        matchedRules: {type: array, items: {type: string, maxLength: 40}}
+        rulesetVersion: {type: [string, 'null'], maxLength: 40}
+        advice: {type: [string, 'null'], maxLength: 300, description: 命中时的即时指引，如拨打 120 或立即就诊。}
+
+    OkEmergencyCheck:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/EmergencyCheck'}}}]
+
+    CarePlanRequest:
+      type: object
+      required: [goal]
+      properties:
+        goal: {type: string, minLength: 1, maxLength: 300, description: 用户期望的养生目标，如"改善睡眠"。}
+        constraints: {type: array, items: {type: string, maxLength: 60}, description: 用户自述的忌口、慢病等约束。属健康信息，不进入埋点。}
+        ageBand:
+          type: [string, 'null']
+          enum: [child, adult, elderly, null]
+          description: 年龄段（不传精确年龄，保护隐私）；缺省按 adult 处理。2026-10-17 补。
+        locale: {type: string, maxLength: 20, default: zh-CN}
+      additionalProperties: false
+
+    CarePlanDay:
+      type: object
+      required: [label, diet, sleep, exercise]
+      properties:
+        label: {type: string, maxLength: 20, description: 日期标签（如 第1天 / Day1）。}
+        diet: {type: string, maxLength: 400}
+        sleep: {type: string, maxLength: 400}
+        exercise: {type: string, maxLength: 400}
+      additionalProperties: false
+
+    CarePlan:
+      type: object
+      required: [suggestions, limitations]
+      properties:
+        ageGroup: {type: [string, 'null'], maxLength: 20, description: 年龄分组（如 青年/中年/老年），V21 按天结构补充。}
+        days:
+          type: array
+          description: 按天养生建议（V21）；为空数组时前端回退到 suggestions 平铺展示。
+          items: {$ref: '#/components/schemas/CarePlanDay'}
+        suggestions:
+          type: array
+          items:
+            type: object
+            required: [title, detail, provenance]
+            properties:
+              title: {type: string, maxLength: 60}
+              detail: {type: string, maxLength: 600}
+              provenance: {$ref: '#/components/schemas/ProvenanceType'}
+              citations: {type: array, items: {$ref: '#/components/schemas/Citation'}}
+        limitations: {type: string, maxLength: 400, description: 必须说明这是生活方式参考、不构成处方或治疗方案。}
+        refused: {type: boolean}
+        refusalReason: {type: [string, 'null'], maxLength: 200}
+
+    OkCarePlan:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/CarePlan'}}}]
+
+    # ---------- 语音 ----------
+
+    AsrResult:
+      type: object
+      required: [text, requiresConfirmation]
+      properties:
+        text: {type: string, maxLength: 2000}
+        language: {type: [string, 'null'], maxLength: 20, description: 模型真实给出的语言/方言标记；模型不提供时为 `null`，不得猜测。}
+        durationMs: {type: [integer, 'null'], minimum: 0}
+        modelId: {type: string, maxLength: 60, description: 如 `qwen3-asr-0.6b`；仅表示实际加载的模型，不表示准确率。}
+        modelVersion: {type: [string, 'null'], maxLength: 40}
+        hasTimestamps: {type: boolean, description: 是否真的提供时间戳；为 `false` 时界面不得显示逐字时间轴。}
+        requiresConfirmation: {type: boolean, const: true, description: 固定为 `true`：转写必须经用户核对才能进入诊疗流程。}
+        cached: {type: boolean, description: 是否命中缓存。}
+
+    OkAsrResult:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/AsrResult'}}}]
+
+    TtsRequest:
+      type: object
+      required: [text]
+      properties:
+        text: {type: string, minLength: 1, maxLength: 1000, description: 待合成文本。服务端在送出前先脱敏，高敏感内容默认不自动朗读。}
+        voiceId: {type: [string, 'null'], maxLength: 64, description: 缺省使用默认音色；未知音色回退到默认而非报错。}
+        rate: {type: [number, 'null'], minimum: 0.5, maximum: 2.0, description: 语速倍率。}
+        format: {type: string, enum: [mp3, wav], default: mp3}
+        locale: {type: string, maxLength: 20, default: zh-CN}
+      additionalProperties: false
+
+    TtsResult:
+      type: object
+      required: [audioUrl, mime, cached]
+      properties:
+        audioUrl: {type: string, description: 短期签名 URL。过期后重新申请，不缓存到本地长期使用。}
+        mime: {type: string, maxLength: 60}
+        durationMs: {type: [integer, 'null'], minimum: 0}
+        cached: {type: boolean}
+        engine: {type: string, maxLength: 40, description: 实际使用的合成适配器标识。客户端不得据此宣称任何 SLA。}
+        voiceId: {type: string, maxLength: 64}
+        degraded: {type: [boolean, 'null'], description: 为 `true` 表示本次未使用首选引擎（如回退到缓存），界面可弱提示。}
+
+    OkTtsResult:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/TtsResult'}}}]
+
+    Voice:
+      type: object
+      required: [id, displayName]
+      properties:
+        id: {type: string, maxLength: 64}
+        displayName: {type: string, maxLength: 40}
+        locale: {type: [string, 'null'], maxLength: 20}
+        gender: {type: [string, 'null'], maxLength: 20}
+        isDefault: {type: boolean}
+        isCustom: {type: boolean}
+        available: {type: boolean, description: 第三方音色可能随时失效；为 `false` 时界面应回退到默认音色。}
+
+    VoicePreference:
+      type: object
+      required: [voiceId]
+      properties:
+        voiceId: {type: string, maxLength: 64}
+        rate: {type: [number, 'null'], minimum: 0.5, maximum: 2.0}
+        autoPlay: {type: [boolean, 'null'], description: 是否自动朗读 AI 回复。默认关闭。}
+      additionalProperties: false
+
+    OkVoice:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/Voice'}}}]
+
+    OkVoiceList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/Voice'}}}}]
+
+    VoiceModel:
+      type: object
+      required: [modelId, capability, status]
+      properties:
+        modelId: {type: string, maxLength: 60}
+        capability: {type: string, enum: [ASR, TTS, EMBEDDING, CHAT]}
+        status:
+          type: string
+          enum: [available, degraded, unavailable]
+          description: 能力状态。权重缺失时为 `unavailable`，界面据此禁用入口而不是等到调用才失败。
+        detail: {type: [string, 'null'], maxLength: 200, description: 可读说明，不含模型绝对路径与内网地址。}
+
+    OkVoiceModelList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/VoiceModel'}}}}]
+
+    # ---------- 内容与资源 ----------
+
+    Article:
+      type: object
+      required: [id, title, category, type, publishedAt]
+      properties:
+        id: {type: string, maxLength: 64}
+        title: {type: string, maxLength: 120}
+        summary: {type: [string, 'null'], maxLength: 300}
+        coverUrl: {type: [string, 'null'], description: Attachment 签名封面 URL（HMAC 短 TTL，过期需重取列表）；null = 无封面，前端不渲染封面图。}
+        category: {type: string, maxLength: 32, description: 运营分类键（如 sleep/digest）。}
+        type: {type: string, enum: [article, video]}
+        readMin: {type: [integer, 'null'], minimum: 1, description: 预计阅读分钟数；未知为 null（不显示猜测值）。}
+        publishedAt: {type: string, format: date-time}
+        sections:
+          type: array
+          description: 分节正文（仅详情返回；列表为 null）。
+          items:
+            type: object
+            required: [title, body]
+            properties:
+              title: {type: string, maxLength: 60}
+              body: {type: string, maxLength: 2000}
+        tip: {type: [string, 'null'], maxLength: 300, description: 小贴士（仅详情返回）。}
+        related:
+          type: array
+          description: 相关文章 ID（仅详情返回）；无相关时为空数组。
+          items: {type: string, maxLength: 64}
+      additionalProperties: false
+
+    OkArticleList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/Article'}}}}]
+
+    OkArticle:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/Article'}}}]
+
+    ContentItem:
+      type: object
+      required: [id, title, category, reviewStatus]
+      properties:
+        id: {type: string}
+        title: {type: string, maxLength: 120}
+        summary: {type: [string, 'null'], maxLength: 200}
+        category: {type: string, maxLength: 40}
+        coverKey: {type: [string, 'null'], description: 封面资源键，指向资源清单；缺失时以纯文字卡片渲染，不阻断列表。}
+        coverUrl: {type: [string, 'null'], description: 封面地址（网关素材通道相对路径或短期签名 URL）。}
+        contentType: {type: string, enum: [ARTICLE, VIDEO], description: 内容类型；VIDEO 必有 videoUrl。}
+        videoUrl: {type: [string, 'null'], description: 视频地址（经网关素材通道分发，客户端不得拼接外链）。}
+        durationSec: {type: [integer, 'null'], minimum: 0, description: 视频时长（秒）。}
+        readTimeSec: {type: [integer, 'null'], minimum: 0, description: 图文预估阅读时长（秒）。}
+        reviewStatus: {type: string, enum: [DRAFT, PENDING_REVIEW, APPROVED, REJECTED, RETIRED], description: 只有 `APPROVED` 的内容才对用户可见。}
+        effectiveFrom: {type: [string, 'null'], format: date}
+        effectiveTo: {type: [string, 'null'], format: date}
+        publishedAt: {type: [string, 'null'], format: date-time}
+        readCount: {type: [integer, 'null'], minimum: 0}
+
+    ContentDetail:
+      allOf: [{$ref: '#/components/schemas/ContentItem'}, {type: object, properties: {body: {type: string, description: 正文（已净化）。不含脚本、外链 iframe 或未审核的嵌入内容。}, source: {type: [string, 'null'], maxLength: 200}, reviewer: {type: [string, 'null'], maxLength: 40}}}]
+
+    OkContent:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/ContentDetail'}}}]
+
+    OkContentList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/ContentItem'}}}}]
+
+    ResourceManifest:
+      type: object
+      required: [manifestVersion, items]
+      properties:
+        manifestVersion: {type: string, maxLength: 40, description: 清单版本。客户端据此判断是否需要更新。}
+        generatedAt: {type: string, format: date-time}
+        items:
+          type: array
+          items:
+            type: object
+            required: [key, level, mime, size, sha256]
+            properties:
+              key: {type: string, maxLength: 120, description: 资源键，客户端以此索引内置回退资源。}
+              level:
+                type: string
+                enum: [A, B]
+                description: |
+                  `A` 级必须内置于小程序包（TabBar 图标、返回/重试/录音图标、默认头像、
+                  失败占位、骨架、必要文案），远侧失败时仍可用；`B` 级可远端缓存
+                  （科普封面、医生头像、插图、TTS 音频），失败时降级为占位。
+              mime: {type: string, maxLength: 80}
+              size: {type: integer, minimum: 0}
+              sha256: {type: string, minLength: 64, maxLength: 64, description: 客户端下载后必须校验；校验失败则回退到内置或上一有效版本。}
+              url: {type: [string, 'null'], description: 短期签名 URL 或 CDN 地址。}
+              version: {type: string, maxLength: 40}
+              expiresAt: {type: [string, 'null'], format: date-time}
+              fallbackKey: {type: [string, 'null'], description: 内置回退资源键；`A` 级资源也必须声明，防止清单本身损坏。}
+
+    OkResourceManifest:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/ResourceManifest'}}}]
+
+    # ---------- 医生 ----------
+
+    DoctorWorkbench:
+      type: object
+      required: [summary]
+      properties:
+        summary:
+          type: object
+          properties:
+            todayAppointments: {type: integer, minimum: 0}
+            waitingPatients: {type: integer, minimum: 0}
+            availableBeds: {type: integer, minimum: 0}
+            pendingReviews: {type: integer, minimum: 0}
+        scope:
+          type: object
+          description: 服务端裁定的数据范围，客户端只读展示，不可修改。
+          properties:
+            departmentIds: {type: array, items: {type: string}}
+            wardIds: {type: array, items: {type: string}}
+        blocks:
+          type: array
+          description: 各子块独立降级状态；某块 `unavailable` 不影响其余块渲染。
+          items:
+            type: object
+            required: [name, status]
+            properties:
+              name: {type: string, maxLength: 40}
+              status: {type: string, enum: [ok, degraded, unavailable]}
+
+    OkDoctorWorkbench:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/DoctorWorkbench'}}}]
+
+    Bed:
+      type: object
+      required: [id, wardId, label, status, version]
+      properties:
+        id: {type: string}
+        wardId: {type: string}
+        wardName: {type: string, maxLength: 40}
+        label: {type: string, maxLength: 20, description: 床位号。}
+        status: {type: string, enum: [AVAILABLE, OCCUPIED, RESERVED, CLEANING, OUT_OF_SERVICE]}
+        occupantDisplayName: {type: [string, 'null'], maxLength: 40, description: 仅返回脱敏展示名；医生只能看到授权范围内病区的患者。}
+        admittedAt: {type: [string, 'null'], format: date-time}
+        version: {type: integer, minimum: 1}
+
+    BedAssignmentRequest:
+      type: object
+      required: [action, expectedVersion]
+      properties:
+        action: {type: string, enum: [ASSIGN, RELEASE, RESERVE, SET_CLEANING, SET_OUT_OF_SERVICE]}
+        patientRef: {type: [string, 'null'], maxLength: 64, description: "`ASSIGN` 时必填；其他动作忽略。使用内部患者 ID，不接受姓名或手机号。"}
+        expectedVersion: {type: integer, minimum: 1, description: 乐观锁版本；不匹配返回 `409`。}
+        note: {type: [string, 'null'], maxLength: 200}
+
+    OkBed:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/Bed'}}}]
+
+    OkBedList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/Bed'}}}}]
+
+    # ---------- 首页 ----------
+
+    HomeSummary:
+      type: object
+      required: [blocks]
+      properties:
+        greeting: {type: [string, 'null'], maxLength: 40}
+        blocks:
+          type: array
+          description: 按顺序渲染的子块。某块 `unavailable` 时隐藏该块而不是显示空数据。
+          items:
+            type: object
+            required: [kind, status]
+            properties:
+              kind: {type: string, enum: [NEXT_APPOINTMENT, HEALTH_TIPS, QUICK_SERVICES, CONTENT_FEED, CARE_PLAN]}
+              status: {type: string, enum: [ok, degraded, unavailable]}
+              nextAppointment: {$ref: '#/components/schemas/Appointment'}
+              contents: {type: array, items: {$ref: '#/components/schemas/ContentItem'}}
+              services: {type: array, items: {type: object, required: [code, label], properties: {code: {type: string, maxLength: 40}, label: {type: string, maxLength: 20}, iconKey: {type: [string, 'null']}}}}
+
+    OkHomeSummary:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/HomeSummary'}}}]
+
+    # ---------- 网关 ----------
+
+    GatewayHealth:
+      type: object
+      required: [status, upstreams]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, down]
+          description: |
+            ok = java/python/ollama 全可达；degraded = 核心上游可达但 ollama 缺失（AI 生成不可用，读写正常）
+            或部分上游不可达；down = 核心上游全部不可达。
+        upstreams:
+          type: array
+          items:
+            type: object
+            required: [name, reachable]
+            properties:
+              name: {type: string, enum: [java, python, ollama], description: ollama 缺失只降级 AI 生成能力，不影响读写。}
+              reachable: {type: boolean}
+              latencyMs: {type: [integer, 'null'], minimum: 0}
+
+    # ---------- 投屏（N14/N15/N16，网关域）----------
+
+    CastDevice:
+      type: object
+      required: [deviceId, name, ip, status]
+      properties:
+        deviceId: {type: string, maxLength: 64, description: 发现得到的设备稳定 ID。}
+        name: {type: string, maxLength: 60, description: 屏端展示名（SSDP/FriendlyName）。}
+        ip: {type: string, maxLength: 45, description: 屏端内网地址（仅内网语义，前端不得外联）。}
+        status: {type: string, enum: [ONLINE, PAIRED, OFFLINE]}
+      additionalProperties: false
+
+    OkCastDeviceList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/CastDevice'}}}}]
+
+    OkCastPair:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: object, required: [deviceId, status], properties: {deviceId: {type: string, maxLength: 64}, status: {type: string, const: PAIRED}}}}}]
+
+    OkGatewayHealth:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/GatewayHealth'}}}]
+
+    GatewayRoutes:
+      type: object
+      required: [routes]
+      properties:
+        routes:
+          type: array
+          items:
+            type: object
+            required: [prefix, upstream]
+            properties:
+              prefix: {type: string, maxLength: 120, description: 路径前缀。}
+              upstream: {type: string, enum: [java, python, gateway]}
+
+    OkGatewayRoutes:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/GatewayRoutes'}}}]
+
+    # ---------- 个人信息设置扩展（V8）----------
+    # 与 com.wechar.biz.user.dto.ExtendedProfileData 一一对应（@JsonInclude(NON_NULL) →
+    # 未设置/未绑定的字段整体缺省，因此不声明 required）。
+
+    ExtendedProfile:
+      type: object
+      description: 个人信息扩展资料。证件号/医保号只下发掩码与绑定状态，原文与密文永不回显。
+      properties:
+        email: {type: [string, 'null'], maxLength: 120, format: email}
+        residence: {type: [string, 'null'], maxLength: 200, description: 住宅地址（明文，用于就诊联系）。}
+        householdRegistration: {type: [string, 'null'], maxLength: 200, description: 户籍所在地（明文）。}
+        idCardName: {type: [string, 'null'], maxLength: 40, description: 实名姓名。}
+        idCardMasked: {type: [string, 'null'], maxLength: 32, description: 证件号掩码（前 6 后 4）；未绑定则缺省。}
+        idCardVerified: {type: [boolean, 'null'], description: 实名是否已通过服务端校验。}
+        insuranceType: {type: [string, 'null'], maxLength: 40, description: 医保类型；未绑定则缺省。}
+        insuranceMasked: {type: [string, 'null'], maxLength: 32, description: 医保号掩码。}
+        insuranceBound: {type: [boolean, 'null'], description: 是否已绑定医保。}
+        version: {type: [integer, 'null'], description: 资料版本号；并发更新时用于判断陈旧数据。}
+      additionalProperties: false
+
+    ExtendedProfileUpdate:
+      type: object
+      description: 三字段均可选；缺省或显式 `null` 表示**保留原值**（不是清空）。
+      properties:
+        email: {type: [string, 'null'], maxLength: 120, format: email}
+        residence: {type: [string, 'null'], maxLength: 200}
+        householdRegistration: {type: [string, 'null'], maxLength: 200}
+      additionalProperties: false
+
+    IdentityBind:
+      type: object
+      required: [name, idCardNumber]
+      properties:
+        name: {type: string, maxLength: 40, description: 实名姓名。}
+        idCardNumber: {type: string, maxLength: 18, description: 18 位居民身份证号；服务端校验 GB 11643 校验码后密文落库。}
+      additionalProperties: false
+
+    InsuranceBind:
+      type: object
+      required: [insuranceType, insuranceNo]
+      properties:
+        insuranceType:
+          type: string
+          enum: [职工基本医疗保险, 城乡居民基本医疗保险, 其他]
+          description: 医保类型；取值与后端 `InsuranceBindRequest` 的校验正则一致。
+        insuranceNo: {type: string, minLength: 6, maxLength: 30, pattern: '^[A-Za-z0-9]{6,30}$', description: 医保号，6~30 位字母或数字；密文落库。}
+      additionalProperties: false
+
+    AccountUpdate:
+      type: object
+      required: [displayName]
+      properties:
+        displayName: {type: string, minLength: 1, maxLength: 20, description: 展示名（姓名），后端限 20 字。}
+      additionalProperties: false
+
+    OkExtendedProfile:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/ExtendedProfile'}}}]
+
+    # ---------- 通用空响应 ----------
+    # 用于 DELETE 类接口：后端 Envelope.ok(requestId, null)，data 字段存在且为 null。
+
+    OkEmpty:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: 'null'}}}]
+
+    # ---------- 家庭成员更新（契约外补充路径，后端宽松接收未知字段）----------
+
+    FamilyMemberUpdate:
+      type: object
+      description: |
+        逐字段更新，缺省字段保留原值。**不含 `proxyStatus`**：代理权限只能由成员确认或撤回。
+        后端 `FamilyMemberUpdateRequest` 标注 `ignoreUnknown = true`，因此不声明
+        `additionalProperties: false`（未知字段被忽略而非 422）。
+      properties:
+        displayName: {type: string, maxLength: 40}
+        relation: {type: string, maxLength: 20}
+        ageBand: {type: [string, 'null'], maxLength: 20}
+        gender: {type: [string, 'null'], enum: [MALE, FEMALE, UNKNOWN, null]}
+
+# ============================================================================
+# 文档级扩展
+# ============================================================================
+
+    DoctorSchedule:
+      type: object
+      required: [version, weekdays, online]
+      properties:
+        version:
+          type: integer
+          minimum: 0
+          description: 医生级排班版本（同一医生所有时段共享）；无排班为 0，首次保存 expectedVersion 传 0。
+        weekdays:
+          type: array
+          description: 只包含有排班的天（无排班的天不下发）。
+          items: {$ref: '#/components/schemas/DoctorScheduleDay'}
+        online: {$ref: '#/components/schemas/DoctorOnlineStatus'}
+
+    DoctorScheduleDay:
+      type: object
+      required: [weekday, slots]
+      properties:
+        weekday:
+          type: integer
+          minimum: 1
+          maximum: 7
+          description: '1=周一 … 7=周日（ISO-8601）。'
+        slots:
+          type: array
+          items: {$ref: '#/components/schemas/DoctorScheduleSlot'}
+
+    DoctorScheduleSlot:
+      type: object
+      required: [startTime, endTime, slotMinutes, capacity, onlineOnly]
+      properties:
+        startTime:
+          type: string
+          description: 本地墙上时间（不含时区），HH:mm。
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+        endTime:
+          type: string
+          description: 本地墙上时间（不含时区），HH:mm，必须晚于 startTime。
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+        slotMinutes:
+          type: integer
+          enum: [10, 15, 20, 30, 60]
+          description: 号源粒度（分钟）。
+        capacity:
+          type: integer
+          minimum: 1
+          maximum: 50
+          description: 每个号源可约人数。
+        onlineOnly:
+          type: boolean
+          description: 该时段仅接在线问诊（不生成线下号源）。
+
+    DoctorScheduleUpdate:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, weekdays]
+      properties:
+        expectedVersion:
+          type: integer
+          minimum: 0
+          description: 无排班传 0；与当前版本不符 → 409 VERSION_CONFLICT（同内容重试按成功回放）。
+        weekdays:
+          type: array
+          maxItems: 7
+          items: {$ref: '#/components/schemas/DoctorScheduleUpdateDay'}
+
+    DoctorScheduleUpdateDay:
+      type: object
+      additionalProperties: false
+      required: [weekday, slots]
+      properties:
+        weekday: {type: integer, minimum: 1, maximum: 7, description: '1=周一 … 7=周日。'}
+        slots:
+          type: array
+          maxItems: 8
+          items: {$ref: '#/components/schemas/DoctorScheduleUpdateSlot'}
+
+    DoctorScheduleUpdateSlot:
+      type: object
+      additionalProperties: false
+      required: [startTime, endTime, slotMinutes, capacity]
+      properties:
+        startTime: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', description: HH:mm。}
+        endTime: {type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$', description: 'HH:mm，须晚于 startTime。'}
+        slotMinutes: {type: integer, enum: [10, 15, 20, 30, 60]}
+        capacity: {type: integer, minimum: 1, maximum: 50}
+        onlineOnly: {type: boolean, default: false, description: 省略即 false。}
+
+    DoctorOnlineStatus:
+      type: object
+      required: [online, accepting, version]
+      properties:
+        online: {type: boolean, description: 是否在线（医生自开关）。}
+        accepting:
+          type: boolean
+          description: 是否愿意接新会话。服务端不变式：online=false 时恒 false。
+        version: {type: integer, minimum: 0, description: 在线状态自身版本（每次开关 +1），与排班 version 无关。}
+        updatedAt: {type: [string, 'null'], format: date-time}
+
+    DoctorOnlineStatusUpdate:
+      type: object
+      additionalProperties: false
+      required: [online]
+      properties:
+        online: {type: boolean, description: 'true=上线接诊；false=下线（同时把 accepting 置 0）。'}
+
+    DoctorAvailability:
+      type: object
+      required: [doctorId, online, accepting]
+      properties:
+        doctorId: {type: string, maxLength: 64}
+        online: {type: boolean}
+        accepting: {type: boolean, description: 是否可发起新的在线问诊。}
+        nextSlotAt:
+          type: [string, 'null']
+          format: date-time
+          description: 下一次出诊开始时间（本地墙上时间转 UTC）；模板为空或无未来时段 → null，不得编造。
+
+    OkDoctorSchedule:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/DoctorSchedule'}}}]
+
+    OkDoctorOnlineStatus:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/DoctorOnlineStatus'}}}]
+
+    OkDoctorAvailability:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/DoctorAvailability'}}}]
+
+
+x-migration:
+  description: |
+    现有 `miniprogram/config/api.js` 中不再属于 V4 目标契约的路径。它们是**迁移债**：
+    迁移完成前网关仍需保留转发，但不得新增同类路径，也不得在文档中把旧路径说成目标态。
+    校验脚本 `tools/check-v4-contracts.js` 会强制本表与 api.js 保持一一对应。
+  reason: |
+    `base: 'python'` 的客户端路径意味着客户端经网关直达 FastAPI，这与 `docs/v4/03` 第 1 节
+    "不允许客户端绕过 Spring Boot 访问 FastAPI" 冲突。V4 目标态下这些能力改由 Spring Boot
+    以业务路径编排，FastAPI 退为纯内部服务。
+  entries:
+    - {legacy: 'POST /api/v1/case/recommend-department', replacement: 'POST /api/v1/triage/recommendations', note: 导诊改由 Spring Boot 编排，本地红旗优先。}
+    - {legacy: 'POST /api/v1/consultation/emergency/check', replacement: 'POST /api/v1/triage/emergency-checks', note: 轻量端点，客户端仍须保留本地规则兜底。}
+    - {legacy: 'POST /api/v1/consultation/start', replacement: 'POST /api/v1/consultations', note: 会话语义收敛，返回会话与任务两个对象。}
+    - {legacy: 'POST /api/v1/consultation/continue', replacement: 'POST /api/v1/consultations/{consultationId}/messages', note: 用户消息先落库再触发生成。}
+    - {legacy: 'POST /api/v1/consultation/confirm', replacement: 'POST /api/v1/consultations/{consultationId}/confirmations', note: 转写确认独立成资源。}
+    - {legacy: 'GET /api/v1/consultation/status/{id}', replacement: 'GET /api/v1/ai/tasks/{taskId}', note: 任务状态统一到 ai-task。}
+    - {legacy: 'POST /api/v1/case/health/care-plan', replacement: 'POST /api/v1/care-plans', note: 输出定位为生活方式建议，不构成处方。}
+    - {legacy: 'POST /api/v1/voice/tts/edge', replacement: 'POST /api/v1/voice/tts', note: 兼容别名，引擎由服务端配置决定，不由客户端指定。}
+    - {legacy: 'GET /api/v1/voice/models', replacement: 'GET /api/v1/voice/models', note: 路径不变，语义改为返回能力状态。}
+    - {legacy: 'GET /health', replacement: 'GET /api/gw/health', note: 探针路径收敛到网关；FastAPI 侧为 /internal/health/ready。}
+    - {legacy: 'POST /api/appoint/updateStatus', replacement: 'POST /api/v1/doctor/appointments/{appointmentId}/status', note: 路径规范化并要求乐观锁版本。}
+    - {legacy: 'POST /api/v1/bed/update/{id}', replacement: 'POST /api/v1/beds/{bedId}/assignment', note: 动作语义化，显式 action + expectedVersion。}
+    - {legacy: 'POST /api/user/login', replacement: 'POST /api/v1/auth/wechat/login', note: 早期联调路径，生产构建不得使用。}
+
+x-consistency-invariants:
+  description: 由 tools/check-v4-contracts.js 强制校验的不变量。
+  rules:
+    - 本文件与 ai-openapi.yaml 的路径集合互不重叠。
+    - api.js 注册表中的每条路径，要么出现在本文件或 ai-openapi.yaml，要么出现在 x-migration.entries[].legacy。
+    - x-migration 中每个 replacement 非 null 时，必须在本文件或 ai-openapi.yaml 中真实存在。
+    - 所有 operationId 全局唯一（两文件合并去重）。
+    - 所有 $ref 必须可解析到 components 下的定义。
+    - 每个写操作（POST/PUT/PATCH/DELETE）必须声明 Idempotency-Key 参数，或被显式标注 x-idempotency: not-required。
+    - 除 /api/gw/health 与 auth 登录类端点外，所有端点默认要求 bearerAuth。

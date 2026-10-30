@@ -1,0 +1,8 @@
+# 测试档默认附件签名密钥（2026-10-23 附件签名 fail-fast 收口后补齐）。
+# 背景：AttachmentStorage 现在未配置 app.attachment.sign-secret 即启动失败（生产防呆），
+# 而多数契约测试（MessageCenterContractTest / M1~M5 等）并不显式传该属性；
+# 本文件作为 itest profile 的默认值兜底（profile 配置与主 application.yml 分层合并）。
+# 显式传入的用例（如 AttachmentSignatureTest 的 @SpringBootTest properties）优先级更高，不受影响。
+app:
+  attachment:
+    sign-secret: test-sign-secret-0123456789abcdef

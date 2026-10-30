@@ -1,0 +1,47 @@
+<!-- 我的问诊（设计稿 患者端/C-个人中心/07-我的问诊.png）
+     版式：白卡 × N —— 科室标题 + 状态徽章 / 日期时间 / 摘要（单行截断）/ 分隔线 + 右对齐「查看详情」
+     ⚠️ 设计稿没有状态筛选 tab，也没有医生头像与姓名 → 本页严格按设计稿；
+        （契约 2026-10-19 已下发 doctorName/departmentName，要加是产品加分项，不是复刻项）
+     数据：GET /api/v1/consultations → services/user.js#listMyConsultations -->
+<view class="page qc-page theme-{{theme}}">
+
+  <!-- 骨架屏：加载中 -->
+  <skeleton wx:if="{{loading}}" type="list" rows="4" />
+
+  <!-- 上线阶段错误态（开发阶段由 withFallback 兜底演示数据，不会走到这里） -->
+  <view wx:elif="{{error}}" class="state">
+    <view class="state-badge state-badge-primary"><image class="state-ic" src="{{icons.alertWhite}}" /></view>
+    <view class="state-title">问诊记录加载失败</view>
+    <view class="state-sub">{{error}}</view>
+    <view class="btn btn-primary state-btn" bindtap="fetch">重新加载</view>
+  </view>
+
+  <block wx:elif="{{displayed.length > 0}}">
+    <!-- 整卡可点 → 进入会话详情（发丝级热区交给整卡，不必单独放大「查看详情」） -->
+    <view wx:for="{{displayed}}" wx:key="id" class="qc-card"
+          data-id="{{item.id}}" bindtap="onView">
+      <view class="qc-head">
+        <view class="qc-title">{{item.title}}</view>
+        <view wx:if="{{item.statusText}}" class="qc-badge qc-badge-{{item.tone}}">{{item.statusText}}</view>
+      </view>
+      <view wx:if="{{item.dateText}}" class="qc-date">{{item.dateText}}</view>
+      <view wx:if="{{item.brief}}" class="qc-brief">{{item.brief}}</view>
+      <view class="qc-foot">
+        <view class="qc-more">
+          <text class="qc-more-t">查看详情</text>
+          <image class="qc-more-ic" src="{{icons.chevronRight}}" mode="aspectFit" />
+        </view>
+      </view>
+    </view>
+    <view wx:if="{{hasMore}}" class="load-more">上拉加载更多</view>
+    <view wx:else class="load-all">已显示全部 {{displayed.length}} 条</view>
+  </block>
+
+  <view wx:else class="state">
+    <view class="state-badge state-badge-gray"><image class="state-ic" src="{{icons.chatGray}}" /></view>
+    <view class="state-title">还没有问诊记录</view>
+    <view class="state-sub">身体不舒服时，可以先和 AI 医生聊一聊</view>
+    <view class="btn btn-primary state-btn" bindtap="onGoConsult">去问医生</view>
+  </view>
+
+</view>

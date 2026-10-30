@@ -1,0 +1,42 @@
+<!--
+  pages/auth/patient-login —— 患者登录（对齐 design-output/患者端/A-认证/02-患者登录.png）
+  版式：浅蓝渐变背景 + 蓝色正圆品牌 Logo + 标题/副标题
+       + 白卡内「微信一键登录」胶囊按钮 + 协议勾选行（默认不勾）+ 授权说明小字。
+  ⚠️ 原生导航栏白底深蓝标题（页面 json 覆盖全局蓝导航）；返回箭头由导航栏自带。
+-->
+<view class="pl-page theme-{{theme}}">
+
+  <!-- 品牌区：蓝圆 Logo + 标题 + 副标题（垂直偏上） -->
+  <view class="pl-brand">
+    <view class="pl-logo">
+      <image class="pl-logo-img" src="/assets/brand/logo-mark.png" mode="aspectFit" />
+    </view>
+    <view class="pl-title">欢迎使用 AI 智慧医疗</view>
+    <view class="pl-subtitle">登录后管理您的健康服务</view>
+  </view>
+
+  <!-- 白卡：微信一键登录 + 协议 + 授权说明 -->
+  <view class="pl-card">
+    <button
+      class="pl-btn-primary"
+      open-type="getPhoneNumber"
+      bindgetphonenumber="onWxLogin"
+    >
+      <image class="pl-btn-icon" src="/assets/icons/chat_white.png" />
+      <text>微信一键登录</text>
+    </button>
+
+    <!-- 协议行：空心圆勾选（默认不勾）+ 用户协议/隐私政策蓝色链接 -->
+    <view class="pl-agree-row" bindtap="onToggleAgreement">
+      <view class="pl-checkbox {{agreed ? 'pl-checkbox-on' : ''}}">
+        <view wx:if="{{agreed}}" class="pl-checkbox-tick"></view>
+      </view>
+      <text class="pl-agree-text">我已阅读并同意</text>
+      <text class="pl-agree-link" catchtap="onOpenAgreement">用户协议</text>
+      <text class="pl-agree-link" catchtap="onOpenPrivacy">隐私政策</text>
+    </view>
+
+    <view class="pl-tip">登录即授权获取您的微信昵称、头像等公开信息用于账号注册</view>
+  </view>
+
+</view>

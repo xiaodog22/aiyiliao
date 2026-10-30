@@ -1,0 +1,200 @@
+<!--
+  pages/doctor/workbench —— 医生工作台（医生端 01-医生工作台）
+
+  版式逐项对照 design-output/医生端/01-医生工作台.png：
+    ① 自定义导航栏：返回 +「医生工作台」+ 右侧药丸（消息铃铛带红点 / 大屏投屏）
+    ② 欢迎卡（浅蓝渐变）：左「您好，欢迎回来」+ 医生姓名 + 科室·职称，右圆形头像
+    ③ 统计概览卡：三列（待就诊 / 就诊中 / 已完成），标签在上、数值在下，加载态为灰色骨架条
+    ④ 今日工作卡：2×2 宫格（预约管理 / 患者接诊 / 在线问诊 / 患者管理），图标+文字同在一枚浅蓝圆角块内
+    ⑤ 待处理事项卡：标题 +「查看全部 ›」；每行 = 彩色圆形徽章 + 标题/副标题 + 蓝色「处理」胶囊
+    ⑥ 快捷功能卡：三列（床位管理 / 排班管理 / 消息通知），列间竖线
+    ⑦ 底部医生端导航：工作台 / 患者 / 消息 / 我的（组件 components/doctor-tab-bar）
+
+  ⚠️ 导航栏为什么自绘：原生导航栏只能竖向排"返回 + 标题 + 一个胶囊"，放不下设计稿右侧那个
+     「铃铛 + 分隔线 + 投屏」药丸，故本页 navigationStyle: custom，自绘并让状态栏高度由 JS 注入。
+  ⚠️ 所有图标都取自 utils 目录的图标清单（未新增字形）；配色/圆角/阴影一律走 app.wxss 令牌。
+-->
+<view class="wb-page theme-{{theme}} page-shell">
+
+  <!-- ① 导航栏：statusBarHeight 由 JS 按真机注入（px），保证在刘海屏/安卓上都不压状态栏 -->
+  <view class="wb-nav" style="padding-top: {{statusBarHeight}}px;">
+    <view class="wb-nav-row">
+      <view wx:if="{{canGoBack}}" class="wb-nav-back pressable" bindtap="onBack">
+        <image class="wb-nav-back-ic" src="{{icons.chevronLeft}}" />
+      </view>
+
+      <view class="wb-nav-title">医生工作台</view>
+
+      <view class="wb-nav-tools">
+        <view class="wb-nav-btn pressable" bindtap="onNotify">
+          <image class="wb-nav-ic" src="{{icons.bell}}" />
+          <view wx:if="{{unread}}" class="wb-nav-dot"></view>
+        </view>
+        <view class="wb-nav-sep"></view>
+        <view class="wb-nav-btn pressable" bindtap="onCast">
+          <image class="wb-nav-ic" src="{{icons.projector}}" />
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="shell-cols">
+
+    <!-- 平板横屏（≥900px 且 ≥700px 且横屏）左侧栏：与效果图 02-平板横屏工作台 的左栏同构 -->
+    <view class="wb-rail side-only">
+      <view class="wb-rail-me">
+        <image class="wb-rail-avatar" src="{{doctor.avatarUrl || '/assets/img/avatar-default.png'}}" mode="aspectFill" />
+        <view class="wb-rail-name">{{doctor.name || '医生'}}</view>
+        <view wx:if="{{doctor.dept}}" class="wb-rail-dept">{{doctor.dept}}</view>
+      </view>
+      <view class="wb-rail-nav">
+        <view class="wb-rail-item on">
+          <image class="wb-rail-ic" src="{{icons.layoutGrid}}" /><text>工作台</text>
+        </view>
+        <view class="wb-rail-item pressable" data-key="patientQueue" bindtap="onQuick">
+          <image class="wb-rail-ic" src="{{icons.users}}" /><text>患者队列</text>
+        </view>
+        <view class="wb-rail-item pressable" data-key="schedule" bindtap="onQuick">
+          <image class="wb-rail-ic" src="{{icons.calendar}}" /><text>日程排班</text>
+        </view>
+        <view class="wb-rail-item pressable" data-key="consult" bindtap="onQuick">
+          <image class="wb-rail-ic" src="{{icons.chat}}" /><text>在线问诊</text>
+        </view>
+        <view class="wb-rail-item pressable" data-key="notify" bindtap="onQuick">
+          <image class="wb-rail-ic" src="{{icons.bell}}" /><text>消息通知</text>
+          <view wx:if="{{unread}}" class="wb-rail-dot"></view>
+        </view>
+        <view class="wb-rail-item pressable" data-key="personal" bindtap="onQuick">
+          <image class="wb-rail-ic" src="{{icons.settings}}" /><text>设置</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="shell-main wb-main">
+
+      <!-- ② 欢迎卡：浅蓝渐变 + 圆形头像 -->
+      <view class="wb-hero">
+        <view class="wb-hero-text">
+          <view class="wb-hero-hi">您好，欢迎回来</view>
+          <view class="wb-hero-name-line">
+            <text class="wb-hero-name">{{doctor.name || '医生'}}</text>
+            <text wx:if="{{doctorMeta}}" class="wb-hero-sub">{{doctorMeta}}</text>
+          </view>
+        </view>
+        <image class="wb-hero-avatar" src="{{doctor.avatarUrl || '/assets/img/avatar-default.png'}}" mode="aspectFill" />
+      </view>
+
+      <!-- ③ 统计概览：标签在上、数值在下；加载态是灰色骨架条（规范：不显 0） -->
+      <view class="card wb-stats">
+        <view class="ws-col pressable" data-key="appointments" bindtap="onQuick">
+          <view class="ws-label">待就诊</view>
+          <view wx:if="{{loading}}" class="stat-skel ws-skel"></view>
+          <view wx:elif="{{error}}" class="ws-err" bindtap="reloadOverview">重试</view>
+          <view wx:else class="ws-num">{{overview.waiting}}</view>
+        </view>
+        <view class="ws-col">
+          <view class="ws-label">就诊中</view>
+          <view wx:if="{{loading}}" class="stat-skel ws-skel"></view>
+          <view wx:elif="{{error}}" class="ws-err ws-err-mute">—</view>
+          <view wx:else class="ws-num">{{overview.inProgress}}</view>
+        </view>
+        <view class="ws-col">
+          <view class="ws-label">已完成</view>
+          <view wx:if="{{loading}}" class="stat-skel ws-skel"></view>
+          <view wx:elif="{{error}}" class="ws-err ws-err-mute">—</view>
+          <view wx:else class="ws-num">{{overview.done}}</view>
+        </view>
+      </view>
+
+      <!-- ④ 今日工作 2×2 -->
+      <view class="card wb-card wb-card-today">
+        <view class="wb-card-title">今日工作</view>
+        <view class="tw-grid">
+          <view class="tw-tile pressable" data-key="appointments" bindtap="onQuick">
+            <image class="tw-ic" src="{{icons.calendar}}" />
+            <text class="tw-label">预约管理</text>
+          </view>
+          <view class="tw-tile pressable" data-key="patientQueue" bindtap="onQuick">
+            <image class="tw-ic" src="{{icons.user}}" />
+            <text class="tw-label">患者接诊</text>
+          </view>
+          <view class="tw-tile tw-tile-mint pressable" data-key="consult" bindtap="onQuick">
+            <image class="tw-ic" src="{{icons.chatMint}}" />
+            <text class="tw-label">在线问诊</text>
+          </view>
+          <view class="tw-tile pressable" data-key="patientMgmt" bindtap="onQuick">
+            <image class="tw-ic" src="{{icons.users}}" />
+            <text class="tw-label">患者管理</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- ⑤ 待处理事项 -->
+      <view class="card wb-card wb-card-todos">
+        <view class="wb-card-head">
+          <view class="wb-card-title wb-card-title-inline">待处理事项</view>
+          <view wx:if="{{todos.length}}" class="wb-more" bindtap="onViewAllTodo">
+            <text>查看全部</text>
+            <image class="wb-more-ic" src="{{icons.chevronRightGray}}" />
+          </view>
+        </view>
+
+        <view wx:if="{{todosLoading}}" class="todo-skel"></view>
+
+        <view wx:elif="{{todosError}}" class="error-inline">
+          <image class="error-inline-ic" src="{{icons.alertWhite}}" />
+          <view class="error-inline-text">待办加载失败：{{todosError}}</view>
+          <view class="error-inline-btn" bindtap="loadTodos">重试</view>
+        </view>
+
+        <block wx:elif="{{todos.length}}">
+          <view
+            wx:for="{{todos}}"
+            wx:key="kind"
+            class="todo-row pressable"
+            data-kind="{{item.kind}}"
+            bindtap="onTodo"
+          >
+            <view class="todo-badge {{item.badgeCls}}">
+              <image class="todo-badge-ic" src="{{icons[item.badgeIcon]}}" />
+            </view>
+            <view class="todo-body">
+              <view class="todo-title">{{item.title}}</view>
+              <view wx:if="{{item.subtitle}}" class="todo-sub">{{item.subtitle}}</view>
+            </view>
+            <view class="todo-btn" data-kind="{{item.kind}}" catchtap="onTodo">处理</view>
+          </view>
+        </block>
+
+        <view wx:else class="todo-empty">
+          <image class="todo-empty-ic" src="{{icons.checkCircleGreen}}" />
+          <view class="todo-empty-text">暂无待处理事项</view>
+        </view>
+      </view>
+
+      <!-- ⑥ 快捷功能三列 -->
+      <view class="card wb-card">
+        <view class="wb-card-title">快捷功能</view>
+        <view class="qf-row">
+          <view class="qf-tile pressable" data-key="beds" bindtap="onQuick">
+            <view class="qf-ic-box"><image class="qf-ic" src="{{icons.bed}}" /></view>
+            <text class="qf-label">床位管理</text>
+          </view>
+          <view class="qf-tile pressable" data-key="schedule" bindtap="onQuick">
+            <view class="qf-ic-box"><image class="qf-ic" src="{{icons.calendar}}" /></view>
+            <text class="qf-label">排班管理</text>
+          </view>
+          <view class="qf-tile pressable" data-key="notify" bindtap="onQuick">
+            <view class="qf-ic-box"><image class="qf-ic" src="{{icons.bell}}" /></view>
+            <text class="qf-label">消息通知</text>
+          </view>
+        </view>
+      </view>
+
+    </view>
+  </view>
+
+  <!-- ⑦ 医生端底部导航 -->
+  <doctor-tabbar current="workbench" unread="{{unread}}" />
+
+</view>

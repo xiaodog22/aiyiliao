@@ -1,0 +1,1312 @@
+/**
+ * app.wxss —— 全局设计 Token（楚大夫蓝调 · 参考图基调对齐版 2026-10-16）
+ * 主色体系：品牌蓝 #0B6EF8 / 深海军蓝标题+正文 #14264C / 极淡蓝底 #F3F8FF
+ * 组件体系：.hero-light（浅色 hero）· .tile-*（五色图标底板）· .li-*（列表行规约）
+ *           .notice-bar（信息条）· .section-*（区块标题）· .page-wave（波浪）· .anim-*（入场动效）
+ * 三档主题：standard / large（适老）/ xlarge（无障碍超大字）
+ */
+
+page {
+  /* 楚大夫蓝调 · 效果图对齐版（2026-10-18，design-output 29 张效果图 + 设计规范说明.md 取色）
+     全仓唯一色源：改色只动这里；旧值（#165DFF/#F5F7FA/#1D2129…）全仓归零。
+
+     ⚠️ 与设计规范的**唯一有意的偏离**：--text-sub 保持 #5064A0 而非规范里的 #8A9BB8。
+     原因：#8A9BB8 在 #F3F8FF 底上对比度约 2.8:1，不达正文 4.5:1（KNOWN_ISSUES #27 已立过案）；
+     #8A9BB8 改作 --text-placeholder / --divider 的视觉基准，不再承担正文职责。 */
+  --primary: #0B6EF8;        /* 医疗科技蓝：主按钮、选中态、链接、品牌（规范一致） */
+  --primary-dark: #0A5AD8;   /* 深蓝：按下态（同族深一档，真机目检候选） */
+  --accent: #3E8CFF;         /* 浅蓝：辅助高亮 */
+  --accent-soft: #E4F1FF;    /* 浅蓝底板：chip/信息条/次按钮/图标底板（规范 §一 浅蓝底板） */
+  --accent-press: #CBE3FF;   /* 浅蓝底按下态（跟随 soft 提亮，按压仍有可辨加深） */
+  --accent-green: #00B42A;   /* 语义绿：在线/空闲等"可用"状态 */
+  --accent-amber: #FF8C00;   /* 提醒橙：待处理、号源紧张、紧急提示（规范 §一） */
+  --accent-red: #F53F3F;
+  /* —— 薄荷绿副色族（规范 §一：成功状态、已完成、在线问诊区分色）——
+     ⚠️ --mint 只用于**底色/图标/圆点/大按钮**，不可直接当小字色（#54C8A7 on 白 ≈ 2.1:1）；
+     标签文字一律用 --mint-text。 */
+  --mint: #54C8A7;           /* 医疗薄荷绿：实心按钮底、图标、状态圆点 */
+  --mint-dark: #3FB08F;      /* 薄荷按下态 */
+  --mint-soft: #E0F7F0;      /* 薄荷浅底：已完成/问诊中标签底 */
+  --mint-text: #178F6B;      /* 薄荷文字：浅底上的标签字（≈4.6:1，达正文标准） */
+  /* —— 橙色软底族（规范 §一：紧急/紧张提示条）—— */
+  --amber-soft: #FFF4E5;     /* 浅橙底：紧急提示条背景 */
+  --amber-text: #CC6600;     /* 深橙文字：浅橙底上的正文 */
+  --bg: #F3F8FF;             /* 页面底：全局页面底色（规范 §一） */
+  --card: #FFFFFF;
+  --text-main: #14264C;      /* 深海军蓝：标题/正文（规范 §一/§二） */
+  --text-sub: #5064A0;       /* 灰蓝：次要文字（可读性优先，见上方偏离说明） */
+  --text-weak: #828CA0;      /* 弱文字：白卡说明 */
+  --text-placeholder: #B0BEC5; /* 占位文字：输入框 placeholder（规范 §一） */
+  --border: #E4E9F0;         /* 分割灰：列表分割线（规范 §一） */
+  /* —— 参考图基调组件令牌（hero / 底板 / 装饰）—— */
+  --hero-grad: linear-gradient(135deg, #D9EEFE 0%, #B6DDFE 100%);  /* 淡蓝渐变 hero */
+  --section-bar: #BDE0FA;    /* 区块标题浅蓝竖条 */
+  --tile-blue: #B2D8F9;      /* 图标底板五色（参考图实测 pastel） */
+  --tile-mint: #CDF1E6;
+  --tile-pink: #FBCBD5;
+  --tile-amber: #FDE6C8;
+  --tile-purple: #DCC8FB;
+  --wave-deep: #C9E2F9;      /* 底部波浪：深色层 */
+  --wave-light: #E4F1FD;     /* 底部波浪：浅色层 */
+  --script-blue: #2E6DC4;    /* 手写体蓝（标语/注解） */
+  --shadow-card: 0 2rpx 12rpx rgba(11, 110, 248, 0.06);
+  /* 动效时值（全局唯一来源，见文件尾 .anim-* / .pressable） */
+  --dur-fast: 140ms;
+  --dur-base: 280ms;
+  /* hero 大标题在 --font-title 之上的加码（必须走变量：直接写 calc(… + 8rpx) 会在
+     宽屏被 rpx 等比放大 —— 1200pt 平板 8rpx≈12.8px，标题会虚大一圈） */
+  --hero-title-boost: 8rpx;
+  --font-title: 40rpx;      /* 20px · 规范 §二 大标题 20-22px/600 */
+  --font-h2: 34rpx;         /* 17px · 规范 §二 卡片标题 17px/600 */
+  --font-body: 30rpx;       /* 15px · 规范 §二 正文 15-16px/400 */
+  --font-caption: 24rpx;    /* 12px · 规范 §二 辅助文字 12-13px/400 */
+  --btn-height: 88rpx;
+  --radius-lg: 32rpx;       /* 16px · 规范 §三 卡片圆角（效果图实测同为 16px） */
+  --radius-md: 24rpx;       /* 12px · 规范 §三 图标底板/输入框/信息条 */
+  --radius-sm: 16rpx;       /* 8px  · 规范 §4.4 状态标签 */
+  --space-page: 32rpx;
+
+  background: var(--bg);
+  color: var(--text-main);
+  font-size: var(--font-body);
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 适老/大字模式 */
+.theme-large {
+  --font-title: 44rpx;
+  --font-h2: 36rpx;
+  --font-body: 32rpx;
+  --font-caption: 26rpx;
+  --btn-height: 108rpx;
+  --primary-dark: #000000;
+  --bg: #FFFFFF;
+}
+
+/* 无障碍/超大字模式 */
+.theme-xlarge {
+  --primary: #000000;
+  --primary-dark: #000000;
+  --accent: #0055FF;
+  --font-title: 52rpx;
+  --font-h2: 42rpx;
+  --font-body: 38rpx;
+  --font-caption: 30rpx;
+  --btn-height: 128rpx;
+  --bg: #FFFFFF;
+}
+
+/* ============ 布局基础 ============ */
+.page {
+  min-height: 100vh;
+  padding: var(--space-page);
+  box-sizing: border-box;
+  background: var(--bg);
+}
+
+/* ============ 长列表分页尾部提示 ============
+   首屏只渲染 PAGE_SIZE 条（见 utils/paginate.js），上拉触底追加下一页。
+   四个长列表页（挂号订单/床位/问诊历史/健康记录）共用此样式。 */
+.load-more,
+.load-all {
+  text-align: center;
+  padding: 24rpx 0 36rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+.load-more {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* ============ 平板双栏外壳（opt-in）============
+   ⚠️ 这些类**只在 ≥900px 且 ≥700px 的断点内**才变成横向双栏；
+   手机端一律退回普通块级流 → 页面根节点加 .page-shell 不会改变手机布局（零回归）。
+
+   用法：
+     <view class="page page-shell">
+       <view class="shell-cols">
+         <view class="shell-main">…主内容…</view>
+         <view class="shell-side side-only">…侧栏…</view>
+       </view>
+     </view>
+
+   ⚠️ 为什么是"双栏"而不是"把 720px 单列加宽"：单列拉到 1180px 会变成
+   「手机界面放大」（本文件 900px 断点注释里记录过的实测怪感）；
+   双栏让多出来的宽度被真正用掉，信息密度才上得来。
+   ⚠️ 需要"手机端也换位/换列"的页面（如问诊页：进度卡在手机要排头部），
+   在本页 wxss 里自行重写 .shell-cols / .shell-side，不要改这里。 */
+.page-shell,
+.shell-cols,
+.shell-main,
+.shell-side {
+  box-sizing: border-box;
+}
+
+/* 手机端：单纯的分组容器，视觉与结构均不改变 */
+.shell-main,
+.shell-side { display: block; }
+
+/* 仅平板可见（手机端完全不占位） */
+.side-only { display: none; }
+
+/* ============ 治管家卡片 ============ */
+.card {
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 32rpx;
+  margin-bottom: 24rpx;
+  box-sizing: border-box;
+}
+
+.card-title {
+  font-size: var(--font-h2);
+  font-weight: 600;
+  color: var(--primary-dark);
+  margin-bottom: 16rpx;
+}
+
+/* ============ 按钮 ============ */
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--btn-height);
+  border-radius: var(--radius-md);
+  font-size: var(--font-body);
+  font-weight: 600;
+  box-sizing: border-box;
+  /* 按压反馈：底色（轻量重绘）+ 缩放（合成层，不触发布局） */
+  transition: background-color 150ms ease, transform var(--dur-fast) ease;
+}
+
+.btn:active { transform: scale(0.985); }
+
+.btn::after { border: none; }
+
+.btn-primary {
+  background: var(--primary);
+  color: #FFFFFF;
+}
+
+.btn-primary:active { background: var(--primary-dark); }
+
+.btn-outline {
+  background: #FFFFFF;
+  color: var(--primary);
+  border: 2rpx solid var(--primary);
+}
+
+.btn-outline:active { background: var(--accent-soft); }
+
+.btn-ghost {
+  background: var(--accent-soft);
+  color: var(--primary);
+}
+
+.btn-ghost:active { background: var(--accent-press); }
+
+.btn-disabled {
+  background: #C9CDD4;
+  color: #FFFFFF;
+}
+
+/* 薄荷实心按钮（效果图「查看详情」等主操作；规范 §一 医疗薄荷绿 = 成功/已完成区分色）
+   ⚠️ 与 .btn-primary 同构，只是色族不同 —— 用于「已完成/已就绪」语境的主按钮。 */
+.btn-mint {
+  background: var(--mint);
+  color: #FFFFFF;
+  border: none;
+}
+
+.btn-mint:active { background: var(--mint-dark); }
+
+/* ============ 徽标 ============ */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: var(--font-caption);
+  font-weight: 500;
+}
+
+.badge-green { background: rgba(0, 180, 42, 0.12); color: #00701A; }
+.badge-amber { background: rgba(255, 125, 0, 0.12); color: #B45200; }
+.badge-gray { background: #F2F3F5; color: #5064A0; }
+.badge-blue { background: var(--accent-soft); color: var(--primary); }
+.badge-red { background: rgba(245, 63, 63, 0.12); color: #B42318; }
+/* 薄荷标签（规范 §4.4 成功标签：浅薄荷底 #E0F7F0 + 绿字）——「已完成 / 已出结果」 */
+.badge-mint { background: var(--mint-soft); color: var(--mint-text); }
+
+/* ============ 文本层级 ============ */
+.title { font-size: var(--font-title); font-weight: 700; color: var(--primary-dark); }
+.h2 { font-size: var(--font-h2); font-weight: 600; color: var(--primary-dark); }
+.body { font-size: var(--font-body); color: var(--text-main); }
+.caption { font-size: var(--font-caption); color: var(--text-weak); }
+
+/* ============ 卡片内分组标题条 ============
+   效果图 10-系统设置 / 15-医生个人管理：分组名位于**卡片内部顶部**的浅灰条上，
+   不是卡片外的浮动小字。用法：
+     <view class="card group-card"><view class="group-head">通用设置</view> …rows… </view>
+   ⚠️ 卡片需要 overflow:hidden 才能让标题条的圆角贴合卡片圆角。 */
+.group-head {
+  margin: 0 -32rpx 8rpx;
+  padding: 14rpx 32rpx;
+  background: #F7F9FC;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.4;
+}
+
+.group-card {
+  padding: 8rpx 32rpx;
+  overflow: hidden;
+}
+
+/* ============ 列表行 ============ */
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.row:last-child { border-bottom: none; }
+
+.row-arrow::after {
+  content: '›';
+  font-size: 40rpx;
+  /* 2026-10-16 归零：原 #B6C2BE（旧治管绿的灰阶）→ 统一走弱文字 token */
+  color: var(--text-weak);
+  line-height: 1;
+}
+
+/* ============ 空态/提示 ============
+   ⚠️ 2026-09-16 调色：原来用最弱的灰 --text-weak(#86909C)，在页面底 #F1F8FD 上
+   对比度只有约 3.0:1，达不到正文 4.5:1（适老/无障碍档更不够）。改为 --text-sub(#5064A0)
+   ≈ 5.1:1。空态文字是"要用户读的内容"，不是装饰。 */
+.empty {
+  padding: 80rpx 32rpx;
+  text-align: center;
+  color: var(--text-sub);
+  font-size: var(--font-body);
+}
+
+/* ============ 状态卡（加载中 / 加载失败 / 空态）============
+   为什么单独抽：错误态原来直接复用 .empty —— 最弱的灰 + 一个蓝色文字链"重试"，
+   既没有视觉重量，触控目标也远小于规范（88rpx）。统一成
+   「圆形图标徽章 + 主色标题 + 中文说明 + 实心按钮」，并满足两条项目规则：
+     · 状态不只靠颜色表达 —— 有图标 + 文案，色觉障碍用户同样可辨；
+     · 触控目标达标 —— 按钮走 .btn（height: var(--btn-height) = 88rpx）。
+   用法：
+     <view class="state">
+       <view class="state-badge state-badge-primary"><image class="state-ic" src="{{icons.alertWhite}}" /></view>
+       <view class="state-title">预约列表加载失败</view>
+       <view class="state-sub">{{error}}</view>
+       <view class="btn btn-primary state-btn" bindtap="fetch">重试</view>
+     </view>
+   ⚠️ 错误文案一律走 utils/err-text.js，禁止把 err.message 直接渲染（会漏英文/HTTP 码）。 */
+.state {
+  padding: 88rpx 32rpx;
+  text-align: center;
+}
+
+/* 实心主蓝 = 需要用户处理（加载失败）；浅灰 = 无内容可看（空态） */
+.state-badge {
+  width: 128rpx;
+  height: 128rpx;
+  margin: 0 auto 28rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.state-badge-primary { background: var(--primary); }
+.state-badge-gray { background: #F2F3F5; }
+
+.state-ic { width: 64rpx; height: 64rpx; }
+
+.state-title {
+  font-size: var(--font-h2);
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.state-sub {
+  margin-top: 12rpx;
+  font-size: var(--font-body);
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+
+.state-btn { margin: 36rpx auto 0; width: 320rpx; }
+
+/* ============ 紧凑行内错误（卡片内局部失败，如工作台"今日接诊概览"）============
+   整屏状态卡塞不进卡片格子，局部失败用这组：图标 + 一句中文 + 右侧实心重试。
+   ⚠️ 按钮用 min-height 而非固定 height：xlarge 档字号放大后按钮要跟着长高。 */
+.error-inline {
+  display: flex;
+  align-items: center;
+  background: var(--accent-soft);
+  border-radius: var(--radius-md);
+  padding: 24rpx;
+}
+
+.error-inline-ic {
+  width: 44rpx;
+  height: 44rpx;
+  flex-shrink: 0;
+  margin-right: 16rpx;
+}
+
+.error-inline-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-body);
+  color: var(--text-main);
+}
+
+.error-inline-btn {
+  flex-shrink: 0;
+  margin-left: 16rpx;
+  min-height: 88rpx;
+  padding: 16rpx 32rpx;
+  border-radius: var(--radius-md);
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: var(--font-body);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.error-inline-btn:active { background: var(--primary-dark); }
+
+/* ============ Safe Area ============ */
+.safe-bottom {
+  padding-bottom: calc(20rpx + env(safe-area-inset-bottom));
+}
+
+/* ============ 无障碍高对比开关 ============ */
+.high-contrast {
+  --primary-dark: #000000;
+  --text-sub: #000000;
+  --text-weak: #111827;
+  --bg: #FFFFFF;
+}
+
+/* ============ SVG 图标尺寸（楚大夫线性图标） ============ */
+.ic-xs { width: 24rpx; height: 24rpx; vertical-align: middle; }
+.ic-sm { width: 32rpx; height: 32rpx; vertical-align: middle; }
+.ic-md { width: 44rpx; height: 44rpx; }
+.ic-lg { width: 56rpx; height: 56rpx; }
+
+/* 箭头（image 版，替代字符 ›） */
+.img-arrow { width: 36rpx; height: 36rpx; opacity: 0.5; }
+
+/* ============ V3.1 设计系统增强（UI 填充层） ============ */
+
+/* 阴影层级（2026-10-16：旧治管绿基 rgba(31,85,79,*) → 品牌蓝基，与蓝调一致） */
+.shadow-sm { box-shadow: 0 2rpx 8rpx rgba(11, 110, 248, 0.05); }
+.shadow-md { box-shadow: 0 8rpx 24rpx rgba(11, 110, 248, 0.10); }
+.shadow-lg { box-shadow: 0 16rpx 40rpx rgba(11, 110, 248, 0.16); }
+
+/* 深蓝渐变卡（品牌蓝底白字，auth/三诊等页保留；参考图五页已改 .hero-light 浅色 hero） */
+.grad-hero {
+  background: linear-gradient(135deg, #0B6EF8 0%, #3E8CFF 100%);
+  border-radius: var(--radius-lg);
+  color: #FFFFFF;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 渐变卡装饰圆（右下大圆，仅 opacity 动效） */
+.grad-hero::after {
+  content: '';
+  position: absolute;
+  right: -80rpx;
+  bottom: -100rpx;
+  width: 220rpx;
+  height: 220rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* AI 免责提示（医疗合规，全局通用；深底页可局部覆盖颜色） */
+.ai-note {
+  text-align: center;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  padding: 4rpx 24rpx;
+  flex-shrink: 0;
+}
+
+/* ============ 图标底板 · 五色 pastel（参考图体系，2026-10-16 基调对齐）============
+   .tile 为统一新命名；.icon-badge 为旧名（保留兼容，两者视觉同源）。
+   配色纪律（D-01④）：底板/字形五色 = **装饰色**；红/橙语义仅用于状态场景，不被装饰挪用。
+   字形 PNG 走「同色系」变体（icons.archiveMint 等，见 utils/icons.js 彩色变体块）。 */
+.icon-badge,
+.tile {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 24rpx;
+  background: var(--tile-blue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 44rpx;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.tile-blue { background: var(--tile-blue); }
+.tile-mint { background: var(--tile-mint); }
+.tile-pink { background: var(--tile-pink); }
+.tile-amber { background: var(--tile-amber); }
+.tile-purple { background: var(--tile-purple); }
+.tile-red { background: #FFDCDB; }    /* 语义扩展位（危险/体检），装饰场景不用 */
+.tile-gray { background: #F2F3F5; }
+
+.tile-ic { width: 44rpx; height: 44rpx; }
+
+.icon-badge-teal { background: var(--tile-blue); }
+.icon-badge-blue { background: var(--tile-blue); }
+.icon-badge-green { background: var(--tile-mint); }
+.icon-badge-amber { background: var(--tile-amber); }
+.icon-badge-gray { background: #F2F3F5; }
+.icon-badge-white { background: rgba(255, 255, 255, 0.22); }
+
+/* ============ 列表行 / 宫格行 组合规约（全局类 + 页面 WXML 组合，不新建组件）============
+   用法：
+     <view class="li-row pressable" bindtap="…">
+       <view class="tile tile-mint"><image class="tile-ic" src="{{icons.archiveMint}}" /></view>
+       <view class="li-text"><view class="li-t">标题</view><view class="li-s">副标题</view></view>
+       <image class="li-arrow" src="{{icons.chevronRight}}" />
+     </view> */
+.li-row {
+  display: flex;
+  align-items: center;
+  padding: 24rpx 0;
+}
+
+.li-row + .li-row { border-top: 1rpx solid var(--border); }
+
+.li-text {
+  flex: 1;
+  min-width: 0;
+  margin-left: 24rpx;
+}
+
+.li-t {
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-main);
+  line-height: 1.4;
+}
+
+.li-s {
+  margin-top: 4rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.45;
+}
+
+.li-arrow {
+  width: 36rpx;
+  height: 36rpx;
+  margin-left: 16rpx;
+  opacity: 0.45;
+  flex-shrink: 0;
+}
+
+/* ============ 浅色 hero（参考图基调：淡蓝渐变卡 + 深蓝标题 + 灰蓝副标题）============
+   槽位：.hero-title(-lg) / .hero-sub / .hero-bubble + 页内自定装饰（水印 / 吉祥物 / 气泡）。
+   结构不推倒重来：各页保留自己的信息架构，只换「渐变 + 文字色 + 装饰」。 */
+.hero-light {
+  position: relative;
+  border-radius: var(--radius-lg);
+  background: var(--hero-grad);
+  overflow: hidden;
+}
+
+.hero-title {
+  font-size: var(--font-title);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.3;
+}
+
+.hero-title-lg {
+  font-size: calc(var(--font-title) + var(--hero-title-boost));
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.25;
+}
+
+.hero-sub {
+  margin-top: 8rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
+.hero-bubble {
+  background: #FFFFFF;
+  border-radius: 18rpx;
+  padding: 12rpx 20rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.45;
+  box-shadow: 0 4rpx 14rpx rgba(11, 110, 248, 0.10);
+}
+
+/* ============ 底部信息条（守护/提示）============
+   用途：非强制类提示文案（首页守护条 / 问诊能力提示等）。
+   ⚠️ UIUX §6.1 合规文案原样保留、不改语义（只换视觉承载）。 */
+.notice-bar {
+  display: flex;
+  align-items: center;
+  background: var(--accent-soft);
+  border-radius: var(--radius-md);
+  padding: 18rpx 24rpx;
+  box-sizing: border-box;
+}
+
+.notice-bar-ic { width: 36rpx; height: 36rpx; margin-right: 14rpx; flex-shrink: 0; }
+
+.notice-bar-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
+.notice-bar-deco { width: 40rpx; height: 40rpx; margin-left: 12rpx; opacity: 0.55; flex-shrink: 0; }
+
+/* 橙色警示条变体（效果图：导诊页「高烧不退…请立即拨打120」、问诊页「遇紧急情况…」）。
+   规范 §一 浅橙底 #FFF4E5 + 深橙文字 #CC6600；**同时带图标与文字**，不靠颜色单独表达。 */
+.notice-bar-amber {
+  background: var(--amber-soft);
+  border: 1rpx solid rgba(255, 140, 0, 0.22);
+}
+
+.notice-bar-amber .notice-bar-text {
+  color: var(--amber-text);
+  font-weight: 600;
+}
+
+/* ============ 页内分段 Tab（效果图：全部 / 待就诊 / 已完成；对话 / 我的）============
+   与系统 TabBar 无关，是页面顶部的横向分段控件：选中项 主色文字 + 3px 主色下划线。
+   ⚠️ 计数徽标用 .seg-tab-count（同一行内小字），不要用 .badge（胶囊太重）。 */
+.seg-tabs {
+  display: flex;
+  align-items: center;
+  background: var(--card);
+  border-bottom: 1rpx solid var(--border);
+}
+
+.seg-tab {
+  flex: 1;
+  text-align: center;
+  padding: 24rpx 0 20rpx;
+  font-size: var(--font-body);
+  color: var(--text-sub);
+  position: relative;
+}
+
+.seg-tab-on {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.seg-tab-on::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: 56rpx;
+  height: 6rpx;
+  border-radius: 3rpx;
+  background: var(--primary);
+}
+
+.seg-tab-count {
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  margin-left: 6rpx;
+}
+
+.seg-tab-on .seg-tab-count { color: var(--primary); }
+
+/* ============ 统计骨架条（效果图：医生工作台/挂号管理的统计数字加载态）============
+   规范 §六-2：统计数字区域加载中显示灰色圆角骨架条，**不要显示 0 或默认数字**。
+   宽度用内联 style 覆盖（不同位数宽度不同），此处只给基线与脉冲。 */
+.stat-skel {
+  height: 16rpx;
+  width: 72rpx;
+  border-radius: 8rpx;
+  background: #E8EDF5;
+  animation: skel-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes skel-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* ============ 底部抽屉（效果图：预约挂号「确认预约信息」半模态）============
+   ⚠️ 小程序原生 <view> 无法真正"半模态"，这里用固定定位 + 上圆角 + 拖拽手柄近似；
+   页面内容仍在其后滚动（与效果图一致）。 */
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  background: var(--card);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: 0 -8rpx 32rpx rgba(11, 110, 248, 0.12);
+  padding: 0 var(--space-page) calc(var(--space-page) + env(safe-area-inset-bottom));
+}
+
+.sheet-handle {
+  width: 72rpx;
+  height: 8rpx;
+  border-radius: 4rpx;
+  background: #DDE4EF;
+  margin: 16rpx auto 8rpx;
+}
+
+.sheet-title {
+  text-align: center;
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+  padding: 12rpx 0 20rpx;
+}
+
+/* ============ 就医进度卡（跨页共用 · VF-10 收敛）============
+   背景：`consultation` 与 `triage` 各写了一份同款 `.flow-card`（同为中蓝渐变 #5D96F6→#8FBAFA
+   白字），属"同一概念的两种实现"。2026-10-16 基调对齐时**收敛到本文件唯一实现**，
+   两页只保留各自的差异化部分（consultation 的 .flow-zone/.flow-minbar）。
+   ⚠️ 浅色化后两页 WXML 均**无需改图标**：
+     · `.flow-doc` 由「白字形裸放」改为「品牌蓝圆角底板 + 白字形」（padding 造出底板）；
+     · `.flow-dot-on` 改为「白底蓝边 + 蓝勾」，使页内 check.png（蓝）在新基调下仍可见。
+   引用页清单：pages/consultation、pages/triage（≥2 页 → 允许收敛为全局类，符合 VF-12 纪律）。 */
+.flow-card {
+  background: var(--hero-grad);
+  border-radius: var(--radius-lg);
+  padding: 28rpx 28rpx 24rpx;
+  margin-bottom: 20rpx;
+  color: var(--text-main);
+  position: relative;
+  overflow: hidden;
+}
+
+.flow-main { display: flex; align-items: center; }
+
+.flow-info { flex: 1; min-width: 0; }
+
+.flow-title {
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+/* 副标题：浅底上不用 opacity 压字（会同时降对比度），改用灰蓝色固有色 */
+.flow-sub {
+  margin-top: 8rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+
+/* 右侧听诊器：白字形 + 品牌蓝圆角底板（border-box + padding 造底板，字形自动缩到内容框） */
+.flow-doc {
+  width: 88rpx;
+  height: 88rpx;
+  padding: 14rpx;
+  box-sizing: border-box;
+  border-radius: 24rpx;
+  background: var(--primary);
+  flex-shrink: 0;
+  margin-left: 16rpx;
+}
+
+/* 四步进度（点 + 线）：浅底版三态 —— 未完成=空心环 / 已完成=白底蓝边+蓝勾 / 当前=蓝底白字+halo */
+.flow-steps {
+  display: flex;
+  align-items: center;
+  margin-top: 28rpx;
+  padding: 0 8rpx;
+}
+
+.flow-step {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.flow-step:last-child { flex: 0 0 auto; }
+
+.flow-dot {
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+  border: 3rpx solid rgba(11, 110, 248, 0.30);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.flow-dot-num {
+  font-size: 20rpx;
+  font-weight: 600;
+  color: var(--text-sub);
+  line-height: 1;
+}
+
+.flow-check { width: 20rpx; height: 20rpx; }
+
+/* 已完成：白底蓝边（导诊页在此态叠蓝勾 check.png → 可见） */
+.flow-dot-on {
+  background: #FFFFFF;
+  border-color: var(--primary);
+}
+
+/* 当前：蓝底白字 + halo（写在 .flow-dot-on 之后，同元素同时命中时以本条为准） */
+.flow-dot-cur {
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 8rpx rgba(11, 110, 248, 0.14);
+}
+
+.flow-dot-cur .flow-dot-num { color: #FFFFFF; font-weight: 700; }
+
+.flow-line {
+  flex: 1;
+  height: 6rpx;
+  border-radius: 3rpx;
+  background: rgba(11, 110, 248, 0.16);
+  margin: 0 10rpx;
+}
+
+.flow-step:last-child .flow-line { display: none; }
+
+.flow-line-on { background: var(--primary); }
+
+.flow-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12rpx;
+  padding: 0;
+}
+
+.flow-label {
+  width: 25%;
+  text-align: center;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+}
+
+.flow-label:first-child { text-align: left; }
+.flow-label:last-child { text-align: right; }
+
+.flow-label-on { color: var(--text-main); font-weight: 600; }
+
+/* 「就医详情」：胶囊实心（VF-10 §2 —— 浅底 hero 里唯一 CTA，需足够视觉重量） */
+.flow-detail-btn {
+  margin-top: 20rpx;
+  background: var(--primary);
+  color: #FFFFFF;
+  border-radius: 999rpx;
+  height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-caption);
+  font-weight: 700;
+  transition: background-color 150ms ease, transform var(--dur-fast) ease;
+}
+
+.flow-detail-btn:active {
+  background: var(--primary-dark);
+  transform: scale(0.985);
+}
+
+/* ============ 区块标题（参考图：浅蓝竖条 + 深蓝粗体；可配副标题/查看更多/备注）============ */
+.section-header {
+  display: flex;
+  align-items: center;
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--primary-dark);
+  margin: 8rpx 0 20rpx;
+}
+
+.section-header::before {
+  content: '';
+  width: 8rpx;
+  height: 32rpx;
+  border-radius: 4rpx;
+  background: var(--section-bar);
+  margin-right: 16rpx;
+  flex-shrink: 0;
+}
+
+/* 副标题：与标题文字左对齐（缩进 = 竖条 8 + 间距 16） */
+.section-sub {
+  margin: -8rpx 0 20rpx 24rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
+/* 右侧「查看更多 >」：仅在存在**真实目标页**时渲染（内容红线禁伪造跳转） */
+.section-more {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6rpx;
+  min-height: 88rpx;
+  padding-left: 24rpx;
+  font-size: var(--font-caption);
+  font-weight: 400;
+  color: var(--text-weak);
+}
+
+.section-more-ic { width: 24rpx; height: 24rpx; opacity: 0.6; }
+
+/* 右侧备注（非跳转，如工作台「高效诊疗 · 用心服务」） */
+.section-hint {
+  margin-left: auto;
+  font-size: var(--font-caption);
+  font-weight: 400;
+  color: var(--text-weak);
+}
+
+/* 统计卡（看板数字） */
+.stat-card {
+  flex: 1;
+  background: var(--card);
+  border-radius: var(--radius-md);
+  padding: 24rpx 8rpx;
+  text-align: center;
+  box-shadow: var(--shadow-card);
+}
+
+.stat-num {
+  font-size: var(--font-title);
+  font-weight: 700;
+}
+
+.stat-label {
+  margin-top: 4rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+}
+
+/* ============ 按压反馈（页面内卡片/行通用）============
+   透明度 + 微量缩放：两者都是合成层属性（opacity/transform），不触发布局与重绘，
+   150ms 内在低端机上也能稳定在 60fps；缩放量 0.985 只提供"触感"，不产生位移感。 */
+.pressable {
+  transition: opacity var(--dur-fast) ease, transform var(--dur-fast) ease;
+}
+
+.pressable:active { opacity: 0.82; transform: scale(0.985); }
+
+/* ============ 底部波浪装饰（纯 CSS 近似，参考图 4 页出现）============
+   实现：两层超大椭圆（border-radius:50%）只露出顶部弧线，颜色分层形成"双层波浪"；
+   · 不承载信息、不吃点击（pointer-events:none 语义）；
+   · 高度固定 132rpx，不参与布局计算（始终贴内容流末尾）；
+   · 不用图片（避免每页一张大图，全站 0 字节成本）。 */
+.page-wave {
+  position: relative;
+  height: 132rpx;
+  margin-top: 8rpx;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.page-wave::before,
+.page-wave::after {
+  content: '';
+  position: absolute;
+  height: 300rpx;
+  border-radius: 50%;
+}
+
+.page-wave::before {
+  left: -30%;
+  right: -30%;
+  bottom: -238rpx;
+  background: var(--wave-deep);
+  opacity: 0.55;
+}
+
+.page-wave::after {
+  left: -8%;
+  right: -52%;
+  bottom: -272rpx;
+  background: var(--wave-light);
+  opacity: 0.9;
+}
+
+/* 手写标语（波浪区可选；无手写字体，斜体+旋转近似，与首页 hand-note 同一手法） */
+.wave-slogan {
+  position: absolute;
+  left: 50%;
+  top: 10rpx;
+  transform: translateX(-50%) rotate(-4deg);
+  font-size: var(--font-caption);
+  font-style: italic;
+  font-weight: 600;
+  letter-spacing: 3rpx;
+  color: var(--script-blue);
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+/* ============ 入场动效（仅 opacity / transform，合成层执行）============
+   用法：<view class="anim-rise">…</view>；同屏多块用 .anim-d1~4 递延形成阅读节奏。
+   ⚠️ 只在元素挂载时播放一次（both）；时值统一走 --dur-base；不做循环/装饰性常驻动画。 */
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(20rpx); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.anim-rise { animation: riseIn var(--dur-base) ease-out both; }
+
+.anim-d1 { animation-delay: 50ms; }
+.anim-d2 { animation-delay: 100ms; }
+.anim-d3 { animation-delay: 150ms; }
+.anim-d4 { animation-delay: 200ms; }
+
+/* 分隔线 */
+.divider {
+  height: 1rpx;
+  background: var(--border);
+  margin: 20rpx 0;
+}
+
+/* 信息胶囊（图标+文字，状态不只靠颜色） */
+.info-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 6rpx 18rpx;
+  border-radius: 999rpx;
+  font-size: var(--font-caption);
+  font-weight: 500;
+}
+
+/* 列表行图标（左侧图标徽章 + 右侧文字） */
+.list-icon-row {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.list-icon-text {
+  flex: 1;
+  font-size: var(--font-body);
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+/* 卡片内副标题/辅助说明 */
+.card-sub {
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  margin-top: 8rpx;
+}
+
+/* ============================================================
+   Pad / 宽屏适配（windowWidth ≥ 600px 自动切换）
+   1) Token 变量 rpx → px 等价覆盖（÷2，即手机 375 视觉基准）：
+      全站字号/按钮高/圆角/页面间距走变量，一处覆盖全局生效；
+      三档主题保持适老比例（standard / large 1.25× / xlarge 1.5×）。
+   2) 根容器限宽 750px 水平居中（单列内容不错位），两侧留白同底色。
+   3) fixed 元素对齐内容区边缘。
+   布局尺寸类硬编码 rpx（卡片内边距等）保持等比，视觉留白略大可接受。
+   ============================================================ */
+@media (min-width: 600px) {
+  page {
+    --font-title: 18px;
+    --font-h2: 15px;
+    --font-body: 13px;
+    --font-caption: 11px;
+    --btn-height: 44px;
+    --radius-lg: 12px;
+    --radius-md: 10px;
+    --radius-sm: 6px;
+    --space-page: 16px;
+    --hero-title-boost: 4px;   /* 宽屏下加码改 px，避免 8rpx 被等比放大（见 page 令牌处说明） */
+    background: var(--bg);
+  }
+
+  /* 大字/超大字档：px 化后保持适老比例（源顺序在 theme 定义之后，覆盖生效） */
+  .theme-large {
+    --font-title: 22px;
+    --font-h2: 18px;
+    --font-body: 16px;
+    --font-caption: 13px;
+    --btn-height: 54px;
+  }
+
+  .theme-xlarge {
+    --font-title: 26px;
+    --font-h2: 21px;
+    --font-body: 19px;
+    --font-caption: 15px;
+    --btn-height: 64px;
+  }
+
+  /* —— 图标类全局工具类（非变量）rpx → px ——
+     上面那批 token 覆盖管不到它们：不补这一组，宽屏下按 vw/750 放大，
+     1696px 视口 → .ic-sm 32rpx=72px、.icon-badge 88rpx=199px（行内图标/图标底变巨块）。
+     取值 = 手机 375 基准的等价 px（÷2）。
+     注：**布局**尺寸类硬编码 rpx（.card 内边距等）按上文第 3 条约定继续等比，不在此列。
+     页面若需要更大图标，仍可在自己的 wxss 里覆盖（页面样式在 app.wxss 之后生效）。 */
+  .ic-xs { width: 12px; height: 12px; }
+  .ic-sm { width: 16px; height: 16px; }
+  .ic-md { width: 22px; height: 22px; }
+  .ic-lg { width: 28px; height: 28px; }
+  .icon-badge,
+  .tile { width: 44px; height: 44px; border-radius: 12px; font-size: 22px; }
+  .tile-ic { width: 22px; height: 22px; }
+  .li-text { margin-left: 12px; }
+  .li-s { margin-top: 2px; }
+  .li-arrow { width: 18px; height: 18px; margin-left: 8px; }
+  /* 就医进度卡（元素尺寸必须 px 化，理由同上一组；布局内边距仍走 rpx） */
+  .flow-doc { width: 44px; height: 44px; padding: 7px; border-radius: 12px; margin-left: 8px; }
+  .flow-steps { margin-top: 14px; padding: 0 4px; }
+  .flow-dot { width: 20px; height: 20px; border-width: 2px; }
+  .flow-dot-num { font-size: 10px; }
+  .flow-check { width: 10px; height: 10px; }
+  .flow-dot-cur { box-shadow: 0 0 0 4px rgba(11, 110, 248, 0.14); }
+  .flow-line { height: 3px; border-radius: 2px; margin: 0 5px; }
+  .flow-labels { margin-top: 6px; }
+  .flow-detail-btn { margin-top: 10px; height: 32px; }
+  .notice-bar { padding: 9px 12px; }
+  .notice-bar-ic { width: 18px; height: 18px; margin-right: 7px; }
+  .notice-bar-deco { width: 20px; height: 20px; margin-left: 6px; }
+  .hero-bubble { border-radius: 9px; padding: 6px 10px; }
+  .section-header::before {
+    width: 4px;
+    height: 16px;
+    border-radius: 2px;
+    margin-right: 8px;
+  }
+  .section-sub { margin-left: 12px; }
+  .section-more { min-height: 44px; padding-left: 12px; }
+  .section-more-ic { width: 12px; height: 12px; }
+  .page-wave { height: 66px; }
+  .page-wave::before,
+  .page-wave::after { height: 150px; }
+  .page-wave::before { bottom: -119px; }
+  .page-wave::after { bottom: -136px; }
+  .wave-slogan { top: 5px; letter-spacing: 1.5px; }
+
+  .page,
+  .wb-page,
+  .auth-page {
+    max-width: 750px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* fixed 元素对齐 750px 内容区边缘（375px = 半宽；32rpx≈35px / 40rpx≈44px） */
+  .auth-back-btn {
+    left: calc(50% - 340px);
+  }
+
+  .fab-zone {
+    right: calc(50% - 331px);
+  }
+}
+
+/* ============================================================
+   大屏 Pad 档（windowWidth ≥ 900px，覆盖 600~900 区间）
+   目标设备：OPPO Pad 5 Pro 13.2"（3392×2400 @315ppi / 7:5）
+   - 布局策略：**收窄限宽**（720px 居中）而非放大元素 —— 平板竖屏上
+     单列卡片超过 ~800px 宽会呈「手机界面放大」的空旷怪感；
+   - 字号取 600px 档与手机版之间（body 15px），比手机大一号保证可读；
+   - 适老化强化：行点击区 ≥ 48px（iOS/Android HIG）；
+   - 三档主题比例保持（standard / large 1.25× / xlarge 1.5×）。
+   ============================================================ */
+@media (min-width: 900px) {
+  page {
+    --font-title: 21px;
+    --font-h2: 17px;
+    --font-body: 15px;
+    --font-caption: 12px;
+    --btn-height: 48px;
+    --radius-lg: 16px;
+    --radius-md: 12px;
+    --radius-sm: 8px;
+    --space-page: 20px;
+    /* 极弱阴影（§7：浅灰分割线 + 极弱阴影 代替"每卡一大块阴影"） */
+    --shadow-card: 0 2px 8px rgba(11, 110, 248, 0.06);
+  }
+
+  /* 大字档：保持适老比例（覆盖生效） */
+  .theme-large {
+    --font-title: 26px;
+    --font-h2: 21px;
+    --font-body: 18px;
+    --font-caption: 14px;
+    --btn-height: 58px;
+  }
+
+  .theme-xlarge {
+    --font-title: 31px;
+    --font-h2: 25px;
+    --font-body: 21px;
+    --font-caption: 17px;
+    --btn-height: 68px;
+  }
+
+  /* 新增通用类的大屏 px 覆盖（KNOWN_ISSUES #21：断点里凡 rpx 尺寸都要 px 重写） */
+  .seg-tab { padding: 14px 0 12px; }
+  .seg-tab-on::after { width: 32px; height: 3px; border-radius: 2px; }
+  .seg-tab-count { margin-left: 4px; }
+  .stat-skel { height: 9px; width: 44px; border-radius: 5px; }
+  .sheet-handle { width: 44px; height: 4px; border-radius: 2px; margin: 10px auto 5px; }
+  .sheet-title { padding: 7px 0 12px; }
+  .notice-bar-amber { border-width: 1px; }
+  .group-head { margin: 0 -16px 4px; padding: 8px 16px; }
+  .group-card { padding: 4px 16px; }
+
+  /* 平板内容居中，限宽 720px：接近手机单列阅读比例。
+     教训：960px 限宽 + 字号/徽章放大 → 卡片又宽又空、元素过大，
+     呈「手机界面放大」的怪感；收窄限宽比放大元素更有效。
+     → 需要"用满平板宽度"的页面请改用 .page-shell（1180px 双栏），不要动这一条。 */
+  .page,
+  .wb-page,
+  .auth-page {
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* ============ 平板双栏（opt-in，见文件头部 .page-shell 说明）============
+     ⚠️ 生效档在下面的「≥900px 且 ≥700px 且**横屏**」块里 —— 不能只用宽度判定：
+     横向握持的手机（如 926×428）宽度也 ≥900，会被误排成双栏；
+     平板竖屏（1200×1696）也不排双栏，否则内容只占上半屏、下半屏大片留白。 */
+
+  /* fixed 元素对齐 720px 内容区边缘（360px = 半宽；扣除边距） */
+  .auth-back-btn {
+    left: calc(50% - 340px);
+  }
+
+  .fab-zone {
+    right: calc(50% - 332px);
+  }
+
+  /* 适老化触控：列表行最小 48px 高度（命中区达标）；.li-row 为新的行卡组合规约 */
+  .row,
+  .li-row {
+    min-height: 48px;
+    padding: 16rpx 0;
+  }
+
+  /* 卡片内边距/间距：改回 **px**。
+     ⚠️ rpx 在宽屏上等比放大（1200pt 平板 1rpx≈1.6px）→ 原来写的 32rpx/24rpx
+     实际渲染成约 51px/38px，卡片被撑得又大又空。规范值：内边距 24px / 间距 20px。 */
+  .card {
+    padding: 24px;
+    margin-bottom: 20px;
+    border-radius: var(--radius-lg);
+  }
+
+  /* 双卡网格间距微调 */
+  .dual-grid {
+    gap: 24rpx;
+    margin-bottom: 24rpx;
+  }
+}
+
+/* ============================================================
+   平板双栏外壳生效档（**横屏专属**：≥900px 且 ≥700px 且 横屏）
+   ⚠️ 三个条件缺一不可：
+   ① 宽 ≥900：太窄放不下"主栏 + 360px 侧栏"；
+   ② 高 ≥700：横向握持的手机（如 926×428）宽度也 ≥900，
+      只按宽度判定会把它排成双栏（导航页踩过同一个坑，见 nav.wxss）；
+   ③ **横屏**（orientation: landscape）：竖屏平板**不排双栏**。
+      实测竖屏（1200×1696）双栏的观感是"内容只占上半屏 + 主栏被侧栏挤窄"，
+      下半屏留白比双栏带来的收益更刺眼；竖屏应回落到本文件 900px 档的
+      720px 居中单列（= 双栏改造之前的版式），只有横屏才启用双栏。
+   ============================================================ */
+@media (min-width: 900px) and (min-height: 700px) and (orientation: landscape) {
+  .page-shell { max-width: 1180px; }
+
+  .shell-cols {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 24px;
+  }
+
+  .shell-main {
+    flex: 1 1 auto;
+    min-width: 0;            /* 允许主栏收缩，长内容不会顶破双栏 */
+  }
+
+  .shell-side {
+    order: 2;                /* 侧栏恒在右侧，与 DOM 顺序解耦 */
+    flex: 0 0 360px;
+    width: 360px;
+  }
+
+  .side-only { display: block; }
+}
+
+/* ============================================================
+   追加（2026-10-18 · 批次 A「首页视觉基准」）
+   ⚠️ 原则：**只追加，不改动上方任何既有选择器**，避免全局回归。
+   ============================================================ */
+
+/* 语义状态「软底 + 深字」：取值直接取自既有 .badge-amber / .badge-red，
+   不引入新色相（橙 = --accent-amber · 红 = --accent-red）。
+   用途：提醒条 / 错误态 / 紧急提示的底色与文字，替代页面里散落的 rgba 硬编码。 */
+page {
+  --warn-soft: rgba(255, 125, 0, 0.12);
+  --warn-text: #B45200;
+  --danger-soft: rgba(245, 63, 63, 0.12);
+  --danger-text: #B42318;
+  /* 危险态描边（原导诊页两处 #FFCCC7 硬编码，取值不变、只是收口为令牌） */
+  --danger-border: #FFCCC7;
+  /* 禁用底（原 .btn-disabled 与本页 .send-fab-disabled 的同值硬编码 #C9CDD4） */
+  --disabled-bg: #C9CDD4;
+  /* 禁用/约满「极浅灰底」（原挂号页 .slot-full 的 #F5F7FA 硬编码） */
+  --disabled-soft: #F5F7FA;
+  /* 装饰五色中的「饱和橙 / 饱和绿」（原只在 icons.js 注释里登记、页面各写一份硬编码）：
+     取值与 utils/icons.js「装饰五色」一致，仅供**数字/统计**等装饰性着色，不用于状态语义。 */
+  --deco-amber: #FBA036;
+  --deco-green: #3FAB7C;
+}
+
+/* 区块标题 · 无竖条变体（参考图首页的「我的就医安排 / 健康科普」为纯文字标题）。
+   与 .section-header 叠加使用：
+     <view class="section-header section-header-plain">标题 + .section-more</view>
+   ⚠️ 只隐藏伪元素竖条，不改字号/间距，因此不影响其它页面。 */
+.section-header-plain::before { display: none; }

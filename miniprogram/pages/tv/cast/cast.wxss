@@ -1,0 +1,287 @@
+/* pages/tv/cast —— 智能电视投屏（参考图 12）
+   ⚠️ 演示版页面，尺寸一律 rpx（手机基准），大屏断点里改回 px（rpx 会等比放大）。 */
+
+/* ================= 卡片标题 + 右侧动作 ================= */
+.cs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+
+.cs-title { margin-bottom: 0; }
+
+.cs-title-ic {
+  width: 32rpx;
+  height: 32rpx;
+  margin-right: 12rpx;
+  vertical-align: -4rpx;
+}
+
+.cs-scan {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 72rpx;
+  font-size: var(--font-caption);
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.cs-scan-ic {
+  width: 28rpx;
+  height: 28rpx;
+  margin-left: 8rpx;
+}
+
+/* 空态（参考图：未发现设备居中插画 + 粗标题 + 灰色提示） */
+.cs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24rpx 0 8rpx;
+}
+
+.cs-empty-img {
+  width: 240rpx;
+  height: 240rpx;
+}
+
+.cs-empty-t {
+  margin-top: 8rpx;
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.cs-empty-s {
+  margin-top: 10rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
+/* ================= 设备行 ================= */
+.cs-dev {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 0;
+}
+
+.cs-dev + .cs-dev { border-top: 1rpx solid var(--border); }
+
+.cs-dev-ic { margin-right: 20rpx; }
+
+.cs-dev-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.cs-dev-n {
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cs-dev-ip {
+  margin-top: 4rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
+.cs-btn {
+  flex-shrink: 0;
+  margin-left: 16rpx;
+  min-width: 140rpx;
+  height: 72rpx;
+  padding: 0 24rpx;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2rpx solid var(--primary);
+  border-radius: var(--radius-md);
+  background: #FFFFFF;
+  color: var(--primary);
+  font-size: var(--font-caption);
+  font-weight: 600;
+}
+
+.cs-btn:active { background: var(--accent-soft); }
+
+/* 已连接：软蓝底 + 蓝字（状态可辨，且仍可点击断开） */
+.cs-btn-on {
+  border-color: var(--accent-soft);
+  background: var(--accent-soft);
+  color: var(--primary);
+}
+
+/* ================= 选择投屏内容：一排图标底板 ================= */
+.cs-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12rpx;
+}
+
+.cs-fn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8rpx 0;
+}
+
+.cs-fn-ic {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 20rpx;
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 2rpx solid transparent;
+}
+
+.cs-fn-img { width: 44rpx; height: 44rpx; }
+
+.cs-fn-on .cs-fn-ic {
+  background: #FFFFFF;
+  border-color: var(--primary);
+}
+
+.cs-fn-n {
+  margin-top: 10rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  text-align: center;
+  line-height: 1.35;
+}
+
+.cs-fn-on .cs-fn-n {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* ================= 大屏预览：电视机框 + 蓝色标题条 ================= */
+.cs-tv {
+  position: relative;
+  padding: 14rpx 14rpx 26rpx;
+  border-radius: 16rpx;
+  background: #E9EDF3;
+}
+
+/* 电视底座：两只斜脚（参考图 12 的真实电视机外观） */
+.cs-foot {
+  position: absolute;
+  bottom: 6rpx;
+  width: 56rpx;
+  height: 14rpx;
+  border-radius: 4rpx;
+  background: #3A4A6B;
+}
+
+.cs-foot-l { left: 18%; }
+.cs-foot-r { right: 18%; }
+
+.cs-screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  aspect-ratio: 16 / 9;
+  border: 10rpx solid #3A4A6B;
+  border-radius: 12rpx;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: #FFFFFF;
+}
+
+.cs-bar {
+  flex-shrink: 0;
+  padding: 10rpx 16rpx;
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: var(--font-caption);
+  font-weight: 700;
+}
+
+.cs-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12rpx 20rpx;
+}
+
+.cs-cur {
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+  text-align: center;
+}
+
+.cs-cur-sm { font-size: var(--font-body); }
+
+.cs-cur-ic {
+  width: 48rpx;
+  height: 48rpx;
+  margin-bottom: 10rpx;
+}
+
+.cs-wait {
+  margin-top: 10rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  text-align: center;
+}
+
+.cs-preview-note {
+  margin-top: 18rpx;
+  text-align: center;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
+.cast-tip {
+  margin-top: 8rpx;
+  text-align: center;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+
+/* ================= 大屏（≥900px）：rpx → px ================= */
+@media (min-width: 900px) {
+  .cs-head { margin-bottom: 12px; }
+  .cs-title-ic { width: 18px; height: 18px; margin-right: 7px; }
+  .cs-scan { min-height: 44px; }
+  .cs-scan-ic { width: 16px; height: 16px; margin-left: 5px; }
+
+  .cs-note { padding: 8px 10px; margin-bottom: 5px; }
+  .cs-note-ic { width: 16px; height: 16px; margin: 1px 5px 0 0; }
+
+  .cs-dev { padding: 11px 0; }
+  .cs-dev-ic { margin-right: 12px; }
+  .cs-dev-ip { margin-top: 2px; }
+  .cs-btn { min-width: 84px; height: 40px; padding: 0 14px; border-width: 1px; }
+
+  .cs-grid { gap: 8px; }
+  .cs-fn { padding: 4px 0; }
+  .cs-fn-ic { width: 48px; height: 48px; border-radius: 11px; border-width: 1px; }
+  .cs-fn-img { width: 24px; height: 24px; }
+  .cs-fn-n { margin-top: 6px; }
+
+  .cs-tv { padding: 8px 8px 15px; border-radius: 9px; }
+  .cs-foot { bottom: 4px; width: 30px; height: 8px; }
+  .cs-screen { border-width: 6px; border-radius: 7px; }
+  .cs-bar { padding: 6px 9px; }
+  .cs-body { padding: 7px 12px; }
+  .cs-cur-ic { width: 26px; height: 26px; margin-bottom: 6px; }
+  .cs-wait { margin-top: 6px; }
+
+  .cs-preview-note { margin-top: 10px; }
+
+  .cs-empty-img { width: 150px; height: 150px; }
+}

@@ -1,0 +1,110 @@
+/* pages/doctor/messages —— 消息通知（医生端） */
+
+.dm-page {
+  min-height: 100vh;
+  background: #f5f7fa;
+}
+
+.dm-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: #fff;
+  border-bottom: 1rpx solid #eef0f3;
+}
+.dm-nav-bar {
+  position: relative;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+}
+.dm-nav-back {
+  position: absolute;
+  left: 8rpx;
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dm-nav-back-ic { width: 44rpx; height: 44rpx; }
+.dm-nav-title {
+  flex: 1;
+  text-align: center;
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #17233d;
+}
+.dm-nav-act {
+  position: absolute;
+  right: 16rpx;
+  font-size: 26rpx;
+  color: #0b6ef8;
+  padding: 20rpx;
+}
+.dm-hover { opacity: 0.75; }
+
+/* 未读概要 */
+.dm-sum {
+  margin: 24rpx;
+  background: linear-gradient(135deg, #0b6ef8, #3b8bff);
+  border-radius: 20rpx;
+  padding: 32rpx 28rpx;
+  display: flex;
+  align-items: baseline;
+}
+.dm-sum-num { font-size: 64rpx; font-weight: 700; color: #fff; margin-right: 16rpx; }
+.dm-sum-t { font-size: 28rpx; color: rgba(255, 255, 255, 0.9); }
+
+/* 状态 */
+.dm-state { padding: 120rpx 48rpx; display: flex; flex-direction: column; align-items: center; }
+.dm-state-inline { padding: 80rpx 48rpx; }
+.dm-state-title { font-size: 32rpx; font-weight: 600; color: #17233d; margin-bottom: 12rpx; }
+.dm-state-sub { font-size: 28rpx; color: #86909c; text-align: center; margin-bottom: 32rpx; line-height: 1.6; }
+.dm-btn {
+  min-width: 240rpx;
+  height: 88rpx;
+  border-radius: 44rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30rpx;
+}
+.dm-btn-primary { background: #0b6ef8; color: #fff; }
+
+/* 消息列表 */
+.dm-list { padding: 8rpx 24rpx 0; }
+.dm-item {
+  display: flex;
+  align-items: flex-start;
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+}
+.dm-dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 8rpx;
+  background: #f53f3f;
+  margin: 16rpx 20rpx 0 0;
+  flex-shrink: 0;
+}
+.dm-dot-off { background: transparent; }
+.dm-body { flex: 1; min-width: 0; }
+.dm-title { font-size: 30rpx; font-weight: 600; color: #17233d; margin-bottom: 8rpx; }
+.dm-text {
+  font-size: 26rpx;
+  color: #4e5969;
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.dm-time { font-size: 24rpx; color: #86909c; margin-top: 10rpx; }
+.dm-arrow { width: 32rpx; height: 32rpx; margin-left: 16rpx; align-self: center; flex-shrink: 0; }
+
+.dm-footbar-space { height: 140rpx; }

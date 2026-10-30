@@ -1,0 +1,296 @@
+/* 系统设置（设计稿 C-个人中心/10-系统设置.png，1391×3014 → 1rpx ≈ 1.8547px）
+   本页不复用全局 .card / .row / .group-head：
+   实测卡片圆角 12rpx（全局 32rpx）、标题无灰底、行内距 28rpx（全局 32rpx），
+   复用会静默覆盖全局值（check-project ④ 守这条），故全部自建 st-* 类。
+   颜色零字面值：圆点走 --accent-green / --accent-amber，
+   小字走 --mint-text / --amber-text（鲜绿与亮橙在白底仅 2.8:1 / 2.2:1，不可当小字色）。 */
+
+.st-page {
+  min-height: 100vh;
+  padding: 24rpx 24rpx calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: var(--bg);
+}
+
+/* ================= 卡片 ================= */
+
+.st-card {
+  padding: 0 28rpx;                       /* 实测标签左缘 53px = 28rpx */
+  margin-bottom: 20rpx;                   /* 卡片间隙 35px = 19rpx */
+  background: var(--card);
+  border-radius: 12rpx;                   /* 实测圆角弧 22px = 12rpx（比全站 32rpx 明显更方） */
+  box-shadow: var(--shadow-card);
+}
+
+/* 分组标题：白底 + 通栏下边线（实测该线 x 46..1345 = 整卡宽，非内缩） */
+.st-head {
+  display: flex;
+  align-items: center;
+  height: 72rpx;                          /* 实测 133px */
+  margin: 0 -28rpx;                       /* 抵消卡片内距，让下边线通栏 */
+  padding: 0 28rpx;
+  border-bottom: 1rpx solid var(--border);
+  font-size: calc(var(--font-caption) + 4rpx);   /* 实测 50px/字 = 28rpx */
+  color: var(--text-weak);
+  line-height: 1.4;
+}
+
+/* ================= 行 ================= */
+
+.st-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  /* 实测行高 148~152px = 80rpx；按「触控目标 ≥ 88rpx」硬约束上浮 8rpx
+     （一行 13 个可点行，80rpx 对老年用户偏窄，见偏离项） */
+  min-height: 88rpx;
+}
+
+/* 行分隔线：左侧内缩到文字起点（实测 x 94 = 50px = 27rpx），右侧通到卡片边缘 */
+.st-row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: -28rpx;
+  bottom: 0;
+  height: 1rpx;
+  background: var(--border);
+}
+
+.st-row:last-child::before { display: none; }
+
+.st-label {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-body);            /* 实测 55px/字 = 30rpx */
+  font-weight: 500;
+  color: var(--text-main);
+  line-height: 1.4;
+}
+
+/* 行右当前值（蓝 = 生效中）
+   margin-right 只留 4rpx：箭头 96px 的 PNG 左右各有 ~12rpx 透明边，
+   实测值右缘到箭头 ink 左缘是 17rpx，扣掉透明边后盒子间距只剩 4rpx */
+.st-value {
+  flex-shrink: 0;
+  margin-right: 4rpx;
+  font-size: calc(var(--font-caption) + 4rpx);   /* 实测 52px/字 = 28rpx */
+  color: var(--primary);
+}
+
+/* 行右辅助文案（缓存管理的「清理缓存」，灰） */
+.st-note {
+  flex-shrink: 0;
+  margin-right: 4rpx;
+  font-size: calc(var(--font-caption) + 4rpx);
+  color: var(--text-weak);
+}
+
+/* 箭头：96px 的 PNG 里 ink 只占 31×54，36rpx 盒子的 ink 恰为 12×20rpx（= 实测 22×38px）；
+   margin-right 负值是把盒子右侧的透明边距吃掉，让 ink 落在距卡右 30rpx（实测 55px）处 */
+.st-arrow {
+  flex-shrink: 0;
+  width: 36rpx;
+  height: 36rpx;
+  margin-right: -10rpx;
+  opacity: 0.5;
+}
+
+/* 开关：原生 switch 102×62rpx，实测设计稿 78×44rpx → 等比 0.8；
+   transform-origin 靠右，保证右缘仍对齐 28rpx 内距（缩放不影响布局盒，热区不缩） */
+.st-switch {
+  flex-shrink: 0;
+  transform: scale(0.8);
+  transform-origin: right center;
+}
+
+/* ================= 服务状态（四态） ================= */
+
+.st-state {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: calc(var(--font-caption) + 2rpx);   /* 实测 48px/字 = 26rpx */
+  line-height: 1.5;
+}
+
+.st-dot {
+  flex-shrink: 0;
+  width: 15rpx;                           /* 实测 28px */
+  height: 15rpx;
+  margin-right: 15rpx;                    /* 实测 28px */
+  border-radius: 50%;
+}
+
+/* 文字用深一档的语义色（保证 4.5:1），圆点用鲜亮语义色（非文字，不承担可读性） */
+.st-state-online { color: var(--mint-text); }
+.st-state-online .st-dot { background: var(--accent-green); }
+
+.st-state-checking { color: var(--amber-text); }
+.st-state-checking .st-dot { background: var(--accent-amber); }
+
+.st-state-offline,
+.st-state-unknown { color: var(--text-weak); }
+.st-state-offline .st-dot,
+.st-state-unknown .st-dot { background: var(--text-placeholder); }
+
+/* ================= 退出登录（设计稿外，见 wxml 注释） ================= */
+
+.st-row-center { justify-content: center; }
+
+.st-label-center {
+  flex: none;                 /* 单行居中：不参与伸缩，否则会被压成一字一行 */
+  white-space: nowrap;
+  text-align: center;
+  color: var(--text-sub);
+}
+
+/* ================= 账号注销 ================= */
+
+/* 设计稿：卡外居中红字（非按钮、无描边）。margin-top 24rpx + 88rpx 行高
+   让字形顶落在卡下 87px（实测 86px） */
+.st-danger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 88rpx;
+  margin-top: 24rpx;
+  font-size: var(--font-body);            /* 实测 54px/字 = 29rpx */
+  font-weight: 600;
+  color: var(--accent-red);
+}
+
+/* ================= 字号三档浮层 ================= */
+
+/* 遮罩 + 浮层：浮层用 left/right/bottom 三条边定位，不依赖 flex 子项的百分比宽度
+   （宽屏/自定义导航下 100% 的解析基准容易出错，绝对定位是确定性写法） */
+.st-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 200;
+  background: rgba(8, 26, 61, 0.45);
+}
+
+.st-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0 32rpx calc(24rpx + env(safe-area-inset-bottom));
+  background: var(--card);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-sizing: border-box;
+}
+
+.st-sheet-handle {
+  width: 72rpx;
+  height: 8rpx;
+  margin: 16rpx auto 8rpx;
+  border-radius: 4rpx;
+  background: var(--border);
+}
+
+.st-sheet-title {
+  padding: 12rpx 0 16rpx;
+  text-align: center;
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.st-opt {
+  display: flex;
+  align-items: center;
+  min-height: 112rpx;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.st-opt-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.st-opt-label {
+  font-weight: 600;
+  color: var(--text-main);
+  line-height: 1.3;
+}
+
+/* 三档的字号预览：直接以档位目标的相对大小呈现（standard / large / xlarge） */
+.st-preview-standard { font-size: var(--font-body); }
+.st-preview-large { font-size: calc(var(--font-body) + 6rpx); }
+.st-preview-xlarge { font-size: calc(var(--font-body) + 14rpx); }
+
+.st-opt-desc {
+  margin-top: 4rpx;
+  font-size: calc(var(--font-caption) - 2rpx);
+  color: var(--text-weak);
+  line-height: 1.4;
+}
+
+.st-opt-on .st-opt-label { color: var(--primary); }
+
+.st-opt-check {
+  flex-shrink: 0;
+  width: 36rpx;
+  height: 36rpx;
+  margin-left: 12rpx;
+}
+
+.st-sheet-cancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 88rpx;
+  margin-top: 16rpx;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: var(--font-body);
+  color: var(--text-sub);
+}
+
+/* ================= ≥600px 平板 =================
+   全部 rpx 折 px（÷2）；字号令牌在断点内已是 px，故 calc 里同步换成 px 偏移。 */
+@media (min-width: 600px) {
+  .st-page { padding: 12px 12px calc(24px + env(safe-area-inset-bottom)); }
+
+  .st-card { padding: 0 14px; margin-bottom: 10px; border-radius: 6px; }
+
+  .st-head {
+    height: 36px;
+    margin: 0 -14px;
+    padding: 0 14px;
+    border-bottom-width: 1px;
+    font-size: calc(var(--font-caption) + 3px);
+  }
+
+  .st-row { min-height: 44px; }
+  .st-row::before { right: -14px; height: 1px; }
+
+  .st-label { font-size: var(--font-body); }
+  .st-value,
+  .st-note { margin-right: 2px; font-size: calc(var(--font-caption) + 3px); }
+
+  .st-arrow { width: 18px; height: 18px; margin-right: -5px; }
+
+  .st-state { font-size: calc(var(--font-caption) + 2px); }
+  .st-dot { width: 7.5px; height: 7.5px; margin-right: 7.5px; }
+
+  .st-danger { min-height: 44px; margin-top: 12px; font-size: var(--font-body); }
+
+  .st-sheet { padding: 0 16px calc(12px + env(safe-area-inset-bottom)); }
+  .st-sheet-handle { width: 36px; height: 4px; margin: 8px auto 4px; border-radius: 2px; }
+  .st-sheet-title { padding: 6px 0 8px; font-size: var(--font-h2); }
+
+  .st-opt { min-height: 56px; border-bottom-width: 1px; }
+  .st-preview-standard { font-size: var(--font-body); }
+  .st-preview-large { font-size: calc(var(--font-body) + 3px); }
+  .st-preview-xlarge { font-size: calc(var(--font-body) + 7px); }
+  .st-opt-desc { margin-top: 2px; font-size: calc(var(--font-caption) - 1px); }
+  .st-opt-check { width: 18px; height: 18px; margin-left: 6px; }
+
+  .st-sheet-cancel { min-height: 44px; margin-top: 8px; font-size: var(--font-body); }
+}

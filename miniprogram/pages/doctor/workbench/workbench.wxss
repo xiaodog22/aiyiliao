@@ -1,0 +1,792 @@
+/* ============================================================================
+   pages/doctor/workbench —— 医生工作台（医生端 01-医生工作台）
+
+   逐项尺寸取自设计稿 1391×3014（750rpx 宽，1rpx ≈ 1.8547px）实测：
+     导航条 164rpx（状态栏 + 88rpx 行）· 欢迎卡 148rpx · 统计卡 145rpx
+     今日工作 126rpx 方块 2×2 · 待处理行距 121rpx · 快捷三列 95rpx 方块 · 底部导航 100rpx
+
+   色彩纪律：只用 app.wxss 令牌；浅蓝渐变用「白底 + primary 的 rgba 叠加」实现，
+   不引入字面色值（唯一字面色 = 语义白 #FFFFFF）。
+   ⚠️ 尺寸口径：手机档写 rpx；文件末尾的 ≥600px 断点把**每一处** rpx 折成 px（÷2），
+      与前七页同一口径。改样式后请核对断点覆盖，勿只改基础段。
+   ============================================================================ */
+
+/* ============ 页面骨架 ============
+   底色取 --accent-soft（#E4F1FF）：设计稿实测页面底色 #EAF4FF，是本页"浅蓝调"的签名；
+   --bg（#F3F8FF）偏中性，会丢掉这层蓝。 */
+.wb-page {
+  min-height: 100vh;
+  background: var(--accent-soft);
+  box-sizing: border-box;
+}
+
+/* ============ ① 自定义导航栏 ============
+   设计实测：整条 164rpx（状态栏 76rpx + 导航行 88rpx），行内标题居中（x 中心 = 375rpx = 页宽一半），
+   右侧药丸 175×65rpx。状态栏高度由 JS 注入（不同机型不一致，不能写死）。 */
+.wb-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--card);
+  border-bottom: 1rpx solid var(--border);
+  box-sizing: border-box;
+}
+
+.wb-nav-row {
+  position: relative;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wb-nav-title {
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.2;
+}
+
+/* 返回键：88rpx 命中区，图标 44rpx（设计实测 chevron 高 33rpx，视觉更瘦） */
+.wb-nav-back {
+  position: absolute;
+  left: 8rpx;
+  top: 0;
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wb-nav-back-ic {
+  width: 44rpx;
+  height: 44rpx;
+}
+
+/* 右侧药丸：设计实测 175×65rpx、1rpx 描边、圆角全圆，内含「铃铛 · 分隔线 · 投屏」 */
+.wb-nav-tools {
+  position: absolute;
+  right: 24rpx;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  height: 64rpx;
+  padding: 0 26rpx;
+  border: 1rpx solid var(--border);
+  border-radius: 999rpx;
+  background: var(--card);
+  box-sizing: border-box;
+}
+
+.wb-nav-btn {
+  position: relative;
+  width: 40rpx;
+  height: 40rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wb-nav-ic {
+  width: 40rpx;
+  height: 40rpx;
+}
+
+.wb-nav-sep {
+  width: 1rpx;
+  height: 40rpx;
+  background: var(--border);
+}
+
+/* 铃铛红点（设计实测 14rpx，压在铃铛右上角） */
+.wb-nav-dot {
+  position: absolute;
+  right: -4rpx;
+  top: -2rpx;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: var(--accent-red);
+  border: 2rpx solid var(--card);
+  box-sizing: border-box;
+}
+
+/* ============ 主栏 ============ */
+.wb-main {
+  padding: 22rpx 24rpx 0;
+  /* 给固定在底部的医生端导航让位（100rpx 条 + 安全区 + 24rpx 呼吸） */
+  padding-bottom: calc(124rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+/* ============ ② 欢迎卡 ============
+   设计实测：148rpx 高、左右内边距 32rpx、圆角 24rpx（--radius-md），
+   底色是"白 → 极浅蓝"的 135° 渐变（TL #F5F8FF / 中心 #ECF6FF），
+   用 --card + primary 的 rgba 叠加还原（不引入新色值）。 */
+.wb-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 148rpx;
+  padding: 0 32rpx;
+  margin-bottom: 20rpx;
+  border-radius: var(--radius-md);
+  background: var(--card);
+  background-image: linear-gradient(135deg, rgba(11, 110, 248, 0.03) 0%, rgba(11, 110, 248, 0.09) 100%);
+  box-sizing: border-box;
+}
+
+.wb-hero-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 「您好，欢迎回来」：设计实测字面高 27.5rpx → 28rpx（在 --font-caption 上 +4rpx 以随主题缩放） */
+.wb-hero-hi {
+  font-size: calc(var(--font-caption) + 4rpx);
+  font-weight: 600;
+  color: var(--primary);
+  line-height: 1.2;
+}
+
+.wb-hero-name-line {
+  display: flex;
+  align-items: baseline;
+  margin-top: 2rpx;
+  min-width: 0;
+}
+
+/* 「陈医生」：设计实测字宽 40.4rpx/字 → 42rpx */
+.wb-hero-name {
+  font-size: calc(var(--font-title) + 2rpx);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+
+/* 「呼吸内科 · 副主任医师」：24rpx 灰蓝，与姓名基线对齐，过长省略不换行 */
+.wb-hero-sub {
+  margin-left: 18rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 圆形头像：设计实测直径 106rpx、右内边距 30rpx、垂直居中 */
+.wb-hero-avatar {
+  width: 106rpx;
+  height: 106rpx;
+  border-radius: 50%;
+  margin-left: 20rpx;
+  flex-shrink: 0;
+  background: var(--accent-soft);
+}
+
+/* ============ ③ 统计概览 ============
+   设计实测：卡高 145rpx、三列等宽、**内容左对齐**（不是居中）、列间 1rpx 竖线、
+   标签 24rpx 灰蓝，其下 34rpx 处是 160×16rpx 的灰色骨架条（加载态）。 */
+.wb-stats {
+  display: flex;
+  padding: 34rpx 0 38rpx;
+  margin-bottom: 21rpx;
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+
+.ws-col {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  padding-left: 32rpx;
+  box-sizing: border-box;
+}
+
+.ws-col + .ws-col::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4rpx;
+  bottom: 4rpx;
+  width: 1rpx;
+  background: var(--border);
+}
+
+.ws-label {
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.2;
+}
+
+/* 骨架条宽度按设计实测 160rpx（.stat-skel 提供高度/圆角/脉冲） */
+.ws-skel {
+  width: 160rpx;
+  margin-top: 28rpx;
+}
+
+.ws-num {
+  margin-top: 24rpx;
+  font-size: var(--font-title);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.2;
+}
+
+.ws-err {
+  margin-top: 24rpx;
+  font-size: var(--font-caption);
+  color: var(--accent-red);
+  line-height: 1.2;
+}
+
+.ws-err-mute {
+  color: var(--text-weak);
+}
+
+/* ============ 通用区块卡 ============
+   设计实测三张卡的内边距并不相同（今日工作底 16rpx / 待处理底 0 / 快捷底 24rpx），
+   差异来自"最后一行自带行内边距"，故用修饰类分开，而不是硬套一个值。 */
+.wb-card {
+  margin-bottom: 21rpx;
+  padding: 24rpx 30rpx;
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+
+/* 今日工作：最后一行是方块（无行内边距），底部只留 16rpx */
+.wb-card-today {
+  padding-bottom: 16rpx;
+}
+
+/* 待处理事项：最后一行自带 28rpx 行内边距，卡片底部不再叠加 */
+.wb-card-todos {
+  padding-bottom: 0;
+}
+
+/* 区块标题：设计实测 30rpx/700（= --font-body） */
+.wb-card-title {
+  font-size: var(--font-body);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.2;
+  margin-bottom: 24rpx;
+}
+
+.wb-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 9rpx;
+}
+
+.wb-card-title-inline {
+  margin-bottom: 0;
+}
+
+.wb-more {
+  display: flex;
+  align-items: center;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
+.wb-more-ic {
+  width: 24rpx;
+  height: 24rpx;
+  margin-left: 4rpx;
+}
+
+/* ============ ④ 今日工作 2×2 ============
+   设计实测：方块 126×126rpx、圆角 24rpx、**图标与文字都在方块内**（上图标 54rpx / 下文字 24rpx），
+   两列间距 70rpx、两行间距 25rpx，方块在各列内左对齐。 */
+.tw-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  column-gap: 70rpx;
+  row-gap: 25rpx;
+}
+
+.tw-tile {
+  width: 126rpx;
+  min-height: 126rpx;
+  padding: 14rpx 8rpx 16rpx;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 在线问诊：薄荷绿底板（设计实测 #E5FDFD ≈ --mint-soft） */
+.tw-tile-mint {
+  background: var(--mint-soft);
+}
+
+.tw-ic {
+  width: 54rpx;
+  height: 54rpx;
+}
+
+.tw-label {
+  font-size: var(--font-caption);
+  font-weight: 500;
+  color: var(--text-main);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* ============ ⑤ 待处理事项 ============
+   设计实测：徽章 64rpx 圆 · 行距 121rpx · 标题 28rpx/700 · 副标题 24rpx 灰蓝 ·
+   右侧「处理」胶囊 112×50rpx（实心 --primary）。 */
+.todo-skel {
+  height: 120rpx;
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, var(--card) 0%, var(--accent-soft) 50%, var(--card) 100%);
+  animation: todoShimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes todoShimmer {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.todo-row {
+  display: flex;
+  align-items: center;
+  padding: 28rpx 0;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.todo-row:last-child {
+  border-bottom: none;
+}
+
+.todo-badge {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  margin-right: 22rpx;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.todo-badge-blue { background: var(--primary); }
+.todo-badge-amber { background: var(--accent-amber); }
+.todo-badge-mint { background: var(--mint); }
+
+.todo-badge-ic {
+  width: 36rpx;
+  height: 36rpx;
+}
+
+.todo-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.todo-title {
+  font-size: calc(var(--font-caption) + 4rpx);
+  font-weight: 600;
+  color: var(--text-main);
+  line-height: 1.2;
+}
+
+.todo-sub {
+  margin-top: 3rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.2;
+}
+
+/* 待办「处理」胶囊：触控红線 88rpx=44px，取 80rpx=40px（D-D-P2-02，原 50rpx=25px）。 */
+.todo-btn {
+  flex-shrink: 0;
+  margin-left: 16rpx;
+  width: 160rpx;
+  height: 80rpx;
+  line-height: 80rpx;
+  text-align: center;
+  border-radius: 999rpx;
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: calc(var(--font-caption) + 4rpx);
+  font-weight: 600;
+}
+
+.todo-btn:active {
+  background: var(--primary-dark);
+}
+
+.todo-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 24rpx 0 8rpx;
+}
+
+.todo-empty-ic {
+  width: 64rpx;
+  height: 64rpx;
+  opacity: 0.6;
+}
+
+.todo-empty-text {
+  margin-top: 12rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
+/* ============ ⑥ 快捷功能三列 ============
+   设计实测：图标底板 95×95rpx（圆角 24rpx）、文字在底板外下方 16rpx 处、
+   列间 1rpx 竖线（只覆盖图标那一行的高度）。 */
+.qf-row {
+  display: flex;
+  align-items: flex-start;
+}
+
+.qf-tile {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4rpx 0;
+}
+
+.qf-tile + .qf-tile::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6rpx;
+  bottom: 24rpx;
+  width: 1rpx;
+  background: var(--border);
+}
+
+.qf-ic-box {
+  width: 95rpx;
+  height: 95rpx;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qf-ic {
+  width: 44rpx;
+  height: 44rpx;
+}
+
+.qf-label {
+  margin-top: 16rpx;
+  font-size: var(--font-caption);
+  font-weight: 500;
+  color: var(--text-main);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* ============ 平板左侧栏（仅 ≥900px 且 ≥700px 且横屏显示，见 app.wxss 的 .side-only）============ */
+.wb-rail {
+  flex: 0 0 240px;
+  width: 240px;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 24px 16px;
+  box-sizing: border-box;
+  align-self: flex-start;
+}
+
+.wb-rail-me {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.wb-rail-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+}
+
+.wb-rail-name {
+  margin-top: 10px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.wb-rail-dept {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-sub);
+}
+
+.wb-rail-nav {
+  margin-top: 14px;
+}
+
+.wb-rail-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--text-sub);
+  margin-bottom: 4px;
+}
+
+.wb-rail-item.on {
+  background: var(--accent-soft);
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.wb-rail-ic {
+  width: 20px;
+  height: 20px;
+}
+
+.wb-rail-dot {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-red);
+}
+
+/* ============================================================================
+   ≥600px：rpx → px（÷2）
+   ⚠️ 基础段里**每一处**含 rpx 的选择器都在此重新声明，避免宽屏上 rpx 被等比放大。
+   ============================================================================ */
+@media (min-width: 600px) {
+  .wb-nav { border-bottom-width: 1px; }
+
+  .wb-nav-row { height: 44px; }
+
+  .wb-nav-back {
+    left: 4px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .wb-nav-back-ic {
+    width: 22px;
+    height: 22px;
+  }
+
+  .wb-nav-tools {
+    right: 12px;
+    gap: 9px;
+    height: 32px;
+    padding: 0 13px;
+    border-width: 1px;
+  }
+
+  .wb-nav-btn {
+    width: 20px;
+    height: 20px;
+  }
+
+  .wb-nav-ic {
+    width: 20px;
+    height: 20px;
+  }
+
+  .wb-nav-sep {
+    width: 1px;
+    height: 20px;
+  }
+
+  .wb-nav-dot {
+    right: -2px;
+    top: -1px;
+    width: 7px;
+    height: 7px;
+    border-width: 1px;
+  }
+
+  .wb-main {
+    /* 平板档内容居中成一列 375px（= 750rpx 设计宽 ÷2），与前七页口径一致 */
+    max-width: 375px;
+    margin: 0 auto;
+    padding: 11px 12px 0;
+    padding-bottom: calc(62px + env(safe-area-inset-bottom));
+  }
+
+  /* 底色通栏：app.wxss 给 .page/.wb-page/.auth-page 统一加了 720px 上限，
+     本页底色是"浅蓝画布"，收成 720px 会在两侧露出 --bg 形成一条突兀的白边。 */
+  .wb-page {
+    max-width: none;
+  }
+
+  .wb-hero {
+    height: 74px;
+    padding: 0 16px;
+    margin-bottom: 10px;
+  }
+
+  .wb-hero-hi {
+    font-size: 16px;
+  }
+
+  .wb-hero-name-line { margin-top: 1px; }
+
+  .wb-hero-name {
+    font-size: 22px;
+  }
+
+  .wb-hero-sub {
+    margin-left: 9px;
+    font-size: 12px;
+  }
+
+  .wb-hero-avatar {
+    width: 53px;
+    height: 53px;
+    margin-left: 10px;
+  }
+
+  .wb-stats {
+    padding: 17px 0 19px;
+    margin-bottom: 10px;
+  }
+
+  .ws-col { padding-left: 16px; }
+
+  .ws-col + .ws-col::before {
+    top: 2px;
+    bottom: 2px;
+    width: 1px;
+  }
+
+  .ws-label { font-size: 12px; }
+
+  .ws-skel {
+    width: 80px;
+    margin-top: 14px;
+  }
+
+  .ws-num,
+  .ws-err {
+    margin-top: 12px;
+  }
+
+  .wb-card {
+    margin-bottom: 10.5px;
+    padding: 12px 15px;
+  }
+
+  .wb-card-today { padding-bottom: 8px; }
+
+  .wb-card-todos { padding-bottom: 0; }
+
+  .wb-card-title { margin-bottom: 12px; }
+
+  .wb-card-head { margin-bottom: 4.5px; }
+
+  .wb-more-ic {
+    width: 12px;
+    height: 12px;
+    margin-left: 2px;
+  }
+
+  .tw-grid {
+    column-gap: 35px;
+    row-gap: 12.5px;
+  }
+
+  .tw-tile {
+    width: 63px;
+    min-height: 63px;
+    padding: 7px 4px 8px;
+  }
+
+  .tw-ic {
+    width: 27px;
+    height: 27px;
+  }
+
+  .todo-skel { height: 60px; }
+
+  .todo-row { padding: 14px 0; }
+
+  .todo-row:last-child { padding-bottom: 14px; }
+
+  .todo-badge {
+    width: 32px;
+    height: 32px;
+    margin-right: 11px;
+  }
+
+  .todo-badge-ic {
+    width: 18px;
+    height: 18px;
+  }
+
+  .todo-sub { margin-top: 3px; }
+
+  /* calc(…rpx) 里的 rpx 在宽屏同样会被等比放大，必须一并改写 */
+  .todo-title,
+  .todo-btn {
+    font-size: calc(var(--font-caption) + 2px);
+  }
+
+  .todo-btn {
+    margin-left: 8px;
+    width: 80px;
+    height: 40px;
+    line-height: 40px;
+  }
+
+  .todo-empty { padding: 12px 0 4px; }
+
+  .todo-empty-ic {
+    width: 32px;
+    height: 32px;
+  }
+
+  .todo-empty-text { margin-top: 6px; }
+
+  .qf-tile { padding: 2px 0; }
+
+  .qf-tile + .qf-tile::before {
+    top: 3px;
+    bottom: 12px;
+    width: 1px;
+  }
+
+  .qf-ic-box {
+    width: 47.5px;
+    height: 47.5px;
+  }
+
+  .qf-ic {
+    width: 22px;
+    height: 22px;
+  }
+
+  .qf-label { margin-top: 8px; }
+}
+
+

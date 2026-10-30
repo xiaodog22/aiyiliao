@@ -1,0 +1,53 @@
+<!--
+  pages/doctor/messages —— 消息通知（医生端，V21 消息中心）
+  未读圆点 + 时间；会话类消息点击直达医生问诊会话。
+-->
+<view class="page theme-{{theme}} dm-page" style="padding-top: {{navH}}px;">
+
+  <view class="dm-nav" style="padding-top: {{statusBarHeight}}px;">
+    <view class="dm-nav-bar">
+      <view class="dm-nav-back" bindtap="onBack" hover-class="dm-hover" aria-role="button" aria-label="返回">
+        <image class="dm-nav-back-ic" src="{{icons.chevronLeft}}" />
+      </view>
+      <view class="dm-nav-title">消息通知</view>
+      <view wx:if="{{unread > 0}}" class="dm-nav-act" bindtap="onMarkAllRead">全部已读</view>
+    </view>
+  </view>
+
+  <!-- 未读概要 -->
+  <view wx:if="{{!loading && !error}}" class="dm-sum">
+    <view class="dm-sum-num">{{unread}}</view>
+    <view class="dm-sum-t">条未读消息</view>
+  </view>
+
+  <skeleton wx:if="{{loading}}" type="list" rows="6" />
+
+  <view wx:elif="{{error}}" class="dm-state">
+    <view class="dm-state-title">消息加载失败</view>
+    <view class="dm-state-sub">{{error}}</view>
+    <view class="dm-btn dm-btn-primary" bindtap="fetch">重试</view>
+  </view>
+
+  <block wx:else>
+    <view class="dm-list">
+      <view wx:for="{{messages}}" wx:key="id" wx:for-item="m"
+            class="dm-item" data-msg="{{m}}" bindtap="onTapMessage" hover-class="dm-hover">
+        <view class="dm-dot {{m.read ? 'dm-dot-off' : ''}}"></view>
+        <view class="dm-body">
+          <view class="dm-title">{{m.title || '系统通知'}}</view>
+          <view wx:if="{{m.body}}" class="dm-text">{{m.body}}</view>
+          <view class="dm-time">{{m.timeText}}</view>
+        </view>
+        <image class="dm-arrow" src="{{icons.chevronRight}}" />
+      </view>
+
+      <view wx:if="{{!messages.length}}" class="dm-state dm-state-inline">
+        <view class="dm-state-title">暂无消息</view>
+        <view class="dm-state-sub">患者发起的问诊申请等通知会显示在这里</view>
+      </view>
+    </view>
+  </block>
+
+  <view class="dm-footbar-space"></view>
+  <doctor-tabbar current="messages" unread="{{unread > 0}}" />
+</view>

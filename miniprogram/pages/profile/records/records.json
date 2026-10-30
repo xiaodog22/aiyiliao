@@ -1,0 +1,8 @@
+{
+  "navigationBarTitleText": "我的就医安排",
+  "navigationBarBackgroundColor": "#F3F8FF",
+  "navigationBarTextStyle": "black",
+  "usingComponents": {
+    "skeleton": "/components/skeleton/skeleton"
+  }
+}

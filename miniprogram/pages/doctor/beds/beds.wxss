@@ -1,0 +1,387 @@
+/* pages/doctor/beds —— 床位管理（医生端）
+   版式依据：design-output/医生端/E-医生端/14-床位管理.png（1391×3014，1rpx ≈ 1.8547px）
+   实测落值：页边距 24rpx / 卡宽 340rpx / 列间距 24rpx / 卡高 404rpx / 卡圆角 24rpx /
+            床号 48rpx·700 / 状态 36rpx·600 / 患者名 32rpx / 占用蓝带高 168rpx /
+            图例圆点 24rpx·文字 32rpx·组间距 88rpx（整体居中）
+   颜色全部走 app.wxss 令牌；蓝带渐变用「白底 + primary 的 rgba 叠加」实现，不引入新色值。
+   ⚠️ 设计稿两处自相矛盾（105 空闲无按钮、106「维修**」用蓝底）按统一规则处理，
+      详见 README §8.40 偏离项。 */
+
+.bd-page {
+  padding-left: 24rpx;
+  padding-right: 24rpx;
+  padding-bottom: 48rpx;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+/* ============ 自定义导航栏 ============ */
+.bd-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  background: var(--bg);
+}
+
+.bd-nav-bar {
+  position: relative;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+}
+
+.bd-nav-back {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: 24rpx;
+  box-sizing: border-box;
+}
+
+.bd-hover { opacity: 0.6; }
+
+.bd-nav-back-ic { width: 44rpx; height: 44rpx; }
+
+.bd-nav-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: var(--font-h2);
+  font-weight: 600;
+  color: var(--text-main);
+  pointer-events: none;
+}
+
+/* ============ 统计（增强项，设计稿无） ============ */
+.bd-stats {
+  display: flex;
+  align-items: stretch;
+  margin-top: 16rpx;
+  padding: 24rpx 8rpx;
+  background: var(--card);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+
+.bds-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.bds-label {
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.3;
+}
+
+.bds-v {
+  font-size: calc(var(--font-title) + 4rpx);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.2;
+}
+
+/* 加载中：灰块占位（高度 = 数值行高，避免加载完成时跳版） */
+.bds-skel {
+  width: 56rpx;
+  height: 44rpx;
+  border-radius: 8rpx;
+  background: var(--disabled-soft);
+}
+
+.bds-skel-mute { opacity: 0.5; }
+
+/* ============ 病区筛选（仅 ≥2 病区出现） ============ */
+.bd-wards {
+  width: 100%;
+  margin-top: 20rpx;
+  white-space: nowrap;
+}
+
+.bd-ward {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  padding: 0 32rpx;
+  margin-right: 16rpx;
+  border-radius: 999rpx;
+  background: var(--card);
+  border: 2rpx solid var(--border);
+  font-size: calc(var(--font-body) - 2rpx);
+  color: var(--text-sub);
+  box-sizing: border-box;
+}
+
+.bd-ward-on {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+/* ============ 图例 ============ */
+.bd-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 88rpx;
+  margin: 28rpx 0 24rpx;
+}
+
+.bl-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.bl-dot {
+  width: 24rpx;
+  height: 24rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.bl-dot-free { background: var(--accent-green); }
+.bl-dot-occ { background: var(--primary); }
+.bl-dot-off { background: var(--text-weak); }
+.bl-dot-clean { background: var(--accent-amber); }
+.bl-dot-reserved { background: var(--accent); }
+
+.bl-text {
+  font-size: calc(var(--font-body) + 2rpx);
+  line-height: 1.3;
+}
+
+.bl-text-free { color: var(--accent-green); }
+.bl-text-occ { color: var(--primary); }
+.bl-text-off { color: var(--text-weak); }
+.bl-text-clean { color: var(--amber-text); }
+.bl-text-reserved { color: var(--text-sub); }
+
+/* ============ 床位网格（2 列） ============ */
+.bed-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24rpx;
+}
+
+.bed-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 404rpx;
+  box-sizing: border-box;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 2rpx solid transparent;
+  box-shadow: var(--shadow-card);
+  text-align: center;
+}
+
+/* 空闲：白底 + 绿描边（设计稿 101 / 103） */
+.bed-avail {
+  background: var(--card);
+  border-color: var(--accent-green);
+}
+
+.bed-avail .bed-status { color: var(--accent-green); }
+
+/* 占用：蓝带渐变头（168rpx）+ 浅蓝底（设计稿 102） */
+.bed-occ {
+  background: linear-gradient(180deg, rgba(11, 110, 248, 0.14) 0%, rgba(11, 110, 248, 0.03) 100%);
+}
+
+.bed-occ .bed-top {
+  height: 168rpx;
+  width: 100%;
+  background: linear-gradient(180deg, rgba(11, 110, 248, 0.86) 0%, rgba(11, 110, 248, 0.56) 100%);
+}
+
+.bed-occ .bed-status { color: var(--primary-dark); }
+
+/* 待消毒：浅橙底 + 深橙字（设计稿无此态，按需求清单的语义色补） */
+.bed-clean { background: var(--amber-soft); }
+.bed-clean .bed-status { color: var(--amber-text); }
+
+/* 维修中：中性灰（设计稿 104 + 图例） */
+.bed-off { background: var(--disabled-soft); }
+.bed-off .bed-no { color: var(--text-sub); }
+.bed-off .bed-status { color: var(--text-weak); }
+
+/* 已预留：整卡浅蓝渐变（设计稿 106 的蓝底变体；106 文案「维修**」按统一规则归到维修中） */
+.bed-reserved {
+  background: linear-gradient(180deg, rgba(11, 110, 248, 0.72) 0%, rgba(11, 110, 248, 0.06) 78%);
+}
+
+.bed-reserved .bed-status { color: var(--text-sub); }
+
+/* ============ 卡内元素 ============ */
+.bed-top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 50rpx;
+  flex-shrink: 0;
+}
+
+.bed-no {
+  font-size: calc(var(--font-title) + 8rpx);
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--text-main);
+}
+
+.bed-status {
+  margin-top: 8rpx;
+  font-size: calc(var(--font-h2) + 2rpx);
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-sub);
+}
+
+.bed-patient {
+  margin-top: 24rpx;
+  max-width: 280rpx;
+  font-size: calc(var(--font-body) + 2rpx);
+  line-height: 1.3;
+  color: var(--text-weak);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 空闲床位「安排入住」：绿描边胶囊（设计稿 101 按钮；高度按 88rpx 触控下限落地） */
+.bed-assign {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: auto;
+  margin-bottom: 40rpx;
+  height: 88rpx;
+  padding: 0 48rpx;
+  border-radius: 999rpx;
+  border: 2rpx solid var(--accent-green);
+  background: var(--card);
+  color: var(--accent-green);
+  font-size: var(--font-body);
+  font-weight: 600;
+  box-sizing: border-box;
+}
+
+.bed-assign-hover { background: var(--accent-soft); }
+
+/* ============ 安排入住抽屉 ============ */
+.sheet-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  background: rgba(20, 38, 76, 0.42);
+}
+
+.assign-sheet { z-index: 60; }
+
+.form-row { margin-top: 24rpx; }
+
+.form-label {
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 600;
+  color: var(--text-sub);
+  margin-bottom: 10rpx;
+}
+
+.form-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 88rpx;
+  padding: 0 24rpx;
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  border: 2rpx solid var(--border);
+  font-size: var(--font-body);
+  color: var(--text-main);
+}
+
+.form-err {
+  margin-top: 18rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--accent-red);
+  line-height: 1.4;
+}
+
+.sheet-actions {
+  display: flex;
+  gap: 20rpx;
+  margin-top: 32rpx;
+}
+
+.sheet-actions .btn {
+  flex: 1;
+  justify-content: center;
+}
+
+/* 提交中：禁用观感（点击由 JS 的 assigning 守卫拦截） */
+.btn-loading { opacity: 0.7; }
+
+/* ================= 平板断点（≥600px：全部 rpx ÷ 2 → px） ================= */
+@media (min-width: 600px) {
+  .bd-page { padding-left: 12px; padding-right: 12px; padding-bottom: 24px; }
+
+  .bd-nav-bar { height: 44px; }
+  .bd-nav-back { width: 44px; height: 44px; padding-left: 12px; }
+  .bd-nav-back-ic { width: 22px; height: 22px; }
+  .bd-nav-title { font-size: 17px; }
+
+  .bd-stats { margin-top: 8px; padding: 12px 4px; border-radius: 12px; }
+  .bds-col { gap: 4px; }
+  .bds-label { font-size: 12px; }
+  .bds-v { font-size: 22px; }
+  .bds-skel { width: 28px; height: 22px; border-radius: 4px; }
+
+  .bd-wards { margin-top: 10px; }
+  .bd-ward {
+    height: 44px;
+    padding: 0 16px;
+    margin-right: 8px;
+    border-width: 1px;
+    font-size: 14px;
+  }
+
+  .bd-legend { gap: 44px; margin: 14px 0 12px; }
+  .bl-item { gap: 7px; }
+  .bl-dot { width: 12px; height: 12px; }
+  .bl-text { font-size: 16px; }
+
+  .bed-grid { gap: 12px; }
+  .bed-card { height: 202px; border-radius: 12px; border-width: 1px; }
+  .bed-occ .bed-top { height: 84px; }
+
+  .bed-top { padding-top: 25px; }
+  .bed-no { font-size: 24px; }
+  .bed-status { margin-top: 4px; font-size: 18px; }
+  .bed-patient { margin-top: 12px; max-width: 140px; font-size: 16px; }
+
+  .bed-assign {
+    margin-bottom: 20px;
+    height: 44px;
+    padding: 0 24px;
+    border-width: 1px;
+    font-size: 15px;
+  }
+
+  .form-row { margin-top: 12px; }
+  .form-label { font-size: 13px; margin-bottom: 5px; }
+  .form-input { height: 44px; padding: 0 12px; border-width: 1px; }
+  .form-err { margin-top: 9px; font-size: 13px; }
+  .sheet-actions { margin-top: 16px; gap: 10px; }
+}

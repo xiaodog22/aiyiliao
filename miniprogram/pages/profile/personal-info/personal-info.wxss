@@ -1,0 +1,470 @@
+/* pages/profile/personal-info —— 个人信息
+   设计稿：design-output/患者端/C-个人中心/09-个人信息.png（1391×3014，1rpx ≈ 1.8547px）
+   逐元素实测（设计稿 px → rpx）：
+     · 卡片左右留白 43px=23rpx（取 24rpx）、圆角约 30px=16rpx（--radius-sm）、导航底→卡 53px=28rpx
+     · 行高：头像行 264px=142rpx（头像 170px=92rpx + 上下 25rpx）；姓名/手机号行 206/211px≈112rpx
+     · 行内距 55px=30rpx（标签墨迹左缘 98 = 卡左 43 + 55）
+     · 标签字号 55px/字=30rpx、粗 600；姓名值 53px/字=30rpx；手机号值 48px/字≈26rpx
+     · 分隔线 **左侧内缩 30rpx、右侧到卡片边缘**（实测 x 98..1346 / 卡宽 43..1348）
+     · 箭头 ink 22×42px → 24rpx 图标，值→箭头 43px=23rpx；箭头右缘距卡右边 29rpx
+     · 卡下说明 24rpx（--font-caption），居中，卡底→字 67px=36rpx
+   颜色：全部走令牌（标签 --text-main / 值 --text-main / 「已绑定」--text-weak / 号码 --text-sub）。
+   ⚠️ 设计稿只有「头像/姓名/手机号」三行；下方「联系与住址」「身份与医保」为 V8 已有能力，
+      保留但统一到同一套卡片度量（24rpx 边距 / 16rpx 圆角 / 30rpx 行内距）。 */
+
+.pi-page {
+  padding: 28rpx 0 60rpx;
+}
+
+/* ============ 卡片 ============ */
+.pi-card {
+  margin: 0 24rpx 24rpx;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+/* 行：左标签 + 右值/头像 + 箭头；分隔线左内缩、右侧通到卡边（iOS 分组列表口径） */
+.pi-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 112rpx;
+  padding: 0 30rpx;
+  box-sizing: border-box;
+}
+
+.pi-row::before {
+  content: '';
+  position: absolute;
+  left: 30rpx;
+  right: 0;
+  bottom: 0;
+  height: 1rpx;
+  background: var(--border);
+}
+
+.pi-row-last::before {
+  display: none;
+}
+
+/* 带 92rpx 头像的行要高一些（实测 142rpx） */
+.pi-row-tall {
+  min-height: 142rpx;
+}
+
+.pi-label {
+  flex-shrink: 0;
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.pi-chevron {
+  flex-shrink: 0;
+  width: 24rpx;
+  height: 24rpx;
+  margin-left: 22rpx;
+}
+
+/* 头像（官方 chooseAvatar 入口）：设计稿是浅蓝圆底 + 浅灰蓝人形 */
+.pi-avatar {
+  position: relative;
+  width: 92rpx;
+  height: 92rpx;
+  margin-left: auto;
+  flex-shrink: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--accent-soft);
+}
+
+.pi-avatar-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.pi-ph {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.pi-ph-head {
+  position: absolute;
+  left: 50%;
+  top: 20rpx;
+  width: 28rpx;
+  height: 28rpx;
+  margin-left: -14rpx;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.pi-ph-body {
+  position: absolute;
+  left: 50%;
+  bottom: -6rpx;
+  width: 54rpx;
+  height: 40rpx;
+  margin-left: -27rpx;
+  border-radius: 27rpx 27rpx 0 0;
+  background: var(--border);
+}
+
+/* 姓名输入：右对齐，外观与"右值 + 箭头"完全一致（保留 type=nickname 的微信快填） */
+.pi-input {
+  flex: 1;
+  min-width: 0;
+  height: 64rpx;
+  margin-left: 24rpx;
+  text-align: right;
+  font-size: var(--font-body);
+  color: var(--text-main);
+}
+
+.pi-input-ph {
+  color: var(--text-placeholder);
+}
+
+/* 手机号右值 */
+.pi-value {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+}
+
+.pi-value-tag {
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-weak);
+}
+
+.pi-value-num {
+  margin-left: 12rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+.pi-value-wait {
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-weak);
+}
+
+/* 微信授权说明（设计稿：卡下居中灰字） */
+.pi-hint {
+  /* 实测：29 字单行占 1174px = 317px@375 → 字号 22rpx（--font-caption - 2rpx）；
+     两侧留 40rpx 只为兜底换行，单行时文字自身居中，视觉左边距仍是 56rpx（实测 59rpx） */
+  margin: 36rpx 40rpx 0;
+  text-align: center;
+  font-size: calc(var(--font-caption) - 2rpx);
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
+/* ============ 联系与住址（表单行） ============ */
+.pi-field {
+  position: relative;
+  padding: 24rpx 30rpx;
+}
+
+.pi-field::before {
+  content: '';
+  position: absolute;
+  left: 30rpx;
+  right: 0;
+  bottom: 0;
+  height: 1rpx;
+  background: var(--border);
+}
+
+.pi-field-last::before {
+  display: none;
+}
+
+.pi-field-t {
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+.pi-field-in {
+  width: 100%;
+  height: 60rpx;
+  margin-top: 4rpx;
+  font-size: var(--font-body);
+  color: var(--text-main);
+}
+
+/* 展开表单里的输入框（带浅底框） */
+.pi-field-in-box {
+  height: var(--btn-height);
+  margin-top: 0;
+  padding: 0 24rpx;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  box-sizing: border-box;
+}
+
+.pi-card-foot {
+  padding: 24rpx 30rpx 28rpx;
+}
+
+.pi-save {
+  width: 100%;
+}
+
+/* ============ 身份与医保行 ============ */
+.pi-row-label {
+  flex: 1;
+  min-width: 0;
+  margin-left: 20rpx;
+}
+
+.pi-row-t {
+  font-size: var(--font-body);
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+.pi-row-s {
+  margin-top: 4rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+}
+
+.pi-tile {
+  width: 72rpx;
+  height: 72rpx;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tile-blue {
+  background: var(--tile-blue);
+}
+
+.tile-mint {
+  background: var(--tile-mint);
+}
+
+.pi-badge {
+  flex-shrink: 0;
+  padding: 8rpx 20rpx;
+  border-radius: 999rpx;
+  font-size: var(--font-caption);
+}
+
+.pi-badge-ok {
+  background: var(--accent-soft);
+  color: var(--primary);
+}
+
+.pi-link {
+  flex-shrink: 0;
+  padding: 8rpx 20rpx;
+  border-radius: 999rpx;
+  background: var(--accent-soft);
+  color: var(--primary);
+  font-size: var(--font-caption);
+}
+
+/* 展开表单 */
+.pi-form {
+  display: flex;
+  flex-direction: column;
+  padding: 8rpx 30rpx 28rpx;
+}
+
+.pi-form .btn + .btn,
+.pi-form .pi-field-in-box + .pi-field-in-box,
+.pi-form .pi-picker + .pi-field-in-box {
+  margin-top: 16rpx;
+}
+
+.pi-form .pi-save {
+  margin-top: 24rpx;
+}
+
+.pi-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--btn-height);
+  padding: 0 24rpx;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: var(--font-body);
+  color: var(--text-main);
+}
+
+/* 隐私说明 */
+.pi-privacy {
+  margin: 24rpx 30rpx 0;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.6;
+}
+
+/* 头像行是 button：复位微信默认按钮样式（否则会有边框/圆角/内距） */
+.pi-avatar-btn {
+  width: 100%;
+  margin: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  line-height: inherit;
+  text-align: left;
+  font-size: inherit;
+  color: inherit;
+}
+
+.pi-avatar-btn::after {
+  border: none;
+}
+
+/* ================= 平板：≥600px 全部 rpx 折 px（÷2），主栏 375px 居中 ================= */
+@media (min-width: 600px) {
+  .pi-page {
+    max-width: 375px;
+    margin: 0 auto;
+    padding: 14px 0 30px;
+  }
+
+  .pi-card {
+    margin: 0 12px 12px;
+    border-radius: 8px;
+  }
+
+  .pi-row {
+    min-height: 56px;
+    padding: 0 15px;
+  }
+  .pi-row::before {
+    left: 15px;
+    height: 1px;
+  }
+  .pi-row-tall {
+    min-height: 71px;
+  }
+
+  .pi-label {
+    font-size: 15px;
+  }
+  .pi-chevron {
+    width: 12px;
+    height: 12px;
+    margin-left: 11px;
+  }
+
+  .pi-avatar {
+    width: 46px;
+    height: 46px;
+  }
+  .pi-ph-head {
+    top: 10px;
+    width: 14px;
+    height: 14px;
+    margin-left: -7px;
+  }
+  .pi-ph-body {
+    bottom: -3px;
+    width: 27px;
+    height: 20px;
+    margin-left: -13.5px;
+    border-radius: 13.5px 13.5px 0 0;
+  }
+
+  .pi-input {
+    height: 32px;
+    margin-left: 12px;
+    font-size: 15px;
+  }
+  .pi-value-tag,
+  .pi-value-num,
+  .pi-value-wait {
+    font-size: 13px;
+  }
+  .pi-value-num {
+    margin-left: 6px;
+  }
+
+  .pi-hint {
+    margin: 18px 20px 0;
+    font-size: 11px;
+  }
+
+  .pi-field {
+    padding: 12px 15px;
+  }
+  .pi-field::before {
+    left: 15px;
+    height: 1px;
+  }
+  .pi-field-t {
+    font-size: 13px;
+  }
+  .pi-field-in {
+    height: 30px;
+    margin-top: 2px;
+    font-size: 15px;
+  }
+  .pi-field-in-box {
+    height: 44px;
+    margin-top: 0;
+    padding: 0 12px;
+  }
+  .pi-card-foot {
+    padding: 12px 15px 14px;
+  }
+
+  .pi-row-label {
+    margin-left: 10px;
+  }
+  .pi-row-t {
+    font-size: 15px;
+  }
+  .pi-row-s {
+    margin-top: 2px;
+    font-size: 12px;
+  }
+  .pi-tile {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+  }
+  .pi-badge,
+  .pi-link {
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+
+  .pi-form {
+    padding: 4px 15px 14px;
+  }
+  .pi-form .btn + .btn,
+  .pi-form .pi-field-in-box + .pi-field-in-box,
+  .pi-form .pi-picker + .pi-field-in-box {
+    margin-top: 8px;
+  }
+  .pi-form .pi-save {
+    margin-top: 12px;
+  }
+  .pi-picker {
+    height: 44px;
+    padding: 0 12px;
+    font-size: 15px;
+  }
+
+  .pi-privacy {
+    margin: 12px 15px 0;
+    font-size: 12px;
+  }
+}

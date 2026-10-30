@@ -1,0 +1,586 @@
+openapi: 3.1.0
+
+info:
+  title: 医疗 AI 智能健康小程序 · AI 服务内部接口契约（FastAPI）
+  version: 0.1.0-draft
+  summary: FastAPI 的内部接口面。仅内网可达，客户端永不调用，网关不对外暴露。
+  description: |
+    ## 这份文件是什么
+
+    这是**目标态契约（to-be）**，不是对现有服务的描述。仓库当前没有完整的 FastAPI
+    实现，本文声明的任何路径都不得被表述为"已上线"或"已实现"。
+
+    ## 边界
+
+    本文件覆盖的是 `docs/v4/04` 第 3 节定义的内部接口：任务提交、任务查询、任务取消
+    与两个健康探针。它们**只在服务内网可达**，客户端拿不到，网关也不得为它们配置
+    对外路由。
+
+    小程序可见的 AI 能力（导诊、问诊、养生建议、语音）一律由 Spring Boot 以业务路径
+    承接并编排，见 `business-openapi.yaml`。FastAPI 不直接面对客户端，也不直接写业务库；
+    需要业务上下文时携带用户作用域调用 Spring Boot 的内部接口。
+
+    ## 权威记录在哪里
+
+    患者、预约、健康档案、会话与消息的永久权威记录在 Spring Boot / MySQL。
+    FastAPI 只负责推理、检索、语音、缓存与安全后处理，持有的是**可重建的中间态**：
+    任务状态、检索结果、生成内容。Redis 中的任务状态丢失不构成数据丢失。
+
+    ## 尚未定稿的部分
+
+    **回调方向（待决事项 O-02）尚未定稿。** `docs/v4/04` 第 3 节把回调端点的路径与
+    载荷列为待定，因此本文件**不声明**回传端点——它由 Spring Boot 提供，且只有在
+    O-02 定稿后才可启用，provisional 条目见 `business-openapi.yaml`。
+
+    在 O-02 定稿之前，唯一的权威状态获取方式是 **Spring Boot 轮询**
+    `GET /internal/v1/tasks/{taskId}`。任何实现都不得以"等待回调"为理由把任务
+    永久留在 `RUNNING`。
+
+  contact:
+    name: 待确认（见待决事项 O-06）
+  license:
+    name: 待确认
+
+servers:
+  - url: http://{aiServiceHost}:{aiServicePort}
+    description: |
+      服务内网地址。**不得**出现在小程序配置、网关对外路由表、公开文档或错误响应中。
+      端口以部署配置为准，此处仅为占位。
+    variables:
+      aiServiceHost:
+        default: ai-service.internal.invalid
+        description: 占位主机名；实际为容器网络内的服务名，不解析到公网。
+      aiServicePort:
+        default: '8001'
+        description: 内部端口占位。对外只暴露网关的 443。
+
+tags:
+  - name: internal-task
+    description: 任务提交、查询与取消。任务状态是可重建的中间态，Redis 丢失不构成数据丢失。
+  - name: internal-health
+    description: 存活与就绪探针。区分"进程活着"与"模型可用"。
+
+security:
+  - serviceToken: []
+
+paths:
+
+  /internal/v1/tasks:
+    post:
+      operationId: submitTask
+      tags: [internal-task]
+      summary: 提交推理任务
+      description: |
+        由 Spring Boot 调用，代表某个已认证用户提交一次生成或识别任务。
+
+        **输入以引用传递**：`inputRef` 指向 Spring Boot 侧已落库的用户输入，而不是把
+        用户原文塞进请求体。这样敏感内容不必经过第二跳，FastAPI 也拿不到超出必要范围
+        的数据。若确需内联短文本，用 `inputInline` 并仅限无身份信息的场景。
+
+        **急症不等模型**：命中红线时 Spring Boot 已先行返回安全提示，本接口的
+        `priority` 只影响任务排队顺序，不改变这一结论。
+
+        **算力是稀缺资源**：`requestedProfile` 是期望而非命令。FastAPI 按任务复杂度、
+        当前并发、显存与安全策略决定实际档位；容量不足时**降档或拒绝**，绝不排队到
+        把内存耗尽。
+
+        提交成功只表示任务已受理。结果通过 `GET /internal/v1/tasks/{taskId}` 获取。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TaskSubmitRequest'}
+      responses:
+        '200':
+          description: 任务已受理并进入 `QUEUED`。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkTask'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /internal/v1/tasks/{taskId}:
+    get:
+      operationId: getTask
+      tags: [internal-task]
+      summary: 查询任务状态与结果
+      description: |
+        **O-02 定稿前的唯一权威路径。** Spring Boot 以固定间隔轮询本接口直到终态。
+
+        轮询必须有上限：超过任务总超时预算仍非终态时，调用方按 `EXPIRED` 处理并让
+        用户重试，不能无限轮询，也不能把"一直没结果"呈现成"正在思考"。
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '200':
+          description: 任务当前状态。`result` 仅在 `SUCCEEDED` 时出现。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkTask'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /internal/v1/tasks/{taskId}/cancel:
+    post:
+      x-idempotency: not-required
+      operationId: cancelTask
+      tags: [internal-task]
+      summary: 取消任务
+      description: |
+        尽力取消：向推理进程传递取消信号并释放排队名额，但已产生的部分结果不回滚，
+        已占用的计算不追回。
+
+        状态转换**天然幂等**：对处于终态的任务重复调用返回同一终态而不报错，因此
+        不要求 `Idempotency-Key`。用户撤回同意、删除会话或客户端主动取消都走这里。
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  maxLength: 40
+                  description: 取消来源。审计需要区分"用户主动取消"与"上游撤销授权"。
+                  enum: [USER_CANCELLED, CONSENT_WITHDRAWN, TIMEOUT, UPSTREAM_SHUTDOWN, SUPERSEDED]
+      responses:
+        '200':
+          description: 取消后的任务终态。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkTask'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /internal/health/live:
+    get:
+      operationId: getLiveness
+      tags: [internal-health]
+      summary: 存活探针
+      description: |
+        只回答"进程是否活着"，**不检查模型、Redis、Qdrant**。依赖不可用时进程仍然
+        存活，把依赖检查塞进存活探针会让编排器反复重启一个本可以降级服务的进程。
+      security: []
+      responses:
+        '200':
+          description: 进程存活。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProbeResult'}
+
+  /internal/health/ready:
+    get:
+      operationId: getReadiness
+      x-error-envelope: none
+      tags: [internal-health]
+      summary: 就绪探针
+      description: |
+        逐项报告依赖与模型的**能力状态**：`available` / `degraded` / `unavailable`。
+
+        关键点：模型权重缺失时状态是 `unavailable` 而不是"服务挂了"。服务照常接收
+        请求，只是相应能力返回结构化的 `CAPABILITY_UNAVAILABLE`，界面据此隐藏入口。
+        整体 `status` 为 `degraded` 时，编排器**不得**据此重启实例。
+
+        探针不得返回模型绝对路径、内网地址、凭据或队列中任务的任何内容。
+      security: []
+      responses:
+        '200':
+          description: 就绪状态（即使 `degraded` 也返回 200）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReadinessResult'}
+        '503':
+          description: |
+            核心依赖不可用，实例不应接入流量。此处的响应体是 `ReadinessResult` 而非统一错误
+            信封（已声明 `x-error-envelope: none`）：探针的失败响应本身就是状态报告，
+            运维要看的正是哪一项依赖不可用，套一层 `{code,message}` 反而把信息藏起来。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReadinessResult'}
+
+components:
+
+  securitySchemes:
+    serviceToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        服务间令牌。由 Spring Boot 签发，FastAPI 通过 **JWKS 公钥**校验，固定
+        `aud` 与 `iss`，只接受服务身份。它与用户令牌**不可互换**：服务令牌不能被
+        当作某个用户来执行操作，用户令牌也不能直接调用本文件的接口。
+
+        校验失败一律 `401`，不区分"签名错""过期""受众不符"，避免成为探测工具。
+        令牌不得出现在 URL、日志或错误响应中。
+
+  parameters:
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: 客户端原始请求 ID，贯穿 Spring Boot 与本服务，便于跨服务排障。
+      schema: {type: string, minLength: 8, maxLength: 64}
+    TraceId:
+      name: X-Trace-Id
+      in: header
+      required: false
+      description: 本次任务的追踪 ID。它与 `X-Request-Id` 的区别是同一个任务的多次轮询共享同一个 traceId。
+      schema: {type: string, minLength: 8, maxLength: 64}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        上游为本次提交生成的唯一键。Spring Boot 重试提交时必须复用同一个键，
+        避免一次用户请求产生两个任务、两份算力消耗。
+      schema: {type: string, minLength: 8, maxLength: 128}
+
+  responses:
+    BadRequest:
+      description: 请求格式错误。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    Unauthorized:
+      description: 服务令牌无效。不区分具体失败原因。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    NotFound:
+      description: 任务不存在**或不属于该租户/用户作用域**——两者返回相同响应，避免任务存在性泄漏。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    Conflict:
+      description: 幂等键冲突（相同键、不同载荷）。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    ValidationFailed:
+      description: 业务校验失败（如 `taskType` 与载荷结构不匹配、输入超出该类型允许的长度）。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    TooManyRequests:
+      description: |
+        超出并发或队列上限。调用方应**降级或拒绝**本次生成，而不是改用更大的模型档位，
+        也不是无上限重试。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+    DependencyUnavailable:
+      description: |
+        依赖不可用（Ollama / Redis / Qdrant / 第三方语音）。响应必须指出是哪一类能力
+        降级，让上游能决定是"隐藏入口"还是"仅保留文字"。
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+
+  schemas:
+
+    TaskType:
+      type: string
+      description: 任务类型决定流水线、提示模板与资源档，客户端不能自造取值。
+      enum: [TRIAGE, CHAT, RAG, CARE_PLAN, ASR, TTS, INTERPRET]
+
+    ModelProfile:
+      type: string
+      description: |
+        `small-default` 对应常驻的小模型（0.5B 档），`large-upgrade` 对应按需加载的
+        大模型（7B 档）。取值是**资源档位**，不是具体模型标签——具体模型由配置决定，
+        以便在不改契约的前提下替换。
+      enum: [small-default, large-upgrade]
+
+    TaskStatus:
+      type: string
+      description: |
+        终态为 `SUCCEEDED | FAILED | CANCELLED | EXPIRED`。轮询只有见到终态才算结束；
+        `EXPIRED` 用于结果已过保留期或任务超出总超时预算的情况。
+      enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED, EXPIRED]
+
+    TaskSubmitRequest:
+      type: object
+      required: [tenantId, userId, taskType, policyVersion, traceId]
+      properties:
+        tenantId:
+          type: string
+          maxLength: 64
+          description: 租户/医院边界。缓存与检索结果一律按它做作用域隔离。
+        userId:
+          type: string
+          maxLength: 64
+          description: 内部用户 ID。**不是**手机号、openid 或姓名。
+        taskType: {$ref: '#/components/schemas/TaskType'}
+        inputRef:
+          type: [string, 'null']
+          maxLength: 256
+          description: |
+            指向 Spring Boot 侧已落库输入的引用。首选方式：敏感原文不必经过第二跳。
+        inputInline:
+          type: [string, 'null']
+          maxLength: 2000
+          description: |
+            内联输入，仅在无身份信息的短文本场景使用。含姓名、手机号、证件号、病历号
+            的内容必须走 `inputRef`。
+        voice:
+          type: [string, 'null']
+          maxLength: 64
+          description: 语音任务的音色，仅 `TTS` 使用。未知音色回退到默认而不是报错。
+        locale:
+          type: [string, 'null']
+          maxLength: 20
+          description: 语言/方言标识。
+        policyVersion:
+          type: string
+          maxLength: 40
+          description: |
+            生成本次任务所依据的策略版本（安全规则、提示模板、知识快照的集合标识）。
+            它是缓存键的组成部分，缺失就无法判断缓存结果是否仍然合规。
+        requestedProfile: {$ref: '#/components/schemas/ModelProfile'}
+        priority:
+          type: string
+          enum: [INTERACTIVE, BACKGROUND]
+          default: INTERACTIVE
+          description: 排队优先级。仅影响顺序，不改变任何安全结论。
+        generationParameters:
+          type: object
+          description: |
+            温度、top_p、最大输出长度等。**不接受任意键**：服务端按下表过滤，未知键丢弃，
+            防止把模型参数当成旁路配置。
+          properties:
+            temperature: {type: [number, 'null'], minimum: 0, maximum: 1.5}
+            topP: {type: [number, 'null'], minimum: 0, maximum: 1}
+            maxOutputTokens: {type: [integer, 'null'], minimum: 16, maximum: 2048}
+          additionalProperties: false
+        traceId:
+          type: string
+          maxLength: 64
+          description: 追踪 ID，与请求头一致。
+      additionalProperties: false
+
+    Task:
+      type: object
+      required: [taskId, taskType, status, createdAt]
+      properties:
+        taskId: {type: string, maxLength: 64}
+        tenantId: {type: string, maxLength: 64}
+        taskType: {$ref: '#/components/schemas/TaskType'}
+        status: {$ref: '#/components/schemas/TaskStatus'}
+        priority: {type: string, enum: [INTERACTIVE, BACKGROUND]}
+        progressPhase:
+          type: [string, 'null']
+          description: |
+            阶段名，**不是百分比**。模型不提供的精度不得伪造，"思考中 73%"这类展示
+            必须有真实依据，否则一律用阶段名。
+          enum: [queued, safety_check, retrieval, generation, postprocess, synthesis, null]
+        modelProfile: {$ref: '#/components/schemas/ModelProfile'}
+        modelId: {type: [string, 'null'], maxLength: 60, description: 实际加载的模型标识。}
+        modelVersion: {type: [string, 'null'], maxLength: 40}
+        quantization: {type: [string, 'null'], maxLength: 40, description: 量化方式，参与缓存键。}
+        promptTemplateVersion: {type: [string, 'null'], maxLength: 40, description: 参与缓存键。}
+        policyVersion: {type: string, maxLength: 40}
+        knowledgeSnapshot: {type: [string, 'null'], maxLength: 64, description: 本次检索使用的知识集快照标识，参与缓存键。}
+        result: {$ref: '#/components/schemas/TaskResult'}
+        error: {$ref: '#/components/schemas/TaskError'}
+        cached: {type: [boolean, 'null'], description: 结果是否来自缓存。客户端可据此弱化"生成中"动效。}
+        createdAt: {type: string, format: date-time}
+        startedAt: {type: [string, 'null'], format: date-time}
+        finishedAt: {type: [string, 'null'], format: date-time}
+        expiresAt: {type: [string, 'null'], format: date-time, description: 过期后结果不可再取。}
+
+    TaskResult:
+      type: [object, 'null']
+      description: 仅在 `SUCCEEDED` 时出现；结构随 `taskType` 变化，客户端按类型分支。
+      properties:
+        text: {type: [string, 'null'], maxLength: 8000, description: 生成文本。}
+        transcript: {type: [string, 'null'], maxLength: 2000, description: ASR 转写结果，必须经用户确认才能进入诊疗流程。}
+        audioUrl: {type: [string, 'null'], description: 语音合成的短期签名 URL，不内联字节。}
+        citations: {type: array, items: {$ref: '#/components/schemas/Citation'}}
+        safety: {$ref: '#/components/schemas/SafetyNotice'}
+        provenance: {$ref: '#/components/schemas/ProvenanceType'}
+        refused: {type: [boolean, 'null'], description: 是否结构化拒答（安全策略或证据不足）。}
+        refusalReason: {type: [string, 'null'], maxLength: 200}
+        language: {type: [string, 'null'], maxLength: 20, description: 模型真实给出的语言/方言；模型不提供时为 `null`，不得猜测。}
+        hasTimestamps: {type: [boolean, 'null'], description: 是否真的提供时间戳；为 `false` 时界面不得显示逐字时间轴。}
+        summary:
+          type: [string, 'null']
+          maxLength: 300
+          description: |
+            INTERPRET 专属：一句话通俗结论。不得使用确定性诊断措辞；
+            模型拒答时为 null（拒答原因见 refusalReason）。
+        sections:
+          type: array
+          description: |
+            INTERPRET 专属：分节解释（标题 + 通俗正文 + 是否指向异常项）。
+            拒答时为空数组，不得用空数组冒充「暂无可解读内容」。
+          items:
+            type: object
+            required: [title, body]
+            properties:
+              title: {type: string, maxLength: 60}
+              body: {type: string, maxLength: 1000}
+              abnormal: {type: [boolean, 'null'], description: null = 未判定，不显示异常标记。}
+      additionalProperties: true
+
+    Citation:
+      type: object
+      required: [sourceId, title]
+      properties:
+        sourceId: {type: string, maxLength: 120}
+        title: {type: string, maxLength: 120}
+        version: {type: [string, 'null'], maxLength: 40}
+        effectiveFrom: {type: [string, 'null'], format: date}
+        reviewStatus:
+          type: [string, 'null']
+          description: 知识条目的审核状态。未通过医学审核的资料**不得**进入生成依据，也不得作为来源展示。
+          enum: [APPROVED, PENDING_REVIEW, RETIRED, null]
+        score: {type: [number, 'null'], minimum: 0, maximum: 1, description: 检索相似度。**不是**医学置信度，不得展示为"匹配度 92%"来暗示结论可靠。}
+
+    SafetyNotice:
+      type: object
+      required: [emergency, level]
+      properties:
+        emergency: {type: boolean, description: 为 `true` 时界面必须先展示就医/120 指引，不得被生成内容替代。}
+        level: {type: string, enum: [INFO, CAUTION, URGENT, EMERGENCY]}
+        message: {type: string, maxLength: 300}
+        provenance: {$ref: '#/components/schemas/ProvenanceType'}
+        ruleSetVersion: {type: [string, 'null'], maxLength: 40}
+
+    ProvenanceType:
+      type: string
+      description: 内容来源类型。必须随内容一起向下游传递，用户有权知道看的是规则结果、AI 生成还是人工审核过的内容。
+      enum: [USER_INPUT, RULE_RESULT, AI_GENERATED, HUMAN_REVIEWED]
+
+    TaskError:
+      type: [object, 'null']
+      description: 仅在 `FAILED` 时出现。
+      required: [code, message, retryable]
+      properties:
+        code:
+          type: string
+          description: 稳定错误码。上游据此分支，不解析 `message` 文本。
+          examples: [MODEL_UNAVAILABLE, MODEL_TIMEOUT, CONTEXT_TOO_LONG, RETRIEVAL_EMPTY,
+                     ASR_BUSY, ASR_TIMEOUT, TTS_UNAVAILABLE, QUEUE_FULL, CAPABILITY_UNAVAILABLE]
+        message: {type: string, maxLength: 300, description: 面向运维的说明。不得含堆栈、模型绝对路径、内网地址、第三方原始报文或用户原文。}
+        dependency: {type: [string, 'null'], enum: [ollama, redis, qdrant, tts_provider, asr_model, null], description: 降级来源，供上游决定隐藏入口还是仅保留文字。}
+        retryable: {type: boolean, description: 上游是否可复用同一 `Idempotency-Key` 重试。}
+
+    ErrorResponse:
+      type: object
+      required: [code, message, requestId, retryable]
+      properties:
+        code: {type: string}
+        message: {type: string, description: 不含堆栈、内网地址或用户原文。}
+        requestId: {type: string}
+        traceId: {type: [string, 'null']}
+        dependency: {type: [string, 'null'], enum: [ollama, redis, qdrant, tts_provider, asr_model, null]}
+        retryable: {type: boolean}
+        serverTime: {type: string, format: date-time}
+
+    Envelope:
+      type: object
+      required: [code, message, requestId, serverTime]
+      properties:
+        code: {type: string, const: OK}
+        message: {type: string}
+        requestId: {type: string}
+        serverTime: {type: string, format: date-time}
+        meta: {type: object, additionalProperties: true}
+
+    OkTask:
+      allOf: [{$ref: '#/components/schemas/Envelope'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/Task'}}}]
+
+    ProbeResult:
+      type: object
+      required: [status]
+      properties:
+        status: {type: string, enum: [ok]}
+        uptimeSeconds: {type: [number, 'null'], minimum: 0}
+        version: {type: [string, 'null'], maxLength: 40, description: 构建版本；不含内网地址与配置细节。}
+
+    ReadinessResult:
+      type: object
+      required: [status, dependencies]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, down]
+          description: |
+            `degraded` 表示部分能力不可用但服务仍可响应——编排器不得据此重启实例。
+            只有核心依赖全不可用才是 `down`。
+        dependencies:
+          type: array
+          items:
+            type: object
+            required: [name, status]
+            properties:
+              name: {type: string, enum: [redis, qdrant, ollama, asr_model, tts_provider]}
+              status: {type: string, enum: [available, degraded, unavailable]}
+              detail: {type: string, maxLength: 200, description: 可读说明。不得含绝对路径、内网地址、凭据或队列中任务的任何内容。}
+              latencyMs: {type: [integer, 'null'], minimum: 0}
+        models:
+          type: array
+          description: 各模型的加载状态。权重缺失时如实报告 `unavailable`，而不是让调用方在运行时才发现。
+          items:
+            type: object
+            required: [role, status]
+            properties:
+              role: {type: string, enum: [small-default, large-upgrade, asr, embedding]}
+              modelId: {type: [string, 'null'], maxLength: 60}
+              status: {type: string, enum: [loaded, loading, not_loaded, unavailable]}
+              resident: {type: [boolean, 'null'], description: 是否常驻内存。大模型按需加载时通常为 `false`。}
+
+# ============================================================================
+# 文档级扩展
+# ============================================================================
+
+x-boundary:
+  description: 强制边界，由 tools/check-v4-contracts.js 校验。
+  rules:
+    - 本文件中的任何路径都不得出现在网关的对外路由表中，也不得出现在 miniprogram/config/api.js 里。
+    - 本文件与 business-openapi.yaml 的路径集合不得重叠：重叠意味着同一路径有两个归属，路由将不可预测。
+    - 小程序可见的 AI 能力一律经 Spring Boot；FastAPI 不签发用户令牌，也不写业务库。
+    - 语音能力（ASR/TTS）同样如此：客户端调 /api/v1/voice/*（Spring Boot），不调本服务。
+
+x-open-items:
+  - id: O-02
+    title: 任务终态回传方式未定稿
+    impact: |
+      回调端点的路径与载荷未定稿（见 docs/v4/04 第 3 节）。因此本文件不声明回传端点，
+      Spring Boot 侧以轮询 GET /internal/v1/tasks/{taskId} 为唯一权威路径。
+    until_resolved: 任何实现都不得以"等待回调"为由把任务永久留在 RUNNING；轮询必须有总超时预算，超时按 EXPIRED 处理。
+  - id: O-01
+    title: 对象存储直传与代理未定
+    impact: |
+      音频与图片的上传路径未定。本文件不承担上传职责，也不接收大文件字节；
+      ASR 只接收 Spring Boot 已校验并转码后的音频引用或受控流。
+    until_resolved: 不得在客户端与对象存储之间建立任何绕过 Spring Boot 校验的通道。
+  - id: O-03
+    title: 缓存键字段命名
+    impact: |
+      本文件的 Task 模型已暴露参与缓存键的全部字段（modelId / modelVersion / quantization /
+      promptTemplateVersion / policyVersion / knowledgeSnapshot / voice / locale /
+      generationParameters），与 docs/v4/02 第 8 节、docs/v4/04 第 9.2 节的字段集一致。
+    until_resolved: 字段集变更必须同时改两处文档与本契约，任何一处单独变更都会让缓存失效判断出错。

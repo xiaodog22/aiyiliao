@@ -1,0 +1,496 @@
+/* packageContent/pages/detail —— 科普详情（设计稿 18 图文 / 19 视频，1391×3014，1rpx ≈ 1.8547px）
+   ⚠️ navigationStyle = custom：导航栏自绘并吸顶，页面根节点用内联 padding-top: navH(px) 让位。
+   ⚠️ 尺寸一律 rpx；600px 断点内全部折 px（÷2），含 calc(…rpx) 与 border-width。 */
+
+/* ================= 页面根 ================= */
+/* 页面根：**必须清掉全局 .page 的 32rpx 内边距** —— 各区块自己控左右边距
+   （视频播放器要通栏、标题区 32rpx、封面 32rpx），不清会变成双倍边距。
+   顶部让位由 wxml 内联 style="padding-top: navH px" 提供（内联优先级高于本类）。 */
+.dp-page {
+  padding: 0;
+  padding-bottom: calc(120rpx + env(safe-area-inset-bottom));
+  background: var(--card);       /* 设计稿 18 整页白底（非 --bg），长文阅读更干净 */
+}
+
+/* ================= 自定义导航栏（吸顶） ================= */
+.dp-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 100;
+  background: var(--card);
+}
+
+/* 实测：内容中心 y≈230px、图标左边缘 38px；返回箭头 36rpx 居中在 88rpx 热区里 */
+.dp-nav-bar {
+  display: flex;
+  align-items: center;
+  height: 88rpx;
+  padding: 0 8rpx 0 0;
+}
+
+.dp-nav-left {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dp-nav-back {
+  width: 36rpx;
+  height: 36rpx;
+}
+
+.dp-nav-title {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dp-nav-right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* 实测两图标中心距 183px=99rpx → 88rpx 热区 + 11rpx 间隙 */
+.dp-nav-btn {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 11rpx;
+}
+
+.dp-nav-ic {
+  width: 40rpx;
+  height: 40rpx;
+}
+
+/* button 重置：默认带边框/背景/行高，open-type=share 必须用 button */
+.dp-nav-share {
+  padding: 0;
+  margin-right: 0;
+  background: transparent;
+  border: none;
+  line-height: 1;
+}
+.dp-nav-share::after { border: none; }
+
+/* ================= 图文：标题区 ================= */
+/* 实测：导航栏底 337 → 标题字形顶 394 = 57px；标题字形高 73px=39rpx、行距 104px=56rpx */
+.dp-head {
+  padding: 31rpx 32rpx 0;
+}
+
+.dp-title {
+  font-size: var(--font-title);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.4;
+}
+
+/* 实测：标题底 568 → meta 顶 628 = 60px；meta 字形高 45px=24rpx = --font-caption */
+.dp-meta {
+  display: flex;
+  align-items: center;
+  margin-top: 16rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.5;
+}
+
+/* 分类 chip：设计稿 18 的 meta 是纯灰字（科室 · 时长 · 日期），没有 chip；
+   按复刻要求补 category —— 做成小胶囊内嵌在 meta 行首，不额外占一行。 */
+.dp-chip {
+  flex-shrink: 0;
+  margin-right: 12rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  background: var(--accent-soft);
+  color: var(--primary);
+  font-size: var(--font-caption);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.dp-meta-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ================= 图文：通栏封面 ================= */
+/* 实测：meta 底 672 → 封面顶 736 = 64px；封面 1277×676px = 688×364rpx（边距 31rpx） */
+.dp-hero {
+  margin: 34rpx 32rpx 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--accent-soft);   /* 图片加载前的底色，避免白闪 */
+}
+
+.dp-hero-img {
+  display: block;
+  width: 100%;
+}
+
+/* ================= 图文：分节正文 ================= */
+/* 实测：封面底 1411 → 第一节标题顶 1503 = 92px=50rpx；节与节之间 145px=78rpx */
+.dp-sec {
+  padding: 0 32rpx;
+  margin-top: 50rpx;
+}
+
+.dp-sec + .dp-sec {
+  margin-top: 78rpx;
+}
+
+/* 实测节标题字形高 54px=29rpx，与正文同字号，靠 700 字重区分 */
+.dp-sec-h {
+  font-size: var(--font-body);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.5;
+  margin-bottom: 20rpx;
+}
+
+/* 实测行距 94px=51rpx ÷ 30rpx 字号 = 1.7 */
+.dp-sec-p {
+  font-size: var(--font-body);
+  color: var(--text-main);
+  line-height: 1.7;
+}
+
+.dp-sec-p + .dp-sec-p {
+  margin-top: 22rpx;
+}
+
+/* ================= 小贴士 / 观看提示 ================= */
+/* 实测小贴士块 1276×236px = 688×127rpx（与封面同宽），浅蓝底 */
+.dp-tip {
+  display: flex;
+  align-items: flex-start;
+  margin: 50rpx 32rpx 0;
+  padding: 26rpx 24rpx;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+}
+
+/* 视频观看提示的版式钩子（当前与 .dp-tip 同版式，保留用于后续差异化） */
+.dp-tip-video { display: flex; }
+
+.dp-tip-ic {
+  width: 32rpx;
+  height: 32rpx;
+  flex-shrink: 0;
+  margin-top: 4rpx;
+}
+
+.dp-tip-t {
+  flex: 1;
+  min-width: 0;
+  margin-left: 12rpx;
+  font-size: var(--font-caption);
+  color: var(--primary-dark);
+  line-height: 1.6;
+}
+
+/* 视频的观看提示是多条列表，用同一浅蓝底但纵向排列 */
+.dp-tip-body {
+  flex: 1;
+  min-width: 0;
+  margin-left: 12rpx;
+}
+
+.dp-tip-h {
+  font-size: var(--font-caption);
+  font-weight: 700;
+  color: var(--primary-dark);
+  line-height: 1.6;
+}
+
+.dp-tip-i {
+  margin-top: 8rpx;
+  padding-left: 22rpx;
+  position: relative;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+
+/* 列表点：CSS 圆点（不用字符箭头 / emoji） */
+.dp-tip-i::before {
+  content: '';
+  position: absolute;
+  left: 4rpx;
+  top: 16rpx;
+  width: 8rpx;
+  height: 8rpx;
+  border-radius: 50%;
+  background: var(--primary);
+  opacity: 0.55;
+}
+
+/* ================= 视频 ================= */
+/* 实测：通栏黑底 y 367–1287 = 921px = 497rpx；16:9 画面居中 letterbox */
+.dp-video-wrap {
+  width: 100%;
+  height: 497rpx;
+  /* 视频 letterbox 必须纯黑：令牌表无黑色，属 §10 颜色白名单的显式例外 */
+  background: #000000;
+}
+
+.dp-video {
+  width: 100%;
+  height: 100%;
+}
+
+.dp-video-err {
+  margin: 0;
+  padding: 20rpx 32rpx;
+  background: var(--amber-soft);
+  font-size: var(--font-caption);
+  color: var(--amber-text);
+  line-height: 1.6;
+}
+
+/* 视频下方白卡：实测顶 1348（视频底 + 61px=33rpx），宽 1307px=705rpx */
+.dp-card {
+  margin: 32rpx;
+  padding: 32rpx;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+/* 实测卡内标题字形高 70px=38rpx（单行）→ 与图文标题同用 --font-title */
+.dp-card .dp-title {
+  line-height: 1.45;
+}
+
+.dp-card .dp-meta {
+  margin-top: 14rpx;
+}
+
+/* 摘要：实测两行字形高 53px=29rpx、行距 93px=50rpx → 1.7 */
+.dp-summary {
+  margin-top: 26rpx;
+  font-size: var(--font-body);
+  color: var(--text-sub);
+  line-height: 1.7;
+}
+
+/* ================= 相关推荐 ================= */
+/* 实测区块标题字形高 65px=35rpx → --font-h2 */
+.dp-rel {
+  margin-top: 56rpx;
+  padding: 0 32rpx;
+}
+
+.dp-rel-h {
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.4;
+}
+
+.dp-rel-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20rpx;
+  margin-top: 24rpx;
+}
+
+/* 实测卡片封面高 290px=156rpx；卡片本身无白底（图 + 文字直接排在页面底上） */
+/* 网格子项只作钩子：不加白底，仅约束长标题不顶破两列 */
+.dp-rel-card { min-width: 0; }
+
+.dp-rel-cover {
+  position: relative;
+  width: 100%;
+  height: 156rpx;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--accent-soft);
+}
+
+.dp-rel-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.dp-rel-art {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--hero-grad);
+}
+
+.dp-rel-ic {
+  width: 72rpx;
+  height: 72rpx;
+  opacity: 0.9;
+}
+
+/* 实测卡片标题字形高 54px=29rpx，两行截断 */
+.dp-rel-t {
+  margin-top: 16rpx;
+  font-size: var(--font-body);
+  color: var(--text-main);
+  font-weight: 600;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+/* ================= 页脚声明 ================= */
+.dp-note {
+  padding: 40rpx 32rpx 24rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.65;
+}
+
+/* ================= 底部互动栏（固定） ================= */
+/* 设计稿 18/19 都没画底部栏；按复刻要求补：点赞 / 收藏 / 分享。
+   栏高 96rpx（> 88rpx 触控线），图标 40rpx + 文字 caption。 */
+.dp-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  height: calc(96rpx + env(safe-area-inset-bottom));
+  padding: 0 16rpx env(safe-area-inset-bottom);
+  background: var(--card);
+  border-top: 1rpx solid var(--border);
+  box-sizing: border-box;
+}
+
+.dp-bar-i {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 96rpx;
+  color: var(--text-sub);
+}
+
+.dp-bar-ic {
+  width: 40rpx;
+  height: 40rpx;
+}
+
+.dp-bar-t {
+  margin-top: 2rpx;
+  font-size: var(--font-caption);
+  line-height: 1.3;
+}
+
+/* 已点赞：文字转主色（图标由 thumbUp / thumbUpGray 切换，PNG 不能靠 CSS 着色） */
+.dp-bar-on .dp-bar-t { color: var(--primary); }
+
+/* 已收藏：文字用薄荷语义色（避免与"点赞"同色，两态可区分） */
+.dp-bar-on-star .dp-bar-t { color: var(--mint-text); }
+
+/* button 重置（分享） */
+.dp-bar-share {
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  line-height: 1;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+.dp-bar-share::after { border: none; }
+
+/* ================= 平板断点（≥600px）：rpx → px（÷2）+ 主栏 375px 居中 =================
+   ⚠️ 每个含 rpx 的选择器都要在此重声明，calc(…rpx) 也要改。 */
+@media (min-width: 600px) {
+  .dp-page {
+    max-width: 375px;
+    margin: 0 auto;
+    padding-bottom: calc(60px + env(safe-area-inset-bottom));
+  }
+
+  /* 导航栏与底部栏是 fixed：宽屏下同样收成 375px 主栏、水平居中 */
+  .dp-nav {
+    left: 50%;
+    right: auto;
+    width: 375px;
+    margin-left: -187.5px;
+  }
+
+  .dp-nav-bar { height: 44px; padding: 0 4px 0 0; }
+  .dp-nav-left { width: 44px; height: 44px; }
+  .dp-nav-back { width: 18px; height: 18px; }
+  .dp-nav-btn { width: 44px; height: 44px; margin-left: 5.5px; }
+  .dp-nav-ic { width: 20px; height: 20px; }
+
+  .dp-head { padding: 16px 16px 0; }
+  .dp-meta { margin-top: 8px; }
+  .dp-chip { margin-right: 6px; padding: 2px 7px; }
+
+  .dp-hero { margin: 17px 16px 0; }
+
+  .dp-sec { padding: 0 16px; margin-top: 25px; }
+  .dp-sec + .dp-sec { margin-top: 39px; }
+  .dp-sec-h { margin-bottom: 10px; }
+  .dp-sec-p + .dp-sec-p { margin-top: 11px; }
+
+  .dp-tip { margin: 25px 16px 0; padding: 13px 12px; }
+  .dp-tip-ic { width: 16px; height: 16px; margin-top: 2px; }
+  .dp-tip-t, .dp-tip-body { margin-left: 6px; }
+  .dp-tip-i { margin-top: 4px; padding-left: 11px; }
+  .dp-tip-i::before { left: 2px; top: 8px; width: 4px; height: 4px; }
+
+  .dp-video-wrap { height: 248px; }
+  .dp-video-err { padding: 10px 16px; }
+
+  .dp-card { margin: 16px; padding: 16px; }
+  .dp-card .dp-meta { margin-top: 7px; }
+  .dp-summary { margin-top: 13px; }
+
+  .dp-rel { margin-top: 28px; padding: 0 16px; }
+  .dp-rel-grid { gap: 10px; margin-top: 12px; }
+  .dp-rel-cover { height: 78px; }
+  .dp-rel-ic { width: 36px; height: 36px; }
+  .dp-rel-t { margin-top: 8px; }
+
+  .dp-note { padding: 20px 16px 12px; }
+
+  .dp-bar {
+    left: 50%;
+    right: auto;
+    width: 375px;
+    margin-left: -187.5px;
+    height: calc(48px + env(safe-area-inset-bottom));
+    padding: 0 8px env(safe-area-inset-bottom);
+    border-top-width: 1px;
+  }
+
+  .dp-bar-i { height: 48px; }
+  .dp-bar-ic { width: 20px; height: 20px; }
+  .dp-bar-t { margin-top: 1px; }
+}

@@ -1,0 +1,68 @@
+<!--
+  pages/doctor/personal —— 个人管理（医生端）
+  版式：design-output/医生端/E-医生端/15-医生个人管理.png（1391×3014，1rpx ≈ 1.8547px）
+
+  ① 自绘导航：白底 + 蓝色返回箭头 + 居中「个人管理」（右侧胶囊由微信自绘）
+  ② 医生信息卡：浅蓝渐变卡；左侧 112rpx 头像；右侧「姓名 + 职称」同行、科室、脱敏手机
+  ③ 账号管理分组卡：排班设置 / 账号安全 / 消息通知（蓝色线性图标 + 右侧箭头）
+  ④ 版本号（居中灰字）+ 退出登录（设计稿无，按需求保留：医生端唯一退出路径）
+
+  ⚠️ 数据：GET /api/v1/me → displayName / avatarUrl / maskedPhone；
+     科室与职称当前**无接口下发**（见遗留清单），有值才渲染，不编造。
+  ⚠️ 三个功能入口（排班设置/账号安全/消息通知）均已上线对应页面（2026-10-24）。
+-->
+<view class="page theme-{{theme}} pd-page" style="padding-top: {{navH}}px;">
+
+  <view class="pd-nav" style="padding-top: {{statusBarHeight}}px;">
+    <view class="pd-nav-bar">
+      <view class="pd-nav-back" bindtap="onBack" hover-class="pd-hover"
+            aria-role="button" aria-label="返回">
+        <image class="pd-nav-back-ic" src="{{icons.chevronLeft}}" />
+      </view>
+      <view class="pd-nav-title">个人管理</view>
+    </view>
+  </view>
+
+  <!-- ② 医生信息卡 -->
+  <view class="hero-light pd-card">
+    <view class="pd-avatar">
+      <image wx:if="{{doctor.avatarUrl}}" class="pd-avatar-img" src="{{doctor.avatarUrl}}" mode="aspectFill" />
+      <image wx:else class="pd-avatar-img" src="/assets/img/avatar-default.png" mode="aspectFill" />
+    </view>
+    <view class="pd-info">
+      <view class="pd-name-line">
+        <text class="pd-name">{{doctor.name || '医生'}}</text>
+        <text wx:if="{{doctor.title}}" class="pd-title">{{doctor.title}}</text>
+      </view>
+      <view wx:if="{{doctor.dept}}" class="pd-dept">{{doctor.dept}}</view>
+      <view wx:if="{{doctor.phone}}" class="pd-phone">手机 {{doctor.phone}}</view>
+    </view>
+  </view>
+
+  <!-- ③ 账号管理 -->
+  <view class="card group-card pd-group">
+    <view class="group-head">账号管理</view>
+
+    <view class="row pd-row row-arrow pressable" data-page="schedule" bindtap="onEntry">
+      <image class="pd-row-ic" src="{{icons.calendar}}" />
+      <view class="pd-row-text">排班设置</view>
+    </view>
+
+    <view class="row pd-row row-arrow pressable" data-page="account-security" bindtap="onEntry">
+      <image class="pd-row-ic" src="{{icons.lock}}" />
+      <view class="pd-row-text">账号安全</view>
+    </view>
+
+    <view class="row pd-row row-arrow pressable" data-page="messages" bindtap="onEntry">
+      <image class="pd-row-ic" src="{{icons.bell}}" />
+      <view class="pd-row-text">消息通知</view>
+    </view>
+  </view>
+
+  <!-- ④ 版本号 + 退出登录 -->
+  <view class="pd-version">版本 {{version}}</view>
+
+  <view class="pd-logout pressable" bindtap="onLogout"
+        aria-role="button" aria-label="退出登录">退出登录</view>
+
+</view>

@@ -1,0 +1,602 @@
+/* pages/profile/voice-settings —— 音色管理
+ * 版式来源：design-output/患者端/C-个人中心/11-音色管理.png
+ * 1391×3014 → 750rpx，1rpx ≈ 1.8547px；页面左右 24rpx，卡片圆角 16rpx（测量 30px）
+ * 颜色一律走 app.wxss 令牌；≥600px 断点内全部改 px（rpx ÷ 2）
+ *
+ * 设计稿实测（design px → rpx）：
+ *   导航条 163px → 88rpx，标题墨高 63px（≈18.3px 字，令牌取 34rpx）
+ *   当前音色卡 393..775 × 43..1348 → 206rpx 高，蓝边 6px → 3rpx，圆角 30px → 16rpx
+ *   卡内：左内边距 90px→48rpx（含图标留白），图标墨 126×145px→68×78rpx，名称 40rpx/700
+ *   试听胶囊 237×92px → 128×50rpx；列表胶囊 214×84px → 115×46rpx
+ *   可选列表卡 1012..2031，三行各 ~336px → 181rpx，分割线 2px → 1rpx
+ */
+
+/* ============ 页面与自绘导航 ============ */
+.vs-page {
+  padding-left: 24rpx;
+  padding-right: 24rpx;
+  padding-bottom: 48rpx;
+}
+
+.vs-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  background: var(--card);
+}
+
+.vs-nav-bar {
+  position: relative;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+}
+
+.vs-nav-back {
+  width: 88rpx;
+  height: 88rpx;
+  padding-left: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  box-sizing: border-box;
+}
+
+.vs-nav-back-ic {
+  width: 44rpx;
+  height: 44rpx;
+}
+
+.vs-nav-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: var(--font-h2);
+  font-weight: 600;
+  color: var(--text-main);
+  pointer-events: none;
+}
+
+.vs-hover {
+  opacity: 0.6;
+}
+
+/* ============ ② 当前默认音色（蓝边卡）============
+ * 名称左沿必须落在 163rpx（设计稿 345px - 卡左 43px = 302px）：
+ * 左内边距 28 + 图标 100 + 间隙 34 = 162rpx。
+ * 图标用的是 96×96 画布里留白的 soundWave 字形（墨占 67%×73%），
+ * 所以图片盒要比设计稿墨迹尺寸（68×78rpx）放大到 100rpx 才等大。 */
+.vs-current {
+  margin-top: 32rpx;
+  min-height: 206rpx;
+  padding: 32rpx 32rpx 32rpx 28rpx;
+  display: flex;
+  align-items: center;
+  background: var(--card);
+  border: 3rpx solid var(--primary);
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+}
+
+.vs-current-ic {
+  width: 100rpx;
+  height: 100rpx;
+  margin-right: 34rpx;
+  flex-shrink: 0;
+}
+
+.vs-current-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.vs-current-name {
+  font-size: var(--font-title);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 设计稿副标题是中性灰 (127,128,134)，令牌里最接近的是 --text-weak */
+.vs-current-sub {
+  margin-top: 8rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.4;
+}
+
+/* ============ ③ 可选音色 ============ */
+.vs-section-title {
+  margin: 64rpx 8rpx 28rpx;
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.4;
+}
+
+.vs-list {
+  padding: 0 32rpx;
+  border-radius: var(--radius-sm);
+}
+
+.vs-row {
+  display: flex;
+  align-items: center;
+  padding: 46rpx 0;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.vs-row:last-child {
+  border-bottom: none;
+}
+
+/* 选中态：整行浅蓝底（负外边距做到卡片内满宽，文字 x 不变） */
+.vs-row-sel {
+  margin-left: -32rpx;
+  margin-right: -32rpx;
+  padding-left: 32rpx;
+  padding-right: 32rpx;
+  background: var(--accent-soft);
+}
+
+.vs-row-sel:first-child {
+  border-top-left-radius: var(--radius-sm);
+  border-top-right-radius: var(--radius-sm);
+}
+
+.vs-row-sel:last-child {
+  border-bottom-left-radius: var(--radius-sm);
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+.vs-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  margin-right: 16rpx;
+}
+
+/* 行内音色图标：设计稿列表没有，按需求「每个音色卡片含图标」增补（见遗留清单） */
+.vs-row-ic {
+  width: 44rpx;
+  height: 44rpx;
+  margin-right: 16rpx;
+  flex-shrink: 0;
+}
+
+.vs-row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.vs-row-name {
+  display: flex;
+  align-items: center;
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.4;
+}
+
+.vs-row-name-t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vs-row-cur {
+  flex-shrink: 0;
+  margin-left: 12rpx;
+  padding: 2rpx 12rpx;
+  border-radius: 999rpx;
+  background: var(--accent-soft);
+  color: var(--primary);
+  font-size: var(--font-caption);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+/* 选中行底色本身就是浅蓝，chip 与灰边胶囊反过来用白底才看得见 */
+.vs-row-sel .vs-row-cur,
+.vs-row-sel .vs-pill-gray {
+  background: var(--card);
+}
+
+.vs-row-desc {
+  margin-top: 8rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.4;
+}
+
+.vs-row-ops {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* 操作热区：≥88rpx，视觉胶囊保持设计稿实测的 46rpx 高 */
+.vs-act {
+  min-width: 88rpx;
+  min-height: 88rpx;
+  margin-left: 8rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.vs-pill {
+  height: 46rpx;
+  min-width: 115rpx;
+  padding: 0 22rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2rpx solid var(--primary);
+  border-radius: 999rpx;
+  color: var(--primary);
+  font-size: var(--font-caption);
+  font-weight: 600;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+/* 当前音色卡的试听胶囊比列表里的高一档（设计稿 128×50rpx） */
+.vs-pill-lg {
+  height: 50rpx;
+  min-width: 128rpx;
+  padding: 0 26rpx;
+}
+
+.vs-pill-gray {
+  border-color: var(--border);
+  color: var(--text-sub);
+}
+
+.vs-pill-solid {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #FFFFFF;
+}
+
+.vs-pill-on {
+  opacity: 0.6;
+}
+
+.vs-del {
+  min-width: 56rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  text-align: center;
+  line-height: 1.4;
+}
+
+/* 空态 */
+.vs-empty {
+  padding: 56rpx 32rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.vs-empty-t {
+  margin-top: 16rpx;
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.vs-empty-s {
+  margin-top: 8rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
+/* ============ ④ 语速调节（设计稿无，按需求增补）============ */
+.vs-speed {
+  margin-top: 28rpx;
+  padding: 28rpx 32rpx 24rpx;
+}
+
+.vs-speed-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vs-speed-title {
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.4;
+}
+
+.vs-speed-val {
+  padding: 2rpx 16rpx;
+  border-radius: 999rpx;
+  background: var(--accent-soft);
+  color: var(--primary);
+  font-size: var(--font-caption);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+/* 触控热区 88rpx：轨道视觉 8rpx 居中，滑块 40rpx */
+.vs-speed-track {
+  position: relative;
+  height: 88rpx;
+  margin-top: 8rpx;
+}
+
+.vs-speed-rail {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 8rpx;
+  margin-top: -4rpx;
+  border-radius: 999rpx;
+  background: var(--accent-soft);
+}
+
+.vs-speed-fill {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 8rpx;
+  margin-top: -4rpx;
+  border-radius: 999rpx;
+  background: var(--primary);
+  transition: width 120ms ease;
+}
+
+.vs-speed-thumb {
+  position: absolute;
+  top: 50%;
+  width: 40rpx;
+  height: 40rpx;
+  margin-top: -20rpx;
+  margin-left: -20rpx;
+  border: 4rpx solid var(--primary);
+  border-radius: 50%;
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+  box-sizing: border-box;
+  transition: left 120ms ease;
+}
+
+.vs-speed-marks {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8rpx;
+}
+
+.vs-speed-mark {
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.4;
+}
+
+.vs-speed-mark-on {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* ============ 保存 / 提示 / 恢复 ============ */
+.vs-save {
+  margin-top: 48rpx;
+}
+
+.vs-hint {
+  margin-top: 20rpx;
+  display: flex;
+  align-items: flex-start;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
+.vs-hint image {
+  margin-right: 8rpx;
+  margin-top: 2rpx;
+  flex-shrink: 0;
+}
+
+.vs-reload {
+  margin-top: 24rpx;
+  min-height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
+.vs-reload image {
+  margin-right: 8rpx;
+}
+
+/* ============ ≥600px 平板断点：rpx ÷ 2，主栏 375px 居中（同 family / records 口径）============ */
+@media (min-width: 600px) {
+  .vs-page {
+    max-width: 375px;
+    margin: 0 auto;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-bottom: 24px;
+  }
+
+  .vs-nav-bar {
+    max-width: 375px;
+    margin: 0 auto;
+    height: 44px;
+  }
+
+  .vs-nav-back {
+    width: 44px;
+    height: 44px;
+    padding-left: 12px;
+  }
+
+  .vs-nav-back-ic {
+    width: 22px;
+    height: 22px;
+  }
+
+  .vs-current {
+    margin-top: 16px;
+    min-height: 103px;
+    padding: 16px 16px 16px 14px;
+    border-width: 1.5px;
+  }
+
+  .vs-current-ic {
+    width: 50px;
+    height: 50px;
+    margin-right: 17px;
+  }
+
+  /* 字号不在断点里写死：交给 app.wxss 的 ≥600px 令牌（--font-title 18px 等） */
+  .vs-current-sub {
+    margin-top: 4px;
+  }
+
+  .vs-section-title {
+    margin: 32px 4px 14px;
+  }
+
+  .vs-list {
+    padding: 0 16px;
+  }
+
+  .vs-row {
+    padding: 23px 0;
+    border-bottom-width: 1px;
+  }
+
+  .vs-row-sel {
+    margin-left: -16px;
+    margin-right: -16px;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .vs-row-main {
+    margin-right: 8px;
+  }
+
+  .vs-row-ic {
+    width: 22px;
+    height: 22px;
+    margin-right: 8px;
+  }
+
+  .vs-row-cur {
+    margin-left: 6px;
+    padding: 1px 6px;
+  }
+
+  .vs-row-desc {
+    margin-top: 4px;
+  }
+
+  .vs-act {
+    min-width: 44px;
+    min-height: 44px;
+    margin-left: 4px;
+  }
+
+  .vs-pill {
+    height: 23px;
+    min-width: 58px;
+    padding: 0 11px;
+    border-width: 1px;
+  }
+
+  .vs-pill-lg {
+    height: 25px;
+    min-width: 64px;
+    padding: 0 13px;
+  }
+
+  .vs-del {
+    min-width: 28px;
+  }
+
+  .vs-empty {
+    padding: 28px 16px;
+  }
+
+  .vs-empty-t {
+    margin-top: 8px;
+  }
+
+  .vs-empty-s {
+    margin-top: 4px;
+  }
+
+  .vs-speed {
+    margin-top: 14px;
+    padding: 14px 16px 12px;
+  }
+
+  .vs-speed-val {
+    padding: 1px 8px;
+  }
+
+  .vs-speed-track {
+    height: 44px;
+    margin-top: 4px;
+  }
+
+  .vs-speed-rail,
+  .vs-speed-fill {
+    height: 4px;
+    margin-top: -2px;
+  }
+
+  .vs-speed-thumb {
+    width: 20px;
+    height: 20px;
+    margin-top: -10px;
+    margin-left: -10px;
+    border-width: 2px;
+  }
+
+  .vs-speed-marks {
+    padding: 0 4px;
+  }
+
+  .vs-save {
+    margin-top: 24px;
+  }
+
+  .vs-hint {
+    margin-top: 10px;
+  }
+
+  .vs-hint image {
+    margin-right: 4px;
+    margin-top: 1px;
+  }
+
+  .vs-reload {
+    margin-top: 12px;
+    min-height: 44px;
+  }
+
+  .vs-reload image {
+    margin-right: 4px;
+  }
+}

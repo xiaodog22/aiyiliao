@@ -1,0 +1,83 @@
+<!--
+  pages/doctor/appointments —— 挂号管理（医生端患者队列）
+  版式：design-output/医生端/E-医生端/13-挂号管理.png（1391×3014，1rpx ≈ 1.8547px，逐元素实测）
+
+  ① 自定义导航栏（返回 + 居中标题；右侧胶囊由微信自绘）
+  ② 概览卡（待就诊 / 就诊中 / 已完成 / 今日总数）—— 四列等宽、居中对齐，**无列间竖线**
+     ⚠️ 设计稿只给了静态数字；本页把四列做成**可点筛选**（今日总数 = 全部），选中态仅换文字色，
+        不加任何额外控件（见 README 偏离项）。
+  ③ 患者卡：大号候诊序号 + 右上状态徽章 → 姓名（脱敏）→ 就诊时间 → 分隔线 → 右下动作
+     待就诊/待确认 = 「叫号」，就诊中 = 「完成就诊」，已完成等终态 = 右下灰字（无按钮）
+
+  ⚠️ 不伪造：手机号（138****1234）、头像在设计稿有/无，但契约 Appointment 均未下发
+     （契约 additionalProperties:false，只有 patientName / queueNumber / startTime / status），
+     故一律不渲染，也不本地拼假号。
+-->
+<view class="page theme-{{theme}} dapt-page" style="padding-top: {{navH}}px;">
+
+  <!-- ① 自定义导航栏（吸顶）：返回 + 居中标题 -->
+  <view class="dapt-nav" style="padding-top: {{statusBarHeight}}px;">
+    <view class="dapt-nav-bar">
+      <view class="dapt-nav-back" bindtap="onBack" hover-class="dapt-hover"
+            aria-role="button" aria-label="返回">
+        <image class="dapt-nav-back-ic" src="{{icons.chevronLeft}}" />
+      </view>
+      <view class="dapt-nav-title">挂号管理</view>
+    </view>
+  </view>
+
+  <!-- ② 概览 / 筛选：四列等宽，标签在上、数值在下（加载中显灰色骨架块，不显 0） -->
+  <view class="apt-stats">
+    <view wx:for="{{stats}}" wx:key="key"
+          class="ast-col {{filter === item.key ? 'ast-col-on' : ''}}"
+          data-key="{{item.key}}" bindtap="onFilter">
+      <view class="ast-label">{{item.label}}</view>
+      <view wx:if="{{loading}}" class="ast-skel"></view>
+      <!-- 失败时不再铺一条浅灰骨架（下方已有整块错误卡，会多出一条无意义占位条）：
+           改用「—」明确表达"数字未知"，既不撒谎成 0，也不像还在加载 -->
+      <view wx:elif="{{error}}" class="ast-v ast-v-mute">—</view>
+      <view wx:else class="ast-v">{{item.value}}</view>
+    </view>
+  </view>
+
+  <!-- 加载失败：图标 + 中文说明 + 实心重试按钮 -->
+  <view wx:if="{{error}}" class="state">
+    <view class="state-badge state-badge-primary"><image class="state-ic" src="{{icons.alertWhite}}" /></view>
+    <view class="state-title">挂号列表加载失败</view>
+    <view class="state-sub">{{error}}</view>
+    <view class="btn btn-primary state-btn" bindtap="fetch">重试</view>
+  </view>
+
+  <!-- 首屏加载中：卡片骨架（统计卡已有自己的骨架块） -->
+  <skeleton wx:elif="{{loading}}" loading="{{true}}" type="card" rows="3" />
+
+  <block wx:elif="{{displayed.length > 0}}">
+    <view wx:for="{{displayed}}" wx:key="id" class="apt-card">
+      <view class="apt-head">
+        <text class="apt-no">{{item.no}}</text>
+        <view class="badge {{item.statusCls}} apt-badge">{{item.status}}</view>
+      </view>
+      <view class="apt-name">{{item.name || '—'}}</view>
+      <view class="apt-when">{{item.whenText}}</view>
+      <view class="apt-actions">
+        <!-- 叫号 / 完成就诊：右下实心蓝胶囊；终态 → 灰字无按钮 -->
+        <view wx:if="{{item.canCall}}" class="apt-btn" data-id="{{item.id}}" bindtap="onCall"
+              aria-role="button" aria-label="叫号">叫号</view>
+        <view wx:elif="{{item.canFinish}}" class="apt-btn" data-id="{{item.id}}" bindtap="onFinish"
+              aria-role="button" aria-label="完成就诊">完成就诊</view>
+        <view wx:else class="apt-done">{{item.status}}</view>
+      </view>
+    </view>
+
+    <view wx:if="{{hasMore}}" class="load-more">上拉加载更多</view>
+    <view wx:elif="{{truncated}}" class="load-more">服务端还有更多，上拉继续加载</view>
+    <view wx:else class="load-all">已显示全部 {{displayed.length}} 条</view>
+  </block>
+
+  <view wx:else class="state">
+    <view class="state-badge state-badge-gray"><image class="state-ic" src="{{icons.usersGray}}" /></view>
+    <view class="state-title">{{filterTitle ? '暂无' + filterTitle + '患者' : '暂无挂号'}}</view>
+    <view class="state-sub">有新预约时会自动出现在这里</view>
+  </view>
+
+</view>

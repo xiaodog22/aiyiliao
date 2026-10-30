@@ -1,0 +1,190 @@
+<!--
+  pages/health/health.wxml —— AI 养生（TabBar 页）
+
+  版式逐项对照 design-output/患者端/B-TabBar补充/05-AI养生.png
+  与「页面复刻文档」§四.5：
+    ① 顶部 Hero：大标题「通小安 AI 养生助手」+ 白色圆角气泡（带小尾巴）+ 右侧机器人插画
+    ② 快捷功能宫格（2×2）：图标底板 88rpx / 圆角 24rpx（浅蓝、薄荷交替）+ 文案
+    ③ 对话气泡区（复用问诊页气泡规范）：AI 左浅蓝气泡 + 小安圆形头像 / 用户右蓝色气泡 /
+       选项 chip 浅蓝胶囊
+    ④ 养生方案卡：**内联在对话流里**（设计稿位置就是对话末尾，不是独立结果页）——
+       标题「三天养生方案」+ 右上朗读/投屏小圆钮 + 每日小标题 + 带图标的条目
+    ⑤ 底部输入栏：白胶囊输入 + 麦克风 + 「发」蓝色按钮
+
+  ⚠️ 图标纪律：设计稿的 🌙 / 🍲 / 🏃 是 emoji 画法，本项目禁用 emoji，
+     统一取 utils 图标表（icons 模块）里的同义字形（moonPurple / bowlMint / activity），
+     颜色变体自带着色，无需另加色块。
+  ⚠️ 页面固定一屏（项目规范）：flex column + .chat-area flex:1 + .input-bar flex-shrink:0；
+     输入条**常驻**（生成中只置灰不隐藏），否则生成结束时整条会突然出现、内容跳一下。
+-->
+<view class="page theme-{{theme}} health-page">
+
+  <scroll-view class="chat-area" scroll-y scroll-into-view="bottom-anchor" scroll-with-animation>
+
+    <!-- ============ ① Hero：标题 + 白气泡 + 机器人 ============ -->
+    <view class="hx-hero anim-rise">
+      <view class="hx-hero-body">
+        <view class="hero-title-lg hx-hero-title">通小安 AI 养生助手</view>
+        <view class="hero-bubble hx-bubble">今天想从哪里开始照顾自己？</view>
+      </view>
+      <image class="hx-mascot" src="/assets/home/xiaoan-robot.png" mode="aspectFit" />
+    </view>
+
+    <!-- ============ ② 快捷功能宫格（2×2）============
+         行为：不管当前在欢迎态 / 问答中 / 已出方案，点宫格 = **以该主题重开一轮**
+         （见 health.js#onQuickAsk），所以本块常驻，不再随问答流隐藏。 -->
+    <view class="act-grid anim-rise anim-d1">
+      <view class="act-row">
+        <view class="act-card pressable" data-text="生成三天养生方案" bindtap="onQuickAsk" aria-role="button">
+          <view class="tile tile-blue"><image class="tile-ic" src="{{icons.calendar}}" /></view>
+          <view class="act-text">生成三天养生方案</view>
+        </view>
+        <view class="act-card pressable" data-text="改善睡眠" bindtap="onQuickAsk" aria-role="button">
+          <view class="tile tile-mint"><image class="tile-ic" src="{{icons.moon}}" /></view>
+          <view class="act-text">改善睡眠</view>
+        </view>
+      </view>
+      <view class="act-row">
+        <view class="act-card pressable" data-text="健脾养胃食谱" bindtap="onQuickAsk" aria-role="button">
+          <view class="tile tile-blue"><image class="tile-ic" src="{{icons.bowl}}" /></view>
+          <view class="act-text">健脾养胃食谱</view>
+        </view>
+        <view class="act-card pressable" data-text="老年人运动" bindtap="onQuickAsk" aria-role="button">
+          <view class="tile tile-mint"><image class="tile-ic" src="{{icons.personStanding}}" /></view>
+          <view class="act-text">老年人运动</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- ============ ③ 对话气泡区 ============ -->
+    <view
+      wx:for="{{messages}}"
+      wx:for-item="msg"
+      wx:key="id"
+      class="msg {{msg.role === 'user' ? 'msg-user' : 'msg-ai'}} msg-in"
+    >
+      <view wx:if="{{msg.role === 'ai'}}" class="ai-avatar">
+        <image class="ai-avatar-img" src="/assets/home/xiaoan-robot.png" mode="aspectFit" />
+      </view>
+      <view class="msg-body">
+        <view class="msg-bubble {{msg.role === 'user' ? 'bubble-user' : 'bubble-ai'}}">{{msg.content}}</view>
+        <!-- 选项（适老：能选不输入）。data-qi 带上该消息属于第几题，
+             JS 侧据此丢弃「上一题残留 chip」的点击，避免污染 care-plan 入参。 -->
+        <view wx:if="{{msg.options}}" class="opt-wrap">
+          <view
+            wx:for="{{msg.options}}"
+            wx:for-item="opt"
+            wx:key="*this"
+            class="opt-chip pressable"
+            data-text="{{opt}}"
+            data-qi="{{msg.qIndex}}"
+            bindtap="onPick"
+            aria-role="button"
+          >{{opt}}</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 生成中（阶段式提示；care-plan 约 1-2 分钟） -->
+    <view wx:if="{{generating}}" class="msg msg-ai">
+      <view class="ai-avatar">
+        <image class="ai-avatar-img" src="/assets/home/xiaoan-robot.png" mode="aspectFit" />
+      </view>
+      <view class="thinking-bubble">
+        <view class="spinner"></view>
+        <text class="thinking-text">{{genStep}}</text>
+      </view>
+    </view>
+
+    <!-- ============ ④ 养生方案卡（内联在对话流，设计稿位置）============ -->
+    <block wx:if="{{stage === 'result'}}">
+      <view class="card summary-card">
+        <view class="plan-head">
+          <view class="summary-title">三天养生方案</view>
+          <view class="plan-head-ops">
+            <view
+              class="plan-op pressable"
+              bindtap="onRead"
+              aria-role="button"
+              aria-label="{{speaking ? '停止朗读方案' : '语音播报方案'}}"
+            >
+              <image class="plan-op-ic" src="{{speaking ? icons.volumeOff : icons.volume}}" />
+            </view>
+            <view class="plan-op pressable" bindtap="onCast" aria-role="button" aria-label="投屏到大屏">
+              <image class="plan-op-ic" src="{{icons.monitor}}" />
+            </view>
+          </view>
+        </view>
+        <view wx:if="{{summary}}" class="summary-sub">{{summary}}</view>
+
+        <!-- 按天堆叠：日期小标题 + 三条建议（睡眠 / 膳食 / 运动各带同义图标） -->
+        <block wx:if="{{plan.days.length}}">
+          <view wx:for="{{plan.days}}" wx:key="label" class="plan-day">
+            <view class="plan-day-label">{{item.label}}</view>
+            <view class="plan-day-items">
+              <view wx:for="{{item.sleep}}" wx:for-item="it" wx:key="*this" class="plan-day-item">
+                <image class="plan-item-ic" src="{{icons.moonPurple}}" /><text>{{it}}</text>
+              </view>
+              <view wx:for="{{item.diet}}" wx:for-item="it" wx:key="*this" class="plan-day-item">
+                <image class="plan-item-ic" src="{{icons.bowlMint}}" /><text>{{it}}</text>
+              </view>
+              <view wx:for="{{item.exercise}}" wx:for-item="it" wx:key="*this" class="plan-day-item">
+                <image class="plan-item-ic" src="{{icons.activity}}" /><text>{{it}}</text>
+              </view>
+            </view>
+          </view>
+        </block>
+
+        <!-- 契约 /api/v1/care-plans 结构：suggestions[]（title + detail），与按天结构并存 -->
+        <block wx:if="{{plan.suggestions.length}}">
+          <view class="plan-day-label plan-sg-label">调理建议</view>
+          <view wx:for="{{plan.suggestions}}" wx:key="title" class="sg-item">
+            <view class="sg-t">{{item.title}}</view>
+            <view class="sg-d">{{item.detail}}</view>
+          </view>
+        </block>
+
+        <!-- 后端下发的边界声明（limitations）：生活方式参考、不构成处方 -->
+        <view wx:if="{{plan.limitations}}" class="plan-lim">{{plan.limitations}}</view>
+      </view>
+
+      <!-- 页面级合规免责：紧贴方案卡（随内容滚动，不占固定条）
+           ⚠️ 文案逐字保留：不删、不改语义（UIUX §6.1）。 -->
+      <view class="notice-bar hx-note">
+        <image class="notice-bar-ic" src="{{icons.shield}}" />
+        <view class="notice-bar-text">养生方案由 AI 生成，仅供参考，不构成诊疗意见。</view>
+      </view>
+    </block>
+
+    <view id="bottom-anchor" class="anchor"></view>
+  </scroll-view>
+
+  <!-- 语音提示 -->
+  <view wx:if="{{voiceHint}}" class="voice-hint">{{voiceHint}}</view>
+
+  <!-- ============ ⑤ 底部输入栏（常驻；生成中置灰）============ -->
+  <view class="safe-bottom input-bar">
+    <view class="input-wrap {{recording ? 'input-wrap-on' : ''}}">
+      <input
+        class="input-field"
+        placeholder="问问养生问题..."
+        placeholder-class="ph"
+        value="{{input}}"
+        bindinput="onInput"
+        confirm-type="send"
+        bindconfirm="onSend"
+        disabled="{{status !== 'IDLE' || generating}}"
+      />
+      <view class="voice-btn pressable" bindtap="onVoice" aria-role="button" aria-label="语音输入">
+        <image class="ic-md" src="{{recording ? '/assets/icons/mic_white.png' : icons.mic}}" />
+      </view>
+    </view>
+    <view
+      class="send-btn {{(status !== 'IDLE' || generating) ? 'send-btn-disabled' : 'pressable'}}"
+      bindtap="onSend"
+      aria-role="button"
+      aria-label="发送"
+    >发</view>
+  </view>
+
+</view>

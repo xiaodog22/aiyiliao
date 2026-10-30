@@ -1,0 +1,5 @@
+# 测试档（prodtest）默认附件签名密钥（2026-10-23 附件签名 fail-fast 收口后补齐）。
+# 与 application-itest.yml 同理：给未显式配置 sign-secret 的 prodtest 用例提供默认值。
+app:
+  attachment:
+    sign-secret: test-sign-secret-0123456789abcdef

@@ -1,0 +1,81 @@
+<!-- 智能电视投屏（参考图 12）：设备搜索空态 / 选择投屏内容 / 大屏预览
+     ⚠️ 本页是**纯前端演示**：设备发现/配对接口未接入，初始即「尚未发现设备」，
+     页面底部必须保留"演示版"标注 —— 不伪装成已连接真实设备。 -->
+<view class="page theme-{{theme}}">
+
+  <!-- ① 投屏设备（参考图：卡片标题 + 右侧「搜索设备」动作 + 未发现设备空态） -->
+  <view class="card">
+    <view class="cs-head">
+      <view class="card-title cs-title">投屏设备</view>
+      <view class="cs-scan pressable" bindtap="onRescan">
+        搜索设备
+        <image class="cs-scan-ic" src="{{icons.refresh}}" />
+      </view>
+    </view>
+
+    <!-- 空态（参考图：尚未发现设备 + 同 Wi-Fi 提示）。后端设备发现接口未接入，
+         所以列表初始即空；真实发现接口接通后，设备行才会替换本空态。 -->
+    <view wx:if="{{devices.length === 0}}" class="cs-empty">
+      <image class="cs-empty-img" src="{{emptyNetwork}}" mode="aspectFit" />
+      <view class="cs-empty-t">尚未发现设备</view>
+      <view class="cs-empty-s">请确保手机与电视在同一 Wi-Fi 网络</view>
+    </view>
+
+    <view wx:for="{{devices}}" wx:key="ip" class="cs-dev">
+      <view class="tile cs-dev-ic"><image class="tile-ic" src="{{icons.tv}}" /></view>
+      <view class="cs-dev-body">
+        <view class="cs-dev-n">{{item.name}}</view>
+        <view class="cs-dev-ip">{{item.ip}}</view>
+      </view>
+      <view
+        class="cs-btn {{item.connected ? 'cs-btn-on' : ''}}"
+        data-index="{{index}}"
+        bindtap="onConnect"
+      >{{item.connected ? '已连接' : '连接'}}</view>
+    </view>
+  </view>
+
+  <!-- ② 选择投屏内容（参考图：三个图标底板 + 名称，等宽排布） -->
+  <view class="card">
+    <view class="card-title">选择投屏内容</view>
+    <view class="cs-grid">
+      <view
+        wx:for="{{functions}}"
+        wx:key="mode"
+        class="cs-fn {{previewMode === item.mode ? 'cs-fn-on' : ''}}"
+        data-mode="{{item.mode}}"
+        bindtap="switchFunc"
+      >
+        <view class="cs-fn-ic"><image class="cs-fn-img" src="{{icons[item.icon]}}" /></view>
+        <view class="cs-fn-n">{{item.short}}</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ③ 大屏预览（参考图：电视机框 + 蓝色标题条 + 大字号叫号） -->
+  <view class="card">
+    <view class="card-title">大屏预览</view>
+    <view class="cs-tv">
+      <view class="cs-screen">
+        <view class="cs-bar">{{preview.title}}</view>
+        <view class="cs-body">
+          <block wx:if="{{previewMode === 'queue'}}">
+            <view class="cs-cur">{{preview.current.no}} 请就诊{{preview.current.room}}</view>
+            <view class="cs-wait">等候就诊：{{preview.waitingText}}</view>
+          </block>
+          <block wx:else>
+            <image class="cs-cur-ic" src="{{icons.projector}}" />
+            <view class="cs-cur cs-cur-sm">{{previewModeText}}</view>
+            <view class="cs-wait">已推送至电视端播放，请在大屏上查看。</view>
+          </block>
+        </view>
+      </view>
+      <view class="cs-foot cs-foot-l"></view>
+      <view class="cs-foot cs-foot-r"></view>
+    </view>
+    <view class="cs-preview-note">当前预览：{{previewModeText}}</view>
+  </view>
+
+  <view class="cast-tip">演示版：投屏为本地模拟，接入后端后替换为 DLNA / 局域网协议。</view>
+
+</view>

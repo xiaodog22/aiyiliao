@@ -1,0 +1,160 @@
+/* pages/auth/doctor-login —— 医生登录（对齐设计图 03）
+   浅蓝渐变背景 + 深蓝圆底白医院图标 + 标题/副标题 + 白卡（单输入框 + 分割线 + 登录验证）。
+   ⚠️ 不再 @import auth-common.wxss（其毛玻璃手输表单版式与设计稿 03 完全不同）。
+   颜色一律走 page{--*} 令牌：深蓝圆底复用 --text-main（#14264C），输入框底用 --accent-soft。 */
+
+/* 本页背景：极浅蓝白渐变（与患者登录页一致） */
+page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #E9F2FE 0%, #F4F8FE 60%, #F7FAFF 100%);
+}
+
+.dl-page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 0 var(--space-page) calc(48rpx + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- 品牌区 ---- */
+.dl-brand {
+  padding-top: 130rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* 深蓝圆底：复用 --text-main（#14264C），内放白色医院建筑图标 */
+.dl-logo {
+  width: 200rpx;
+  height: 200rpx;
+  border-radius: 50%;
+  background: var(--text-main);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 16rpx 40rpx rgba(20, 38, 76, 0.24);
+}
+
+.dl-logo-img {
+  width: 104rpx;
+  height: 104rpx;
+}
+
+.dl-title {
+  margin-top: 44rpx;
+  font-size: calc(var(--font-title) + 2rpx);
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: 1rpx;
+}
+
+.dl-subtitle {
+  margin-top: 16rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+/* ---- 白卡 ---- */
+.dl-card {
+  margin-top: auto;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  padding: 48rpx 40rpx 44rpx;
+  box-shadow: 0 12rpx 40rpx rgba(31, 62, 145, 0.10);
+}
+
+/* 输入框：浅蓝灰底圆角块 + 左侧人形图标 */
+.dl-field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  background: var(--accent-soft);
+  border-radius: var(--radius-md);
+  height: 104rpx;
+  padding: 0 28rpx;
+  box-sizing: border-box;
+}
+
+.dl-field-icon {
+  width: 36rpx;
+  height: 36rpx;
+  margin-right: 16rpx;
+}
+
+.dl-field-input {
+  flex: 1;
+  height: 100%;
+  font-size: var(--font-body);
+  color: var(--text-main);
+}
+
+.dl-field-ph {
+  color: var(--text-weak);
+  font-size: var(--font-body);
+}
+
+/* 输入框下方细分割线（设计图 03） */
+.dl-divider {
+  margin: 36rpx 0 44rpx;
+  height: 1rpx;
+  background: var(--border);
+}
+
+/* 主按钮：蓝色全圆角胶囊 */
+.dl-btn-primary {
+  width: 100%;
+  height: 96rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: calc(var(--font-body) + 2rpx);
+  font-weight: 600;
+  border-radius: 999rpx;
+  padding: 0;
+  margin: 0;
+  line-height: normal;
+}
+
+.dl-btn-primary::after { border: none; }
+
+/* 协议小字行（设计图 03：登录即代表同意 用户协议 隐私政策） */
+.dl-agree {
+  margin-top: 36rpx;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.dl-agree-text {
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
+.dl-agree-link {
+  font-size: var(--font-caption);
+  color: var(--primary);
+  margin-left: 12rpx;
+  padding: 4rpx 6rpx;
+}
+
+/* ============ 平板/宽屏（600px 档）：硬编码 rpx → px（KNOWN_ISSUES #21） ============ */
+@media (min-width: 600px) {
+  .dl-brand { padding-top: 65px; }
+  .dl-logo { width: 100px; height: 100px; }
+  .dl-logo-img { width: 52px; height: 52px; }
+  .dl-title { margin-top: 22px; font-size: 21px; }
+  .dl-subtitle { margin-top: 8px; font-size: 13px; }
+  .dl-card { border-radius: 16px; padding: 24px 20px 22px; }
+  .dl-field { height: 52px; border-radius: 12px; padding: 0 14px; }
+  .dl-field-icon { width: 18px; height: 18px; margin-right: 8px; }
+  .dl-field-input, .dl-field-ph { font-size: 15px; }
+  .dl-divider { margin: 18px 0 22px; }
+  .dl-btn-primary { height: 48px; font-size: 16px; }
+  .dl-agree-text, .dl-agree-link { font-size: 12px; }
+}

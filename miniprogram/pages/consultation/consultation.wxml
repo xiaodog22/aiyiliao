@@ -1,0 +1,303 @@
+<!--
+  pages/consultation/consultation.wxml —— AI 问诊（TabBar 页）
+
+  版式逐项对照 design-output/患者端/B-TabBar补充/04-AI问诊首页.png
+  与「页面复刻文档」§四.4：
+    顶部分段 Tab（对话/我的，选中蓝字 + 56rpx×6rpx 蓝下划线）
+    ① 标题区：48rpx 大标题 + 28rpx 副标题 + 右上「清空 🗑」
+    ② 对话气泡区：AI 左浅蓝气泡 + AI 头像 / 用户右蓝气泡带小尾巴（复用导诊页气泡规范）
+    ③ 分诊结果卡：标题 + 分级 badge + 「推荐科室 / 判断理由」标签 chip 行 + 双按钮 + 居中免责
+    ④ 就医进度卡：复用 app.wxss 的全局 .flow-card（不在此处重建副本）
+    ⑤ 橙色警示条：常驻 + 一键拨打 120
+    ⑥ 底部输入栏：胶囊输入 + 麦克风 + 蓝色发送
+
+  ⚠️ 导航栏为 navigationStyle=custom：状态栏高度与「微信胶囊安全宽」由 JS 注入
+     （consultation.js `_navSafeRight()`），否则右上角控件会被胶囊压住且点不到。
+-->
+<view class="page theme-{{theme}} consult-page page-shell">
+
+  <!-- ============ 顶部：分段 Tab ============ -->
+  <view class="nav-bar" style="padding-top: {{statusBarHeight + 8}}px; padding-right: {{navSafeRight}}px;">
+    <view class="nav-tabs">
+      <view class="nav-tab nav-tab-on">对话</view>
+      <view class="nav-tab pressable" bindtap="onTabMine" aria-role="button">我的</view>
+    </view>
+  </view>
+
+  <!-- 双栏外壳：手机=单列（侧栏内容 .side-only 隐藏）；平板横屏=右栏常驻就医助手 -->
+  <view class="shell-cols consult-cols">
+
+    <!-- ============ 侧栏：仅平板可见 ============ -->
+    <view class="shell-side consult-side">
+
+      <!-- 最近一次分诊结论：对话一长，结论就被冲走 → 平板右栏常驻一份 -->
+      <view wx:if="{{latest}}" class="side-only consult-helper">
+        <view class="helper-head">最近一次分诊</view>
+        <view class="helper-dept">{{latest.dept}}</view>
+        <view class="helper-tags">
+          <view wx:if="{{latest.levelText}}" class="badge {{latest.levelCls}}">{{latest.levelText}}</view>
+          <view wx:if="{{latest.confidence}}" class="helper-conf">匹配度：{{latest.confidence}}</view>
+        </view>
+        <view wx:if="{{latest.advice}}" class="helper-advice">{{latest.advice}}</view>
+        <view class="helper-ops">
+          <view class="helper-op" data-dept="{{latest.dept}}" bindtap="onDeptBook">预约挂号</view>
+          <view class="helper-op helper-op-ghost" data-dept="{{latest.dept}}" bindtap="onHelperNav">院内导航</view>
+        </view>
+      </view>
+
+      <!-- 本次会话还没有结论时，回填一条「最近问诊」（数据源 GET /api/v1/consultations） -->
+      <view wx:elif="{{lastConsult}}" class="side-only consult-helper">
+        <view class="helper-head">最近问诊</view>
+        <view class="helper-dept">{{lastConsult.title || '问诊记录'}}</view>
+        <view class="helper-tags">
+          <view wx:if="{{lastConsult.statusText}}" class="badge badge-gray">{{lastConsult.statusText}}</view>
+          <view wx:if="{{lastConsult.dateText}}" class="helper-conf">{{lastConsult.dateText}}</view>
+        </view>
+        <view wx:if="{{lastConsult.brief}}" class="helper-advice">{{lastConsult.brief}}</view>
+        <view class="helper-ops">
+          <view class="helper-op" bindtap="onTabMine">查看全部问诊</view>
+        </view>
+      </view>
+
+    </view>
+
+    <!-- ============ 主栏：对话 + 输入 ============ -->
+    <view class="shell-main consult-main">
+
+      <scroll-view class="body-scroll" scroll-y scroll-into-view="bottom-anchor" scroll-with-animation>
+        <!-- ① 标题区：大标题 + 右上「清空」+ 副标题（+ 有历史时的一行恢复入口） -->
+        <view class="ask-hero">
+          <view class="ask-hero-row">
+            <view class="ask-hero-t">有什么不舒服？</view>
+            <view class="nav-clear pressable" bindtap="onClear" aria-role="button" aria-label="清空对话">
+              <text>清空</text>
+              <image class="nav-clear-ic" src="{{icons.trash}}" />
+            </view>
+          </view>
+          <view class="ask-hero-s">描述您的症状，获取就医方向</view>
+          <view wx:if="{{lastConsult}}" class="last-consult pressable" bindtap="onTabMine" aria-role="button">
+            <text class="last-consult-t">上次问诊：{{lastConsult.title || '问诊记录'}}</text>
+            <image class="last-consult-ic" src="{{icons.chevronRight}}" />
+          </view>
+        </view>
+
+        <!-- 用户信息条（本页既有能力：脱敏姓名 / 证件掩码 / 切换账号） -->
+        <view class="user-strip">
+          <view class="user-avatar"><image class="ic-sm" src="{{icons.user}}" /></view>
+          <view class="user-strip-info">
+            <view class="user-strip-name">{{user.maskName}}<text wx:if="{{user.gender}}" class="user-gender"> {{user.gender}}</text></view>
+            <view class="user-strip-id">{{user.maskId}}</view>
+          </view>
+          <view class="user-switch pressable" bindtap="onSwitchUser" aria-role="button">切换 ›</view>
+        </view>
+
+        <!-- ② 对话气泡区 -->
+        <view class="chat-list">
+          <view
+            wx:for="{{messages}}"
+            wx:key="id"
+            class="msg {{item.role === 'user' ? 'msg-user' : 'msg-ai'}} msg-in"
+          >
+            <!-- 文本消息 -->
+            <block wx:if="{{item.type === 'text'}}">
+              <view class="msg-row">
+                <view wx:if="{{item.role === 'ai'}}" class="ai-avatar"><text>AI</text></view>
+                <view class="msg-bubble {{item.role === 'user' ? 'bubble-user' : 'bubble-ai'}}">
+                  <text>{{item.content}}</text>
+                  <!-- AI 文本：重新播放（TTS） -->
+                  <view wx:if="{{item.role === 'ai' && item.content}}" class="msg-replay pressable" data-text="{{item.content}}" catchtap="onReplay" aria-role="button" aria-label="重新播放">
+                    <image class="ic-xs" src="{{icons.volume}}" /> 重新播放
+                  </view>
+                </view>
+              </view>
+            </block>
+
+            <!-- ③ 分诊结果卡（设计 04 版式：标题 + 分级 badge / 标签 chip 行 / 双按钮 / 居中免责） -->
+            <block wx:elif="{{item.type === 'dept'}}">
+              <view class="res-card">
+                <view class="res-head">
+                  <view class="res-title">分诊结果</view>
+                  <view wx:if="{{item.badgeText}}" class="badge {{item.levelCls || 'badge-mint'}}">{{item.badgeText}}</view>
+                </view>
+
+                <view class="res-row">
+                  <view class="res-k">推荐科室</view>
+                  <view class="res-v">
+                    <view class="res-dept">{{item.deptName}}</view>
+                    <view wx:if="{{item.alts.length}}" class="res-alts">
+                      <text class="res-alts-t">备选</text>
+                      <view
+                        wx:for="{{item.alts}}"
+                        wx:for-item="a"
+                        wx:key="name"
+                        class="res-alt"
+                        data-msg="{{item.id}}"
+                        data-dept="{{a.name}}"
+                        catchtap="onDeptView"
+                      >{{a.name}}</view>
+                    </view>
+                  </view>
+                </view>
+
+                <view wx:if="{{item.reasonText}}" class="res-row">
+                  <view class="res-k">判断理由</view>
+                  <view class="res-v res-reason">{{item.reasonText}}</view>
+                </view>
+
+                <view class="res-ops">
+                  <view class="res-btn res-btn-ghost" data-msg="{{item.id}}" data-dept="{{item.deptName}}" catchtap="onDeptView">查看科室</view>
+                  <view class="res-btn res-btn-main" data-dept="{{item.deptName}}" catchtap="onDeptBook">去预约</view>
+                </view>
+
+                <view class="res-foot">
+                  <text class="res-note">{{item.aiFallback ? '以上为本地规则建议，不能替代医生诊断' : '以上为AI建议，不能替代医生诊断'}}</text>
+                  <view class="ai-fb">
+                    <image class="fb-btn" data-type="down" catchtap="onFeedback" src="{{icons.thumbDown}}" />
+                    <image class="fb-btn" data-type="up" catchtap="onFeedback" src="{{icons.thumbUp}}" />
+                  </view>
+                </view>
+              </view>
+            </block>
+
+            <!-- 路线询问（结果卡之后：答「要」→ 直接弹到院内导诊页出路线） -->
+            <block wx:elif="{{item.type === 'navask'}}">
+              <view class="navask-card">
+                <view class="navask-q"><image class="ic-sm" src="{{icons.mapPin}}" />{{item.content}}</view>
+                <view class="navask-ops">
+                  <view class="navask-op navask-op-main" data-dept="{{item.dept}}" catchtap="onNavaskYes">要，带我去</view>
+                  <view class="navask-op pressable" catchtap="onNavaskNo" aria-role="button">不用了</view>
+                </view>
+              </view>
+            </block>
+
+            <view class="msg-time">{{item.time}}</view>
+          </view>
+
+          <!-- 首屏快捷症状（点一下等于回一句话，长者不必打字） -->
+          <view wx:if="{{showQuick && messages.length <= 1 && status === 'IDLE'}}" class="quick-chips">
+            <view class="chip" wx:for="{{quickList}}" wx:key="*this" data-text="{{item}}" bindtap="onQuick">{{item}}</view>
+          </view>
+
+          <!-- 急诊预警（红旗命中才出现；一键拨打 120） -->
+          <view wx:if="{{emergency}}" class="emergency-bar">
+            <text class="emergency-text">{{emergency}}</text>
+            <view class="emergency-call" catchtap="onCall120">拨打120</view>
+          </view>
+
+          <!-- 思考中 -->
+          <view wx:if="{{status === 'THINKING'}}" class="msg msg-ai">
+            <view class="thinking-bubble">
+              <view class="spinner"></view>
+              <text class="thinking-text">{{thinkingText}}</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- ④ 就医进度卡：设计稿位置=对话之后、警示条之上（复用全局 .flow-card 样式） -->
+        <view class="flow-zone">
+          <view class="flow-card">
+            <view class="flow-main">
+              <view class="flow-info">
+                <view class="flow-title">{{progress.title}}</view>
+                <view class="flow-sub">{{progress.subtitle}}</view>
+              </view>
+              <image class="flow-doc" src="/assets/icons/stethoscope_white.png" />
+            </view>
+            <view class="flow-steps">
+              <block wx:for="{{[1,2,3,4]}}" wx:key="*this">
+                <view class="flow-step">
+                  <view class="flow-dot {{item <= progress.step ? 'flow-dot-on' : ''}}{{item === progress.step ? ' flow-dot-cur' : ''}}">
+                    <image wx:if="{{item < progress.step}}" class="flow-check" src="/assets/icons/check.png" />
+                    <text wx:else class="flow-dot-num">{{item}}</text>
+                  </view>
+                  <view class="flow-line {{item < progress.step ? 'flow-line-on' : ''}}"></view>
+                </view>
+              </block>
+            </view>
+            <view class="flow-labels">
+              <text class="flow-label {{progress.step >= 1 ? 'flow-label-on' : ''}}">预约</text>
+              <text class="flow-label {{progress.step >= 2 ? 'flow-label-on' : ''}}">待取号</text>
+              <text class="flow-label {{progress.step >= 3 ? 'flow-label-on' : ''}}">待就诊</text>
+              <text class="flow-label {{progress.step >= 4 ? 'flow-label-on' : ''}}">就诊</text>
+            </view>
+            <view class="flow-detail-btn pressable" bindtap="onFlowDetail" aria-role="button">就医详情</view>
+          </view>
+        </view>
+
+        <view id="bottom-anchor" class="anchor"></view>
+      </scroll-view>
+
+      <!-- AI 能力提示（页面级合规免责）：全局 .notice-bar -->
+      <view class="notice-bar consult-note">
+        <image class="notice-bar-ic" src="{{icons.shield}}" />
+        <view class="notice-bar-text">AI 建议仅供参考，不能替代线下医师诊断</view>
+      </view>
+
+      <!-- 快捷服务行 -->
+      <view class="quick-services">
+        <view class="qs-item pressable" bindtap="onQuickBook" aria-role="button"><image class="ic-xs" src="{{icons.calendar}}" /> 预约挂号</view>
+        <view class="qs-item pressable" bindtap="onQuickReport" aria-role="button"><image class="ic-xs" src="{{icons.fileText}}" /> 报告查询</view>
+        <view class="qs-item pressable" bindtap="onQuickNav" aria-role="button"><image class="ic-xs" src="{{icons.mapPin}}" /> 来院导航</view>
+        <view class="qs-item pressable" bindtap="onAllServices" aria-role="button"><image class="ic-xs" src="{{icons.layoutGrid}}" /> 全部服务</view>
+      </view>
+
+      <!-- ⑤ 常驻安全提醒条（浅橙底 + 一键拨 120） -->
+      <view class="safety-bar">
+        <image class="safety-ic" src="{{icons.alert}}" />
+        <text class="safety-text">如遇紧急情况，请立即寻求急救</text>
+        <view class="safety-call pressable" bindtap="onCall120" aria-role="button">拨打120</view>
+      </view>
+
+      <!-- ⑥ 底部输入栏 -->
+      <view class="input-bar safe-bottom">
+        <view class="input-wrap {{recording ? 'input-wrap-on' : ''}}">
+          <input
+            class="input-field"
+            placeholder="继续描述症状..."
+            placeholder-class="ph"
+            value="{{input}}"
+            bindinput="onInput"
+            confirm-type="send"
+            bindconfirm="onSend"
+            disabled="{{status !== 'IDLE'}}"
+          />
+          <view class="voice-btn pressable" bindtap="onVoice" aria-role="button" aria-label="语音输入">
+            <image class="ic-md" src="{{recording ? '/assets/icons/mic_white.png' : icons.mic}}" />
+          </view>
+        </view>
+        <view class="send-fab {{status !== 'IDLE' ? 'send-fab-disabled' : 'pressable'}}" bindtap="onSend" aria-role="button" aria-label="发送">
+          <image class="send-icon" src="/assets/icons/send_white.png" />
+        </view>
+      </view>
+
+      <!-- 语音提示 -->
+      <view wx:if="{{voiceHint}}" class="voice-hint">{{voiceHint}}</view>
+
+    </view>
+
+  </view>
+
+  <!-- ============ 「查看科室」半模态（设计稿该按钮在效果图里只有入口，
+       落地页为科室介绍 + 直达挂号；数据只用来展示引擎已返回的 departmentInfo） ============ -->
+  <view wx:if="{{showDept}}" class="dept-mask" bindtap="onDeptClose"></view>
+  <view wx:if="{{showDept}}" class="sheet dept-sheet">
+    <view class="sheet-handle"></view>
+    <view class="sheet-title">{{deptInfo.name}}</view>
+    <view wx:if="{{deptInfo.floor}}" class="dept-sheet-row">
+      <text class="dept-sheet-k">位置</text>
+      <text class="dept-sheet-v">{{deptInfo.floor}}</text>
+    </view>
+    <view wx:if="{{deptInfo.intro}}" class="dept-sheet-row">
+      <text class="dept-sheet-k">简介</text>
+      <text class="dept-sheet-v">{{deptInfo.intro}}</text>
+    </view>
+    <view wx:if="{{!deptInfo.floor && !deptInfo.intro}}" class="dept-sheet-row">
+      <text class="dept-sheet-v">暂无更多科室介绍，可点下方按钮查看该科室医生与号源。</text>
+    </view>
+    <view class="dept-sheet-ops">
+      <view class="res-btn res-btn-ghost" bindtap="onDeptClose">关闭</view>
+      <view class="res-btn res-btn-main" data-dept="{{deptInfo.name}}" bindtap="onDeptBookFromSheet">去预约</view>
+    </view>
+  </view>
+
+</view>

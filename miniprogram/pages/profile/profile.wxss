@@ -1,0 +1,213 @@
+/**
+ * profile.wxss —— 我的 / 个人中心（TabBar 页）
+ *
+ * 版式对齐 design-output/患者端/07-个人中心.png（逐项见 WXML 顶部注释）。
+ * 色彩纪律：只引用 app.wxss 令牌；仅语义白与半透明遮罩出现字面色值。
+ * 图标纪律：图标全部来自 utils 图标表（icons 模块），不使用 emoji / 字符箭头。
+ *
+ * ⚠️ 尺寸口径：手机档写 rpx；**每一处硬编码 rpx 都要**在文件末尾的宽屏断点里补一份 px
+ *    （= rpx ÷ 2，与首页 / 导诊 / 预约 / 问诊 / 养生五页同一口径）。改样式后请用脚本核对。
+ * ⚠️ 结构化令牌（--font-* / --radius-* / --btn-height）在宽屏断点里由 app.wxss 统一 px 化，
+ *    页面**不要**重复覆盖。
+ * （注：注释里刻意不写 at-rule 关键字，避免外部构建脚本按关键字切块时误伤本文件。）
+ */
+
+/* ============ 页面骨架 ============
+   设计实测：卡片左边缘 26.4rpx、头区头像左边缘 25.9rpx → 页边距 ≈26rpx，
+   与同站 24rpx 口径差 2rpx，沿用 24rpx（与 AI 养生页一致）。
+   页底渐变：设计实测顶部 #EAF2FF → 中部 #F0F4FD，取令牌 --accent-soft → --bg 近似。 */
+.pf-page {
+  padding: 24rpx 24rpx calc(140rpx + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, var(--accent-soft) 0%, var(--bg) 46%);
+}
+
+/* ============ ① 用户信息头区 ============
+   设计稿的 hero **没有卡片外壳**（内容直接落在页底渐变上），所以不使用 .hero-light。 */
+.pf-hero {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 16rpx 0 28rpx;
+}
+
+/* 头像：128rpx 圆形（§四.6；设计实测 121rpx）+ 浅灰底 + 灰剪影占位 */
+.pf-avatar {
+  position: relative;
+  width: 128rpx;
+  height: 128rpx;
+  border-radius: 50%;
+  background: var(--bg);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.pf-avatar-img { width: 100%; height: 100%; }
+
+/* 默认头像占位：灰色**线性**人形（utils 图标表的 userGray 字形）。
+   设计稿的占位就是「浅灰底 + 灰色线性人形」，而不是包内 avatar-default.png 的蓝底白人形；
+   字号取 0.62 倍不透明度把 #8A94A6 压到设计实测的 #C0C5CD 档位，下移 12rpx 贴合其视觉重心。 */
+.pf-avatar-ph {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 12rpx);
+  width: 92rpx;
+  height: 92rpx;
+  margin-left: -46rpx;
+  margin-top: -46rpx;
+  opacity: 0.62;
+}
+
+.pf-info {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 姓名：44rpx / 700（§四.6）。全局 .hero-title-lg 是 48rpx，这里按本节规范收 4rpx。 */
+.pf-name {
+  font-size: calc(var(--font-title) + 4rpx);
+  line-height: 1.3;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 状态：「已登录 · 健康档案已同步」24rpx 灰蓝（--text-weak，与设计实测 #7A8496 同档） */
+.pf-meta {
+  margin-top: 4rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.4;
+}
+
+/* 右上「就诊人管理 ›」浅蓝胶囊（设计实测 186.6×51.8rpx，取自头像同行的上方位置） */
+.pf-patient-capsule {
+  flex-shrink: 0;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  height: 56rpx;
+  padding: 0 20rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--primary);
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.pf-capsule-arrow {
+  width: 24rpx;
+  height: 24rpx;
+  margin-left: 6rpx;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+/* ============ ②③④ 列表卡 ============
+   设计实测：卡片圆角 ≈19rpx（比全局 .card 的 --radius-lg 32rpx 小一档）→ 取 --radius-md；
+   卡片上下内边距 8rpx（首行图标距卡片顶 33.6rpx = 8 + 行内 24）；
+   行高 ≈92.6rpx（全局 .li-row 的 24 + 44 + 24 = 92rpx 天然吻合，无需覆盖）。 */
+.pf-card {
+  padding: 8rpx 32rpx;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+/* 带分组标题条的卡片：标题条要贴住卡片上边缘 → 去掉顶部内边距 */
+.pf-group { padding-top: 0; }
+
+/* 分组标题条「通用」：设计稿里它在**卡片内部顶部**（浅灰条带圆角贴在卡顶），
+   全局 .group-head 的负边距正好抵掉卡片 32rpx 横向内边距，这里只改圆角与下间距。 */
+.pf-card .group-head {
+  margin: 0 -32rpx;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+/* 分割线：设计实测从**文字左边缘**起（122.9rpx = 卡片内 68rpx）、到**卡片右边缘**止
+   —— 不是常见的"通栏"或"两端留白"，所以用伪元素画，不复用 .li-row 的整行边框。 */
+.pf-card .li-row {
+  position: relative;
+}
+
+.pf-card .li-row + .li-row {
+  border-top: 0;
+}
+
+.pf-card .li-row + .li-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 68rpx;      /* = 图标 44rpx + 文字左间距 24rpx */
+  right: -32rpx;    /* 抵掉卡片右内边距，直抵卡片边缘（设计稿即为通到卡边） */
+  height: 1rpx;
+  background: var(--border);
+}
+
+/* 行首图标：44rpx 蓝色线性字形（§四.6；设计实测墨迹 36rpx，44rpx 盒内留白一致） */
+.pf-row-ic {
+  width: 44rpx;
+  height: 44rpx;
+  flex-shrink: 0;
+}
+
+/* 我的问诊未读小圆点：设计稿画在**箭头右上方**（与箭头不同排），
+   实测 14.6rpx 圆、距行顶 11.8rpx、右缘比箭头墨迹再靠右 4rpx。 */
+.pf-row-dot .pf-unread {
+  position: absolute;
+  top: 12rpx;
+  right: -4rpx;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+/* ============ 退出登录（设计稿未画，保留为最低调的入口，见 WXML 注释）============ */
+.logout-btn {
+  width: 100%;
+  margin-top: 24rpx;
+  gap: 12rpx;
+}
+
+.logout-ic {
+  width: 36rpx;
+  height: 36rpx;
+}
+
+/* ============ ⑤ 底部版本号 ============ */
+.pf-version {
+  text-align: center;
+  padding: 36rpx 0 8rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+}
+
+/* =====================================================================
+   平板档（≥600px）：本页所有**硬编码 rpx 尺寸**逐条 px 化（rpx ÷ 2）。
+   口径与首页 / 导诊 / 预约挂号 / 问诊 / AI 养生 五页一致。
+   ⚠️ 页底 140rpx 的导航栏让位**保持 rpx**：自绘 TabBar 自身高度就是 100rpx，
+      它随屏宽等比放大，用固定 px 会在宽屏上被导航栏盖住。
+   ===================================================================== */
+@media (min-width: 600px) {
+  .pf-page { padding: 12px 12px calc(140rpx + env(safe-area-inset-bottom)); }
+
+  .pf-hero { gap: 10px; padding: 8px 0 14px; }
+  .pf-avatar { width: 64px; height: 64px; }
+  .pf-avatar-ph { width: 46px; height: 46px; margin-left: -23px; margin-top: -23px; top: calc(50% + 6px); }
+  .pf-name { font-size: calc(var(--font-title) + 2px); }
+  .pf-meta { margin-top: 2px; }
+  .pf-patient-capsule { height: 28px; padding: 0 10px; }
+  .pf-capsule-arrow { width: 12px; height: 12px; margin-left: 3px; }
+
+  .pf-card { padding: 4px 16px; }
+  .pf-group { padding-top: 0; }
+  .pf-card .group-head { margin: 0 -16px; }
+  .pf-card .li-row + .li-row::before { left: 34px; right: -16px; height: 1px; }
+  .pf-row-ic { width: 22px; height: 22px; }
+  .pf-row-dot .pf-unread { top: 6px; right: -2px; width: 7px; height: 7px; }
+
+  .logout-btn { margin-top: 12px; gap: 6px; }
+  .logout-ic { width: 18px; height: 18px; }
+
+  .pf-version { padding: 18px 0 4px; }
+}

@@ -1,0 +1,44 @@
+<!--
+  pages/auth/doctor-login —— 医生登录（对齐 design-output/患者端/A-认证/03-医生登录.png）
+  版式：浅蓝渐变背景 + 深蓝圆底白色医院建筑图标 + 标题/副标题
+       + 白卡内单输入框（工号/手机号）+ 分割线 + 「登录验证」胶囊按钮 + 协议小字。
+  ⚠️ 原生导航栏白底深蓝标题；UI 仅一个输入框（设计稿如此），无密码框。
+-->
+<view class="dl-page theme-{{theme}}">
+
+  <!-- 品牌区：深蓝圆底 + 白医院图标 + 标题 + 副标题 -->
+  <view class="dl-brand">
+    <view class="dl-logo">
+      <image class="dl-logo-img" src="/assets/icons/hospital_white.png" />
+    </view>
+    <view class="dl-title">医护人员登录</view>
+    <view class="dl-subtitle">请使用工号或手机号验证身份</view>
+  </view>
+
+  <!-- 白卡：单输入框 + 分割线 + 登录验证按钮 + 协议 -->
+  <view class="dl-card">
+    <view class="dl-field">
+      <image class="dl-field-icon" src="/assets/icons/user_gray.png" />
+      <input
+        class="dl-field-input"
+        placeholder="请输入工号或手机号"
+        placeholder-class="dl-field-ph"
+        value="{{account}}"
+        confirm-type="done"
+        bindinput="onAccountInput"
+        bindconfirm="onSubmit"
+      />
+    </view>
+
+    <view class="dl-divider"></view>
+
+    <button class="dl-btn-primary" bindtap="onSubmit">登录验证</button>
+
+    <view class="dl-agree">
+      <text class="dl-agree-text">登录即代表同意</text>
+      <text class="dl-agree-link" bindtap="onOpenAgreement">用户协议</text>
+      <text class="dl-agree-link" bindtap="onOpenPrivacy">隐私政策</text>
+    </view>
+  </view>
+
+</view>

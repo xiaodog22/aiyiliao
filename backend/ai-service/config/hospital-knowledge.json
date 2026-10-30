@@ -1,0 +1,191 @@
+{
+  "version": "hospital-knowledge-v3",
+  "metadata": {
+    "hospital": "XX市中心医院（院方提供模拟名称，非真实名称，待确认后替换）",
+    "lastUpdated": "2026-10-23",
+    "maintainer": "AI 服务运维团队",
+    "reviewedBy": "AI 代理（受控源核对，非临床审核）",
+    "reviewedAt": "2026-10-23T00:00:00+08:00",
+    "reviewStatus": "ai_checked_pending_clinical_review",
+    "reviewType": "controlled_source_check",
+    "clinicalReview": false,
+    "reviewerType": "AI_AGENT",
+    "source": [
+      "院方提供受控信息（模拟脱敏）：医院名称（模拟）、急诊开放时间、门诊号源规则、退号/建档规则、检查报告时效、营养/运动能力边界、LIS 参考区间（模拟口径）",
+      "DB wechar_dev.departments（16 条，取 name/location/description）",
+      "DB wechar_dev.doctor_schedules（6 条聚合，开发种子数据，待运营排班确认）",
+      "backend/ai-service/config/triage-departments.json v1.0.0（智能导诊科室白名单，6 科室）"
+    ],
+    "reviewScope": [
+      "医院名称/电话脱敏模拟",
+      "急诊开放时间",
+      "门诊号源时段",
+      "退号/建档规则",
+      "检查报告时效",
+      "营养/运动能力边界",
+      "LIS参考范围"
+    ],
+    "sourceBasis": [
+      "医院公开就诊指南/公告",
+      "三甲医院通用规则",
+      "LIS通用参考口径"
+    ],
+    "todo": [
+      "医院正式名称：当前为院方提供的模拟脱敏值「XX市中心医院」，非真实名称，待提供真实名称后替换；地址与总机电话按院方要求保持模拟、不写入知识库",
+      "模拟院区精确号源时段（具体科室/医生排班）：需排班表或挂号系统截图确认，现仅写入通用放号规则",
+      "模拟院区退号截止精确时刻：各院差异大，未写具体时刻，以挂号页为准",
+      "病理/基因/外送项目报告时限：通常3-10个工作日，需按项目确认",
+      "模拟院区LIS参考范围原始导出表：需信息科/LIS维护表核对后替换通用口径",
+      "营养/运动能力边界为院方提供的通用规则，待医务科制度文件复核"
+    ],
+    "todoFields": [
+      "模拟院区精确号源时段",
+      "模拟院区退号截止精确时刻",
+      "病理/基因/外送项目报告时限",
+      "模拟院区LIS参考范围原始导出表",
+      "医院真实名称与地址电话"
+    ],
+    "notes": "无人工核验人；本记录仅为受控源核对，不是临床审核，不得作为临床放行依据。"
+  },
+  "scenarios": {
+    "triage": {
+      "budgetTokens": 300,
+      "description": "导诊场景：本院科室（白名单口径）、症状→科室映射、科室位置",
+      "knowledge": [
+        {
+          "topic": "本院科室",
+          "content": "本院开设科室：全科医学科、消化内科、呼吸内科、心血管内科、骨科、急诊科。",
+          "priority": 10,
+          "departments": ["全科医学科", "消化内科", "呼吸内科", "心血管内科", "骨科", "急诊科"],
+          "source": "config/triage-departments.json + DB departments",
+          "status": "verified"
+        },
+        {
+          "topic": "常见症状科室映射",
+          "content": "常见症状对应科室：胃痛/反酸/腹泻→消化内科；咳嗽/气喘→呼吸内科；胸痛/心悸/高血压→心血管内科；骨折/关节痛→骨科；发热/乏力/多症状→全科医学科。",
+          "priority": 8,
+          "departments": ["消化内科", "呼吸内科", "心血管内科", "骨科", "全科医学科"],
+          "source": "config/triage-departments.json description 字段",
+          "status": "verified"
+        },
+        {
+          "topic": "科室位置",
+          "content": "科室位置：全科医学科 1F 大厅；消化内科、心血管内科 1F 东区；呼吸内科、骨科 1F 西区；急诊科 1F 急诊区。",
+          "priority": 6,
+          "departments": ["全科医学科", "消化内科", "心血管内科", "呼吸内科", "骨科", "急诊科"],
+          "source": "DB departments.location（16 条中 6 个白名单科室）",
+          "status": "verified"
+        }
+      ]
+    },
+    "chat": {
+      "budgetTokens": 400,
+      "description": "对话场景：预约号源规则、禁忌红线、退号建档、急诊指引、报告时效",
+      "knowledge": [
+        {
+          "topic": "预约号源时段",
+          "content": "预约号源：提前1-14天，07:00-08:00放号，分普通/专家/专病/多学科；以挂号页为准。",
+          "priority": 10,
+          "source": "院方提供（放号规则；具体科室/医生排班 TODO，需排班表确认）",
+          "status": "partial"
+        },
+        {
+          "topic": "禁忌与红线",
+          "content": "重要提醒：本 AI 不提供药品名称、剂量与处方，不给诊断结论；出现胸痛、呼吸困难、大出血、意识障碍请立即就医或拨打 120。",
+          "priority": 9,
+          "source": "项目红线（AI_CONTEXT RULES / ai-service chat 执行器）",
+          "status": "verified"
+        },
+        {
+          "topic": "挂号与退号",
+          "content": "建档：身份证/社保卡/医保电子凭证，14岁以下用户口本。退号：就诊前一日或当日截止前，部分当日号不可退；半年退号爽约累计6次暂停预约3-6个月。",
+          "priority": 8,
+          "source": "院方提供（退号/建档规则；模拟院区精确截止时刻 TODO）",
+          "status": "partial"
+        },
+        {
+          "topic": "急诊指引",
+          "content": "急诊24小时开放，全年无休；急危重症直接到1F急诊区，不需预约。",
+          "priority": 8,
+          "source": "院方提供（急诊开放时间确认）",
+          "status": "verified"
+        },
+        {
+          "topic": "检查与报告",
+          "content": "报告时效：常规检查24小时内，增强CT/MRI等检查48小时内，快检30分钟-2小时；外送以通知为准。",
+          "priority": 6,
+          "source": "院方提供（检查报告时效；病理/外送项目时限 TODO）",
+          "status": "partial"
+        }
+      ]
+    },
+    "careplan": {
+      "budgetTokens": 300,
+      "description": "健康管理场景：营养筛查边界、运动能力边界、慢病随访、复查提醒",
+      "knowledge": [
+        {
+          "topic": "营养咨询边界",
+          "content": "营养咨询：NRS 2002评分3分及以上需营养科会诊或营养治疗；3分以下可门诊随访与饮食指导。",
+          "priority": 9,
+          "source": "院方提供（营养筛查边界；待医务科制度文件复核）",
+          "status": "partial"
+        },
+        {
+          "topic": "运动建议边界",
+          "content": "运动：限散步、太极等轻中度活动；6分钟步行出现胸痛、呼吸困难或血氧下降需心内科/康复科会诊，运动心肺中高危缺血时处方须医师签署；不给竞技与高强度训练处方。",
+          "priority": 8,
+          "source": "院方提供（运动能力边界；待医务科制度文件复核）",
+          "status": "partial"
+        },
+        {
+          "topic": "慢病随访",
+          "content": "高血压、糖尿病、血脂异常等慢病需定期随访；用药调整必须医生面诊，AI 建议仅供参考。",
+          "priority": 7,
+          "source": "项目红线 + 慢病管理常规",
+          "status": "verified"
+        },
+        {
+          "topic": "复查提醒",
+          "content": "复查提醒：按医嘱周期复查；指标异常或症状加重请及时就诊。",
+          "priority": 6,
+          "source": "通用安全提示",
+          "status": "verified"
+        }
+      ]
+    },
+    "interpret": {
+      "budgetTokens": 400,
+      "description": "报告解读场景：检验术语对照、成人常用参考范围（模拟 LIS 口径，以本院报告单为准）、血/尿常规术语",
+      "knowledge": [
+        {
+          "topic": "血脂术语",
+          "content": "血脂：低密度脂蛋白胆固醇（LDL-C）坏胆固醇；高密度脂蛋白胆固醇（HDL-C）好胆固醇；甘油三酯TG。",
+          "priority": 10,
+          "source": "通用医学术语",
+          "status": "verified"
+        },
+        {
+          "topic": "通用参考范围",
+          "content": "参考范围（模拟LIS）：WBC 3.5-9.5、PLT 125-350×10⁹/L；Hb男120-160/女110-150g/L；ALT男9-50/女7-40U/L；Cr男57-97/女41-73μmol/L；血糖3.9-6.1mmol/L；不适用儿童/孕妇/危急值。",
+          "priority": 9,
+          "source": "院方提供（模拟LIS参考区间；本院LIS维护表 TODO）",
+          "status": "partial"
+        },
+        {
+          "topic": "血常规术语",
+          "content": "血常规：WBC示感染/炎症；Hb血红蛋白示贫血；PLT血小板示凝血。",
+          "priority": 8,
+          "source": "通用医学术语",
+          "status": "verified"
+        },
+        {
+          "topic": "尿常规术语",
+          "content": "尿常规：PRO尿蛋白阳性提示肾脏问题；GLU尿糖阳性提示血糖异常；BLD尿潜血阳性需复查。",
+          "priority": 7,
+          "source": "通用医学术语",
+          "status": "verified"
+        }
+      ]
+    }
+  }
+}

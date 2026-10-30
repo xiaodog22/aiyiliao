@@ -1,0 +1,544 @@
+/**
+ * health.wxss —— AI 养生（通小安 · 对话 + 三天方案）
+ *
+ * 版式对齐 design-output/患者端/B-TabBar补充/05-AI养生.png（逐项见 WXML 顶部注释）。
+ * 色彩纪律：只引用 app.wxss 令牌；仅语义白 #FFFFFF 与遮罩类出现字面色。
+ * 图标纪律：图标全部来自 utils 图标表（icons 模块，含彩色变体），不使用 emoji。
+ *
+ * ⚠️ 尺寸口径：手机档写 rpx；**每一处硬编码 rpx 都要**在文件末尾的宽屏块里补一份 px
+ *    （= rpx ÷ 2，与首页 / 导诊 / 预约 / 问诊四页同一口径）。改样式后请用脚本核对：
+ *    基础段里含 rpx 的选择器是否都在宽屏块内出现（KNOWN_ISSUES #21）。
+ * ⚠️ 结构化令牌（--font-* / --radius-* / --btn-height / --space-page）在宽屏块里
+ *    由 app.wxss 统一 px 化，页面**不要**重复覆盖。
+ * （注：注释里刻意不写 at-rule 关键字，避免外部构建脚本按关键字切块时误伤本文件。）
+ */
+
+/* ============ 页面骨架：固定一屏（头 hero + 中滚动 + 底输入）============ */
+/* 页边距：本页设计稿实测 24rpx（卡片左边缘 45px/1.85），比全站 --space-page(32rpx) 窄一号。
+   ⚠️ 这不是随手改：AI 气泡要一行放下 18 个汉字（36 字/2 行）刚好卡在 553rpx 文本宽，
+   用 32rpx 会挤成 3 行（已实测）。 */
+.health-page {
+  padding: 24rpx;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  /* 顶部淡蓝 → 46% 处收到页面底（设计实测 #EEF5FF → #F2F6FF，取令牌近似） */
+  background: linear-gradient(180deg, var(--accent-soft) 0%, var(--bg) 46%);
+}
+
+/* 对话滚动区 */
+.chat-area {
+  flex: 1;
+  min-height: 0;        /* flex 项默认最小高度=内容高度，不解除则滚动区顶破容器 */
+  overflow: hidden;
+  padding: 8rpx 0;
+  box-sizing: border-box;
+}
+
+/* ============ ① Hero：标题 + 白气泡 + 机器人 ============ */
+/* 设计稿 hero 没有卡片边界（文字直接落在页底渐变上）→ 不再用 .hero-light 的渐变卡。 */
+.hx-hero {
+  display: flex;
+  align-items: flex-start;
+  padding: 8rpx 0 24rpx;
+}
+
+.hx-hero-body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 字号由全局 .hero-title-lg 提供（--font-title + --hero-title-boost = 48rpx） */
+.hx-hero-title { line-height: 1.28; }
+
+/* 白气泡：圆角 + 阴影 + 左下小尾巴（设计稿尾巴指向机器人） */
+.hx-bubble {
+  position: relative;
+  display: inline-block;
+  margin-top: 18rpx;
+  max-width: 100%;
+  padding: 18rpx 26rpx;
+  border-radius: var(--radius-md);
+  font-size: calc(var(--font-body) - 2rpx);
+  line-height: 1.45;
+}
+
+.hx-bubble::after {
+  content: '';
+  position: absolute;
+  left: 34rpx;
+  bottom: -10rpx;
+  width: 22rpx;
+  height: 22rpx;
+  background: #FFFFFF;
+  border-radius: 3rpx;
+  transform: rotate(45deg);
+  box-shadow: 0 4rpx 14rpx rgba(11, 110, 248, 0.10);
+}
+
+/* 机器人插画（设计实测约 189×216rpx） */
+.hx-mascot {
+  width: 200rpx;
+  height: 216rpx;
+  margin-left: 16rpx;
+  flex-shrink: 0;
+}
+
+/* ============ ② 快捷功能宫格（2×2）============
+   设计稿两列**不等宽**（卡片宽度随文案伸缩，整行两端对齐）→ 用两行 row +
+   卡片 flex:0 1 auto（内容定宽）+ 行内 space-between。
+   ⚠️ 不用 flex-wrap 自动换行：适老主题会把 --font-body 提到 32/38rpx，
+   换行判据的余量只有 ~10rpx，字号一涨就掉成「一行一个」，2×2 直接散架。 */
+.act-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+  margin-bottom: 28rpx;
+}
+
+.act-row {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.act-card {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+  padding: 20rpx;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  box-sizing: border-box;
+}
+
+/* 图标底板：88rpx / 圆角 24rpx（= 全局 .tile），但底色改用设计稿实测的**极浅**蓝绿
+   （#EBF5FF / #E0FBF8 ≈ --accent-soft / --mint-soft），比全局 pastel 版更淡。 */
+.act-card .tile {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 24rpx;
+}
+
+.act-card .tile-ic { width: 44rpx; height: 44rpx; }
+
+.act-card .tile-blue { background: var(--accent-soft); }
+.act-card .tile-mint { background: var(--mint-soft); }
+
+/* 宫格文案：设计实测 ≈30rpx/600（--font-body），两行字也不换行挤压 */
+.act-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-main);
+  line-height: 1.35;
+}
+
+/* ============ ③ 对话气泡区（规范与问诊页一致）============ */
+.msg {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 24rpx;
+}
+
+.msg-user { justify-content: flex-end; }
+.msg-ai { justify-content: flex-start; }
+
+/* 小安头像：圆形，机器人插画（设计实测 ≈86rpx） */
+.ai-avatar {
+  width: 84rpx;
+  height: 84rpx;
+  border-radius: 50%;
+  background: var(--card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 16rpx;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.ai-avatar-img { width: 100%; height: 100%; }
+
+.msg-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+/* AI 侧占满剩余行宽（设计稿气泡从头像右侧一直到页面右边）；
+   用户侧按内容收缩并靠右 —— 设计稿用户气泡没有头像，所以不能给固定宽度。 */
+.msg-ai .msg-body { flex: 1 1 auto; }
+.msg-user .msg-body { flex: 0 1 auto; align-items: flex-end; }
+
+.msg-bubble {
+  max-width: 100%;
+  padding: 20rpx 28rpx;
+  border-radius: var(--radius-md);
+  font-size: var(--font-body);
+  line-height: 1.52;
+  word-break: break-all;
+  box-sizing: border-box;
+}
+
+/* 用户气泡：主蓝实心 + 右下小圆角（无尾巴，与设计稿一致） */
+.bubble-user {
+  background: var(--primary);
+  color: #FFFFFF;
+  border-bottom-right-radius: 8rpx;
+}
+
+/* AI 气泡：浅蓝实底（设计实测 #EEF7FF ≈ --accent-soft），无描边、无投影 */
+.bubble-ai {
+  background: var(--accent-soft);
+  color: var(--text-main);
+  border-bottom-left-radius: 8rpx;
+}
+
+/* 选项 chip：浅蓝胶囊（横排换行，适老：能选不输入） */
+.opt-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  margin-top: 20rpx;
+}
+
+.opt-chip {
+  padding: 12rpx 24rpx;
+  min-height: 68rpx;
+  display: flex;
+  align-items: center;
+  background: var(--accent-soft);
+  border-radius: 999rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--primary);
+  font-weight: 500;
+  line-height: 1.4;
+  box-sizing: border-box;
+}
+
+.opt-chip:active { background: var(--accent-press); }
+
+/* 生成中（气泡内旋转指示） */
+.thinking-bubble {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 24rpx 28rpx;
+  background: var(--card);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+
+.spinner {
+  width: 32rpx;
+  height: 32rpx;
+  border: 4rpx solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.thinking-text {
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+/* 气泡滑入动画 */
+.msg-in { animation: msgIn 300ms ease-out both; }
+
+@keyframes msgIn {
+  from { opacity: 0; transform: translateY(24rpx); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.anchor { height: 4rpx; }
+
+/* ============ ④ 养生方案卡 ============ */
+.summary-card {
+  padding: 32rpx;
+  margin-bottom: 20rpx;
+}
+
+/* 卡头：标题 + 右侧「朗读 / 投屏」圆形描边按钮 */
+.plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.plan-head-ops {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-shrink: 0;
+}
+
+.plan-op {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: var(--card);
+  border: 2rpx solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.plan-op:active { background: var(--bg); }
+
+.plan-op-ic { width: 32rpx; height: 32rpx; }
+
+.summary-title {
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--primary-dark);
+  line-height: 1.3;
+  min-width: 0;
+}
+
+.summary-sub {
+  margin-top: 8rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+/* 每日区块 */
+.plan-day { padding: 22rpx 0 6rpx; }
+
+.plan-day + .plan-day {
+  margin-top: 6rpx;
+  border-top: 1rpx solid var(--border);
+}
+
+/* 日期小标题「第一天 / 第二天」：设计实测 ≈26rpx 灰蓝 */
+.plan-day-label {
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  line-height: 1.4;
+}
+
+/* 条目：睡眠 / 膳食 / 运动同排（放不下自动换行），每条 = 图标 + 文案。
+   ⚠️ 字号取 --font-caption(24rpx)：三条并排要在 639rpx 内放下，26rpx 会挤成两行
+   （设计稿同排三条，实测条文字号 ≈24-25rpx）。24rpx 是"可读内容"的下限，不再往下压。 */
+.plan-day-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx 28rpx;
+  margin-top: 18rpx;
+}
+
+.plan-day-item {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  max-width: 100%;
+  font-size: var(--font-caption);
+  color: var(--text-main);
+  line-height: 1.5;
+}
+
+.plan-item-ic {
+  width: 26rpx;
+  height: 26rpx;
+  flex-shrink: 0;
+}
+
+/* 契约 suggestions[] 小标题复用日期小标题口径 */
+.plan-sg-label {
+  margin-top: 24rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid var(--border);
+}
+
+.sg-item {
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.sg-item:last-child { border-bottom: 0; }
+
+.sg-t {
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--primary-dark);
+  line-height: 1.5;
+}
+
+.sg-d {
+  margin-top: 6rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+
+/* 后端 limitations（生活方式参考、不构成处方）——紧随方案卡，不替代页面级合规免责 */
+.plan-lim {
+  margin: 12rpx 8rpx 0;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+
+/* 页面级合规免责（全局 .notice-bar），贴着方案卡随内容滚动 */
+.hx-note { margin: 0 0 8rpx; }
+
+/* ============ ⑤ 底部输入栏 ============ */
+.input-bar {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 0 calc(100rpx + env(safe-area-inset-bottom));
+  flex-shrink: 0;
+  background: transparent;
+}
+
+.input-wrap {
+  flex: 1;
+  min-width: 0;
+  height: var(--btn-height);
+  display: flex;
+  align-items: center;
+  background: var(--card);
+  border-radius: 999rpx;
+  padding: 0 12rpx 0 28rpx;
+  box-shadow: var(--shadow-card);
+}
+
+.input-wrap-on { background: var(--accent-soft); }
+
+.voice-btn {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.input-field {
+  flex: 1;
+  min-width: 0;
+  height: var(--btn-height);
+  font-size: var(--font-body);
+  color: var(--text-main);
+}
+
+.ph { color: var(--text-placeholder); }
+
+/* 「发」蓝色按钮：设计实测 108×85rpx / 圆角 24rpx */
+.send-btn {
+  height: var(--btn-height);
+  padding: 0 36rpx;
+  border-radius: 24rpx;
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: var(--font-body);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.send-btn-disabled { background: var(--disabled-bg); }
+
+/* 语音提示（录音/识别中） */
+.voice-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  background: var(--accent-soft);
+  color: var(--primary);
+  border-radius: var(--radius-sm);
+  padding: 16rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  margin-bottom: 12rpx;
+  flex-shrink: 0;
+}
+
+/* =====================================================================
+   平板档（≥600px）：本页所有**硬编码 rpx 尺寸**逐条 px 化（rpx ÷ 2）。
+   口径与首页 / 导诊 / 预约挂号 / 问诊四页一致。缺一条就会在宽屏上被放大近一倍。
+   ===================================================================== */
+@media (min-width: 600px) {
+  /* 凡用 calc(var(--font-*) ± Nrpx) 的字号，宽屏下那段 rpx 不随令牌缩 → 在此给等价 px */
+  .hx-bubble { font-size: 14px; }
+  .opt-chip { font-size: 13px; }
+  .thinking-text { font-size: 13px; }
+  .summary-sub { font-size: 13px; }
+  .plan-day-label { font-size: 13px; }
+  .voice-hint { font-size: 13px; }
+
+  .health-page { padding: 12px; }
+  .chat-area { padding: 4px 0; }
+
+  .hx-hero { padding: 4px 0 12px; }
+  .hx-bubble { margin-top: 9px; padding: 9px 13px; border-radius: var(--radius-md); }
+  .hx-bubble::after { left: 17px; bottom: -5px; width: 11px; height: 11px; border-radius: 2px; }
+  .hx-mascot { width: 100px; height: 108px; margin-left: 8px; }
+
+  .act-grid { gap: 10px; margin-bottom: 14px; }
+  .act-row { gap: 10px; }
+  .act-card { gap: 11px; padding: 10px; }
+  .act-card .tile { width: 44px; height: 44px; border-radius: 12px; }
+  .act-card .tile-ic { width: 22px; height: 22px; }
+
+  .msg { margin-bottom: 12px; }
+  .ai-avatar { width: 42px; height: 42px; margin-right: 8px; }
+  .msg-bubble { padding: 10px 14px; }
+  .bubble-user { border-bottom-right-radius: 4px; }
+  .bubble-ai { border-bottom-left-radius: 4px; }
+  .opt-wrap { gap: 7px; margin-top: 8px; }
+  .opt-chip { padding: 6px 12px; min-height: 34px; border-radius: 999px; }
+  .thinking-bubble { padding: 12px 14px; gap: 6px; }
+  .spinner { width: 16px; height: 16px; border-width: 2px; }
+  .anchor { height: 2px; }
+
+  .summary-card { padding: 16px; margin-bottom: 10px; }
+  .plan-head { gap: 8px; }
+  .plan-head-ops { gap: 6px; }
+  .plan-op { width: 32px; height: 32px; border-width: 1px; }
+  .plan-op-ic { width: 16px; height: 16px; }
+  .summary-sub { margin-top: 4px; }
+  .plan-day { padding: 11px 0 3px; }
+  .plan-day + .plan-day { margin-top: 3px; border-top-width: 1px; }
+  .plan-day-items { gap: 6px 14px; margin-top: 9px; }
+  .plan-day-item { gap: 4px; }
+  .plan-item-ic { width: 13px; height: 13px; }
+  .plan-sg-label { margin-top: 12px; padding-top: 10px; border-top-width: 1px; }
+  .sg-item { padding: 8px 0; border-bottom-width: 1px; }
+  .sg-d { margin-top: 3px; }
+  .plan-lim { margin: 6px 4px 0; }
+  .hx-note { margin: 0 0 4px; }
+
+  .input-bar { gap: 8px; padding: 8px 0 calc(50px + env(safe-area-inset-bottom)); }
+  .input-wrap { padding: 0 6px 0 14px; }
+  .voice-btn { width: 32px; height: 32px; }
+  .send-btn { padding: 0 18px; border-radius: 12px; }
+  .voice-hint { padding: 8px; margin-bottom: 6px; border-radius: var(--radius-sm); }
+}
+
+/* ≥900px：页面被限宽到 720px 居中（app.wxss）→ 单列阅读宽度已合适，
+   只把「读的内容」放宽，不放大元素（放大=手机界面放大，见 app.wxss 注释）。 */
+@media (min-width: 900px) {
+  .act-text { max-width: 260px; }
+}

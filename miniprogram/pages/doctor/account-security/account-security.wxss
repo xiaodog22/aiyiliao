@@ -1,0 +1,80 @@
+/* pages/doctor/account-security —— 账号安全（医生端） */
+
+.as-page {
+  min-height: 100vh;
+  background: #f5f7fa;
+}
+
+.as-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: #fff;
+  border-bottom: 1rpx solid #eef0f3;
+}
+.as-nav-bar {
+  position: relative;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+}
+.as-nav-back {
+  position: absolute;
+  left: 8rpx;
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.as-nav-back-ic { width: 44rpx; height: 44rpx; }
+.as-nav-title {
+  flex: 1;
+  text-align: center;
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #17233d;
+}
+.as-hover { opacity: 0.6; }
+
+.as-card {
+  margin: 24rpx;
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 8rpx 24rpx;
+}
+.as-row {
+  display: flex;
+  align-items: center;
+  min-height: 104rpx;
+  border-bottom: 1rpx solid #f2f3f5;
+}
+.as-row:last-child { border-bottom: none; }
+.as-row-k { font-size: 30rpx; color: #17233d; flex: 1; }
+.as-row-v { font-size: 30rpx; color: #4e5969; }
+
+.as-tip {
+  margin: 24rpx;
+  background: #eef4ff;
+  border-radius: 20rpx;
+  padding: 24rpx;
+}
+.as-tip-title { font-size: 28rpx; font-weight: 600; color: #0b6ef8; margin-bottom: 12rpx; }
+.as-tip-line { font-size: 26rpx; color: #4e5969; line-height: 1.8; }
+
+.as-logout {
+  margin: 48rpx 24rpx 24rpx;
+  height: 96rpx;
+  border-radius: 20rpx;
+  background: #fff;
+  color: #f53f3f;
+  font-size: 30rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid #ffe5e5;
+}
+
+.as-footbar-space { height: 140rpx; }

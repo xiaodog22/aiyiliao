@@ -1,0 +1,266 @@
+<view class="page theme-{{theme}} page-shell home">
+
+  <!-- 平板横屏：左右双栏（左=参考图版式主体，右=短视频/导诊说明/导航/科普）。
+       手机与平板竖屏：shell-* 是普通块级流，按 DOM 顺序纵向排列。 -->
+  <view class="shell-cols">
+
+    <view class="shell-main">
+
+      <!-- ============================================================
+           ① 顶部（参考图 01-首页 / 08-适老化首页）：
+           品牌小标 → 问候行（问候语 + 右侧圆形 AI 徽章）→ 后端问候语
+           ⚠️ 徽章与问候语同一行：参考图里圆徽章垂直居中于大问候语，而不是品牌行。
+           ============================================================ -->
+      <view class="hm-hero">
+
+        <view class="hm-brand-name">AI 健康助手</view>
+
+        <view class="hm-hero-row">
+          <view class="hm-greet">{{greetText}}</view>
+          <!-- AI 徽章：浅蓝圆底 + 医疗加号线性图标；此元素同时是导诊入口 -->
+          <view class="hm-ai pressable" bindtap="goTriage"
+                aria-role="button" aria-label="进入 AI 智能导诊">
+            <image class="hm-ai-img" src="{{icons.plus}}" mode="aspectFit" />
+          </view>
+        </view>
+
+        <!-- 副问候语：
+             标准档 = 后端 GET /api/v1/home/summary → data.greeting（无值时不占位）
+             大字档 = 设计稿 08 的固定文案「今天感觉怎么样？」（页面静态文案，非用户数据） -->
+        <view class="hm-sub" wx:if="{{subText}}">{{subText}}</view>
+
+      </view>
+
+      <!-- ============================================================
+           ② 症状输入卡（参考图：标题 + 浅蓝输入行「内含麦克风+发送」 + 快选词）
+           ⚠️ 整条与「发送」都进导诊页（首页不持有输入框：导诊页才是真正的输入与分诊流程）
+           ============================================================ -->
+      <view class="card hm-ask-card">
+
+        <view class="hm-ask-title">{{theme === 'standard' ? '有什么不舒服？' : '哪里不舒服？'}}</view>
+
+        <view class="hm-ask-row">
+          <!-- 输入行：参考图里「麦克风 + 发送胶囊」都在浅蓝底板内部右侧 -->
+          <view class="hm-ask pressable" bindtap="goTriage">
+            <view class="hm-ask-ph">{{theme === 'standard' ? '用一句话描述您的症状' : '请描述您的症状'}}</view>
+            <view class="hm-ask-mic"><image class="hm-ask-mic-ic" src="{{icons.mic}}" /></view>
+            <!-- 标准档发送：胶囊嵌在输入行内（catchtap 防止与父级同时触发两次跳转） -->
+            <view class="hm-ask-send pressable" catchtap="goTriage"
+                  aria-role="button" aria-label="发送症状描述，进入智能导诊">发送</view>
+          </view>
+        </view>
+
+        <!-- 适老化大字模式（设计效果图 08）：输入框下方并排「发送 + 语音输入」；标准档隐藏 -->
+        <view class="hm-ask-btns">
+          <view class="hm-ask-send pressable" catchtap="goTriage"
+                aria-role="button" aria-label="发送症状描述，进入智能导诊">发送</view>
+          <view class="hm-ask-voice pressable" catchtap="goTriage"
+                aria-role="button" aria-label="语音输入症状，进入智能导诊">
+            <image class="hm-ask-mic-ic" src="{{icons.mic}}" />
+            <text>语音输入</text>
+          </view>
+        </view>
+
+        <!-- 症状快选词：点了直接进导诊页并自动出结论 -->
+        <view class="hm-quick">
+          <view class="hm-quick-in">
+            <view wx:for="{{quickSymptoms}}" wx:key="*this" class="hm-chip pressable"
+                  aria-role="button" aria-label="快速描述症状：{{item}}"
+                  data-text="{{item}}" bindtap="onQuickChip">{{item}}</view>
+          </view>
+        </view>
+
+      </view>
+
+      <!-- ============================================================
+           ③ 四宫格 2×2（参考图：浅蓝圆角底板 + 标题 + 说明）
+           ============================================================ -->
+      <view class="hm-quad">
+        <view wx:for="{{quad}}" wx:key="key" class="hm-quad-card pressable"
+              aria-role="button" aria-label="{{item.title}}，{{item.desc}}"
+              data-key="{{item.key}}" bindtap="onRoute">
+          <view class="hm-tile hm-tile-{{item.tint}}"><image class="hm-tile-ic" src="{{item.iconPath}}" /></view>
+          <view class="hm-quad-body">
+            <view class="hm-quad-title">{{item.title}}</view>
+            <view class="hm-quad-desc">{{item.desc}}</view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 适老化大字模式专属：紧急情况提示条（设计效果图 08）；标准档隐藏 -->
+      <view class="notice-bar notice-bar-amber hm-sos">
+        <image class="notice-bar-ic" src="{{icons.alertAmber}}" />
+        <view class="notice-bar-text">紧急情况请拨打120</view>
+      </view>
+
+      <!-- ============================================================
+           ④ 我的就医安排（参考图：标题与「查看全部」都在白卡内部顶部）
+           数据源=后端 GET /api/v1/home/summary 的 NEXT_APPOINTMENT 块；
+           无待就诊预约 → 真实空态 + 去预约挂号入口（不伪造预约数据）
+           ============================================================ -->
+      <view class="card apt-card">
+
+        <view class="apt-head">
+          <view class="apt-head-title">我的就医安排</view>
+          <view class="section-more pressable" bindtap="goRecords">
+            <text>查看全部</text>
+            <image class="section-more-ic" src="{{icons.chevronRightGray}}" />
+          </view>
+        </view>
+
+        <!-- 加载中：卡片骨架（不显"暂无"，避免与"加载失败"同形） -->
+        <skeleton wx:if="{{aptLoading && !hasApt}}" loading="{{true}}" type="card" rows="1" />
+
+        <view wx:elif="{{aptError && !hasApt}}" class="apt-empty">
+          <view class="apt-empty-badge"><image class="apt-empty-ic" src="{{icons.alertGray}}" /></view>
+          <view class="apt-empty-t">{{aptError}}</view>
+          <view class="apt-empty-s">网络恢复后可再试一次</view>
+          <view class="btn btn-outline apt-empty-btn pressable" bindtap="onRetrySummary">点击重试</view>
+        </view>
+
+        <view wx:elif="{{hasApt}}" class="apt-row pressable" bindtap="goRecords">
+          <!-- 日期徽章：解析成功才渲染；解析失败（返回 null）时整块不出现，缺字段态不破版 -->
+          <view wx:if="{{aptDate}}" class="apt-date">
+            <view class="apt-date-mon">{{aptDate.mon}}</view>
+            <view class="apt-date-day">{{aptDate.day}}</view>
+            <view class="apt-date-week">{{aptDate.week}}</view>
+          </view>
+          <view class="apt-left">
+            <view class="apt-dept">{{home.appointment.dept}} · {{home.appointment.doctor}}</view>
+            <view class="apt-line2">
+              <image class="apt-line2-ic" src="{{icons.clock}}" />
+              <text>{{home.appointment.date}} {{home.appointment.time}}</text>
+            </view>
+            <!-- 地点为契约可选字段：未返回时整行不显示（不占位、不破版） -->
+            <view wx:if="{{home.appointment.place}}" class="apt-line3">{{home.appointment.place}}</view>
+          </view>
+          <view class="apt-right">
+            <view class="info-capsule badge-green">{{home.appointment.status}}</view>
+            <image class="apt-arrow" src="{{icons.chevronRight}}" />
+          </view>
+        </view>
+
+        <!-- 空态（参考图同款）：真实「暂无就医安排」，不是占位假数据 -->
+        <view wx:else class="apt-empty">
+          <view class="apt-empty-badge"><image class="apt-empty-ic" src="{{icons.calendar}}" /></view>
+          <view class="apt-empty-t">暂无就医安排</view>
+          <view class="apt-empty-s">预约挂号后可在此查看就诊信息</view>
+          <view class="btn btn-outline apt-empty-btn pressable" data-key="appoint" bindtap="onRoute">去预约挂号</view>
+        </view>
+
+      </view>
+
+      <!-- ============================================================
+           ⑤ 常用服务（4 列 × 2 行）—— 既有入口保留（参考图未出现，不删）
+           ============================================================ -->
+      <view class="hm-block-svc">
+      <view class="section-header section-header-plain">
+        <text>常用服务</text>
+        <view class="section-more pressable" bindtap="onMore">
+          <text>全部服务</text>
+          <image class="section-more-ic" src="{{icons.chevronRightGray}}" />
+        </view>
+      </view>
+
+      <view class="card hm-svc">
+        <view class="hm-svc-grid">
+          <view wx:for="{{services}}" wx:key="key" class="hm-svc-item pressable"
+                data-key="{{item.key}}" bindtap="onRoute">
+            <!-- 图标自带浅蓝圆底（素材），故不再套 .hm-tile 底色 -->
+            <image class="hm-svc-ic" src="{{item.img}}" mode="aspectFit" />
+            <view class="hm-svc-name">{{item.name}}</view>
+          </view>
+        </view>
+      </view>
+      </view>
+
+      <!-- ============================================================
+           ⑥ 健康科普（参考图：区块标题在卡外；卡内横版封面 + 标题 + 科室·时长 + 标签）
+           内容取自本地科普库 utils/knowledge-kb.js（非后端数据），详情在分包 packageContent
+           ============================================================ -->
+      <view class="hm-block-kb">
+      <view class="section-header section-header-plain">
+        <text>健康科普</text>
+      </view>
+
+      <view class="card hm-kb" wx:if="{{tip}}">
+        <view class="hm-kb-body pressable" bindtap="onTipTap">
+          <!-- 封面：设计稿 01 的「人 + 叶」插画（主包 assets/home，禁引分包图） -->
+          <view class="hm-kb-cover"><image class="hm-kb-cover-img" src="/assets/home/kb-cover-person-leaf.png" mode="aspectFill" /></view>
+          <view class="hm-kb-text">
+            <view class="hm-kb-t">{{tip.title}}</view>
+            <!-- 元信息：科室 · 阅读时长（source 缺省时不留悬空分隔点） -->
+            <view class="hm-kb-meta">
+              <text wx:if="{{tip.source}}">{{tip.source}} · </text><text>约 {{tip.readMin}} 分钟阅读</text>
+            </view>
+            <view class="info-capsule badge-blue hm-kb-chip">健康科普</view>
+          </view>
+        </view>
+      </view>
+      </view>
+
+    </view>
+
+    <!-- ===== 侧栏：平板横屏排在右侧；手机/平板竖屏按 DOM 顺序接在主体之后 ===== -->
+    <view class="shell-side">
+
+      <!-- 健康提示（短视频）—— 既有入口保留 -->
+      <view class="section-header section-header-plain"><image class="ic-sm" src="{{icons.megaphone}}" /> 健康提示（短视频）</view>
+      <scroll-view class="kb-strip" scroll-x show-scrollbar="{{false}}">
+        <view class="kb-strip-in">
+          <view wx:for="{{kbVideos}}" wx:key="id" class="kb-item pressable"
+                data-id="{{item.id}}" bindtap="goVideo">
+            <view class="kb-badge">
+              <image class="kb-badge-ic" src="{{item.iconPath}}" />
+              <view class="kb-corner"><image class="kb-corner-ic" src="{{icons.videoWhite}}" /></view>
+            </view>
+            <view class="kb-title">{{item.title}}</view>
+            <view class="kb-dur">提示视频 · {{item.durationSec}} 秒</view>
+          </view>
+        </view>
+      </scroll-view>
+
+      <!-- 智能导诊说明条（既有入口保留；整条可点，点击命中区 = 整条） -->
+      <view class="hm-banner pressable" bindtap="goTriage">
+        <image class="hm-banner-art" src="{{A.banner}}" mode="aspectFill" binderror="onBannerError" />
+        <view class="hm-banner-main">
+          <view class="hm-banner-title">智能导诊 · 精准就医</view>
+          <view class="hm-banner-desc">AI 帮您找到合适的科室和医生</view>
+        </view>
+      </view>
+
+      <!-- 院内导航（分包 packageNav：平面图 + 路线指引） -->
+      <view class="card triage-card pressable" bindtap="goNav">
+        <view class="icon-badge icon-badge-teal triage-icon"><image class="ic-md" src="{{icons.mapPin}}" /></view>
+        <view class="triage-body">
+          <view class="triage-title">院内导航（电子平面图）</view>
+          <view class="card-sub">从医院大门出发 · 路线指引 · 可语音播报</view>
+        </view>
+        <image class="triage-arrow" src="{{icons.chevronRight}}" />
+      </view>
+
+      <!-- 全部健康科普（分包 packageContent） -->
+      <view class="card triage-card pressable" bindtap="goKnowledge">
+        <view class="icon-badge icon-badge-blue triage-icon"><image class="ic-md" src="{{icons.bookOpen}}" /></view>
+        <view class="triage-body">
+          <view class="triage-title">全部健康科普</view>
+          <view class="card-sub">慢病管理 · 用药安全 · 老年照护 · 就医指导</view>
+        </view>
+        <image class="triage-arrow" src="{{icons.chevronRight}}" />
+      </view>
+
+    </view>
+
+  </view>
+
+  <!-- ===== 页面底部：守护条 + 波浪（沿用既有装饰规约）=====
+       ⚠️ 波浪为纯 CSS 近似（两层椭圆），0 素材字节、pointer-events:none、不吃点击。 -->
+  <view class="notice-bar home-guard">
+    <image class="notice-bar-ic" src="{{icons.shield}}" />
+    <view class="notice-bar-text">您的健康，我们始终守护</view>
+  </view>
+  <view class="page-wave home-wave">
+    <view class="wave-slogan">智能 · 专业 · 便捷 · 温暖</view>
+  </view>
+
+</view>

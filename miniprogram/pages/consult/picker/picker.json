@@ -1,0 +1,7 @@
+{
+  "navigationStyle": "custom",
+  "navigationBarTitleText": "选择医生",
+  "usingComponents": {
+    "skeleton": "/components/skeleton/skeleton"
+  }
+}

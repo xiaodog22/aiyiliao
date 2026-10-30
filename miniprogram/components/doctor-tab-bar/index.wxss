@@ -1,0 +1,95 @@
+/* components/doctor-tab-bar —— 医生端底部导航
+   逐项尺寸取自效果图 01-医生工作台.png 实测（1391×3014，1rpx≈1.8547px）：
+   条高 100rpx（+ 安全区）、图标 44rpx、文字 22rpx、选中蓝（--primary）、未选中灰蓝（--text-sub）。
+   ⚠️ 视觉与 custom-tab-bar（患者端）保持同一套度量，两个端切换时不跳。 */
+.dtb {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  height: 100rpx;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--card);
+  border-top: 1rpx solid var(--border);
+  box-sizing: content-box;
+}
+
+.dtb-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10rpx 0 12rpx;
+}
+
+.dtb-icon-wrap {
+  position: relative;
+  width: 44rpx;
+  height: 44rpx;
+}
+
+.dtb-icon {
+  width: 44rpx;
+  height: 44rpx;
+}
+
+/* 消息未读红点：右上一角，尺寸与效果图一致（16rpx） */
+.dtb-dot {
+  position: absolute;
+  right: -6rpx;
+  top: -4rpx;
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  background: var(--accent-red);
+  border: 2rpx solid var(--card);
+  box-sizing: border-box;
+}
+
+.dtb-text {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  line-height: 1.2;
+  color: var(--text-sub);
+}
+
+.dtb-on .dtb-text {
+  color: var(--primary);
+  font-weight: 500;
+}
+
+/* ============================================================
+   ≥600px：rpx → px（÷2），与页面同一口径（750rpx 设计宽 = 375px）
+   ============================================================ */
+@media (min-width: 600px) {
+  .dtb {
+    height: 50px;
+    border-top: 1px solid var(--border);
+  }
+
+  .dtb-item { padding: 5px 0 6px; }
+
+  .dtb-icon-wrap,
+  .dtb-icon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .dtb-dot {
+    right: -3px;
+    top: -2px;
+    width: 8px;
+    height: 8px;
+    border-width: 1px;
+  }
+
+  .dtb-text {
+    margin-top: 3px;
+    font-size: 11px;
+  }
+}
+

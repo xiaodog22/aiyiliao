@@ -1,0 +1,208 @@
+/* pages/auth/manual-login —— 手动登录降级页（对齐设计图 04）
+   浅蓝背景 + 蓝圆 Logo + 白卡内下划线式输入框 + 蓝色胶囊登录按钮。
+   颜色一律走 page{--*} 令牌，不硬编码 hex。 */
+
+.ml-page {
+  min-height: 100vh;
+  background: var(--bg);
+  padding: 0 var(--space-page) calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- 品牌区：蓝圆 Logo + 标题 + 副标题 ---- */
+.ml-brand {
+  padding-top: 100rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.ml-logo {
+  width: 184rpx;
+  height: 184rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 16rpx 40rpx rgba(11, 110, 248, 0.22);
+  overflow: hidden;
+}
+
+.ml-logo-img {
+  width: 100%;
+  height: 100%;
+}
+
+.ml-title {
+  margin-top: 48rpx;
+  font-size: calc(var(--font-title) + 2rpx);
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: 1rpx;
+}
+
+.ml-subtitle {
+  margin-top: 16rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+/* ---- 白卡 ---- */
+.ml-card {
+  margin-top: 64rpx;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  padding: 56rpx 40rpx 44rpx;
+  box-shadow: 0 12rpx 40rpx rgba(31, 62, 145, 0.10);
+}
+
+/* ---- 表单字段：标签在上 + 下划线输入框 ---- */
+.ml-field { margin-bottom: 40rpx; }
+
+.ml-label {
+  display: block;
+  font-size: calc(var(--font-body) - 2rpx);
+  font-weight: 500;
+  color: var(--text-main);
+  margin-bottom: 8rpx;
+}
+
+.ml-input-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  border-bottom: 1rpx solid var(--border);
+  padding-bottom: 12rpx;
+}
+
+.ml-input {
+  flex: 1;
+  /* 触控红线 88rpx=44px（D-A-P2-02：原 72rpx=36px） */
+  height: 88rpx;
+  font-size: var(--font-body);
+  color: var(--text-main);
+}
+
+.ml-input-icon {
+  width: 40rpx;
+  height: 40rpx;
+  margin-left: 16rpx;
+  flex-shrink: 0;
+}
+
+.ml-ph { color: var(--text-placeholder); }
+
+/* ---- 登录按钮：蓝色胶囊 ---- */
+.ml-btn {
+  width: 100%;
+  height: 96rpx;
+  line-height: 96rpx;
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: calc(var(--font-body) + 2rpx);
+  font-weight: 600;
+  border-radius: 999rpx;
+  border: none;
+  margin-top: 24rpx;
+  padding: 0;
+}
+
+.ml-btn::after { border: none; }
+.ml-btn[disabled] { opacity: 0.6; }
+
+/* ---- 返回微信一键登录 ---- */
+.ml-back {
+  margin-top: 36rpx;
+  text-align: center;
+  font-size: calc(var(--font-body) - 2rpx);
+  color: var(--primary);
+}
+
+/* ---- 未注册提示 ---- */
+.ml-tip {
+  margin-top: 20rpx;
+  text-align: center;
+  font-size: calc(var(--font-caption) - 2rpx);
+  color: var(--text-sub);
+}
+
+/* ---- 协议行（卡片外底部，合规） ---- */
+.ml-agree-row {
+  margin-top: auto;
+  padding-top: 48rpx;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  row-gap: 8rpx;
+}
+
+.ml-checkbox {
+  width: 32rpx;
+  height: 32rpx;
+  border-radius: 50%;
+  border: 2rpx solid var(--text-weak);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12rpx;
+}
+
+.ml-checkbox-on {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.ml-tick {
+  width: 14rpx;
+  height: 8rpx;
+  border-left: 3rpx solid #FFFFFF;
+  border-bottom: 3rpx solid #FFFFFF;
+  transform: rotate(-45deg) translateY(-2rpx);
+}
+
+.ml-agree-text {
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
+.ml-agree-link {
+  font-size: var(--font-caption);
+  color: var(--primary);
+  margin-left: 8rpx;
+  padding: 4rpx 6rpx;
+}
+
+/* ============ 适老模式放大 ============ */
+/* 输入框高度已按红线上调到 88rpx（base 同值），这里只保留字号——且必须走令牌，
+   否则 xlarge 档被 34rpx 钉死，比 large 档还小。 */
+.theme-large .ml-input,
+.theme-xlarge .ml-input { height: 88rpx; font-size: var(--font-body); }
+.theme-large .ml-btn,
+.theme-xlarge .ml-btn { height: 108rpx; line-height: 108rpx; font-size: 36rpx; }
+.theme-large .ml-label,
+.theme-xlarge .ml-label { font-size: calc(var(--font-body) + 2rpx); }
+
+/* ============ 平板/宽屏（600px 档）：rpx → px（KNOWN_ISSUES #21） ============ */
+@media (min-width: 600px) {
+  .ml-brand { padding-top: 50px; }
+  .ml-logo { width: 92px; height: 92px; }
+  .ml-title { margin-top: 24px; font-size: 21px; }
+  .ml-subtitle { margin-top: 8px; font-size: 13px; }
+  .ml-card { margin-top: 32px; border-radius: 16px; padding: 28px 20px 22px; }
+  .ml-field { margin-bottom: 20px; }
+  .ml-label { font-size: 14px; margin-bottom: 4px; }
+  .ml-input { height: 44px; font-size: 15px; }
+  .ml-input-icon { width: 20px; height: 20px; margin-left: 8px; }
+  .ml-btn { height: 48px; line-height: 48px; font-size: 16px; margin-top: 12px; }
+  .ml-back { margin-top: 18px; font-size: 14px; }
+  .ml-tip { margin-top: 10px; font-size: 11px; }
+  .ml-agree-row { padding-top: 24px; }
+  .ml-checkbox { width: 16px; height: 16px; margin-right: 6px; }
+  .ml-tick { width: 7px; height: 4px; border-left-width: 2px; border-bottom-width: 2px; }
+  .ml-agree-text, .ml-agree-link { font-size: 12px; }
+}

@@ -1,0 +1,64 @@
+<!--
+  pages/auth/login —— 登录主界面（患者端 A-认证 01-登录页）
+
+  版式逐项对照 design-output/患者端/A-认证/01-登录页.png：
+    ① 全页深蓝渐变（#0B6EF8 → #3E8CFF，令牌 --primary → --accent）
+    ② 顶部品牌区：大标题「AI 智慧医疗」+ 副标题「让健康服务更简单」（均左对齐）
+       装饰层：浅蓝心电图折线 + 左右各一枚白色描边十字（纯 CSS/SVG，不占素材）
+    ③ 右侧机器人「小安」插画 + 左侧对话气泡「您好，我是小安」（气泡尾巴指向机器人）
+    ④ 底部白色大圆角登录卡：「欢迎登录」+「患者登录」实心胶囊 +「医护登录」描边胶囊
+       + 底部协议行（灰色说明 + 两个蓝色链接）
+    ⑤ 卡片底部让出安全区（home indicator）
+
+  ⚠️ 「个人账号登录」「开启大字模式」两个设计稿之外的入口已从本页移除（对齐设计稿版式）：
+     · 手输登录：仍可在 wx 一键登录失败/拒授权时按 _goManual 自动降级进入（开发构建），
+       生产构建本就隐藏；
+     · 大字模式：入口在「我的 → 隐私设置」页（三档 standard/large/xlarge），未丢功能。
+  ⚠️ 机器人素材为全站同源 assets/home/xiaoan-robot.png（3D 小安，挥手姿势），不新增素材。
+-->
+<view class="lg-page theme-{{theme}}">
+
+  <!-- ② 品牌区：标题/标语左对齐，装饰层与插画绝对定位（装饰不参与点击） -->
+  <view class="lg-sky">
+    <view class="lg-deco" aria-hidden="true">
+      <view class="lg-ecg"></view>
+      <view class="lg-cross lg-cross-l"></view>
+      <view class="lg-cross lg-cross-r"></view>
+    </view>
+
+    <view class="lg-head">
+      <view class="lg-title">AI 智慧医疗</view>
+      <view class="lg-slogan">让健康服务更简单</view>
+    </view>
+
+    <image class="lg-art" src="{{robotArt}}" mode="aspectFit" binderror="onRobotArtError" aria-hidden="true" />
+
+    <!-- 对话气泡：白底圆角 + 尾巴指向机器人头部（在插画之后，保证压在机器人之上） -->
+    <view class="lg-bubble" aria-hidden="true">您好，我是小安</view>
+  </view>
+
+  <!-- ④ 登录卡 -->
+  <view class="lg-card">
+    <view class="lg-welcome">欢迎登录</view>
+
+    <!-- 患者登录：wx.login() 的 code + getPhoneNumber 的 phoneCode → POST /api/v1/auth/wechat/login -->
+    <button
+      class="btn btn-primary lg-btn"
+      open-type="getPhoneNumber"
+      data-role="patient"
+      bindgetphonenumber="onGetPhoneNumber"
+    >患者登录</button>
+
+    <!-- 医护登录：同一交互 → POST /api/v1/doctor/login（服务端按任职关系判定，未登记则 403） -->
+    <button
+      class="btn btn-outline lg-btn"
+      open-type="getPhoneNumber"
+      data-role="doctor"
+      bindgetphonenumber="onGetPhoneNumber"
+    >医护登录</button>
+
+    <!-- 协议行（设计稿逐字）：说明文字 + 两个蓝色可点链接，跳真实协议页 -->
+    <view class="lg-agree">登录即代表您已阅读并同意<text class="lg-link" bindtap="onOpenAgreement">用户协议</text><text class="lg-link" bindtap="onOpenPrivacy">隐私政策</text></view>
+  </view>
+
+</view>

@@ -1,0 +1,7 @@
+{
+  "navigationStyle": "custom",
+  "navigationBarTitleText": "账号安全",
+  "usingComponents": {
+    "doctor-tabbar": "/components/doctor-tab-bar/index"
+  }
+}

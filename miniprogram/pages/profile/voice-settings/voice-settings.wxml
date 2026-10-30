@@ -1,0 +1,131 @@
+<!--
+  pages/profile/voice-settings —— 音色管理
+  版式：design-output/患者端/C-个人中心/11-音色管理.png（1391×3014，1rpx ≈ 1.8547px）
+
+  ① 自绘导航：白底 + 蓝色返回箭头 + 居中「音色管理」（右侧胶囊由微信自绘）
+  ② 当前默认音色：蓝边卡（圆角 16rpx）+ 声波图标 + 音色名 + 「当前默认音色」+ 试听
+  ③ 可选音色：卡外标题 + 白卡列表（图标 / 名称 / 描述 / 试听 / 设为默认 / 删除 / 选中态）
+  ④ 语速调节（设计稿无，按需求增补）：慢 / 标准 / 快 三档滑块 + 保存按钮
+
+  ⚠️ 数据纯本地（services/voice.js 本地版）：目录取自设计稿四个音色，
+     选中音色 wb_voice / 语速 wb_voice_rate / 删除记录 wb_voice_hidden。
+  ⚠️ 试听 = services/speech.js 的 TTS 合成固定示例句；语音服务不可用时如实提示。
+-->
+<view class="page theme-{{theme}} vs-page" style="padding-top: {{navH}}px;">
+
+  <!-- ① 自绘导航 -->
+  <view class="vs-nav" style="padding-top: {{statusBarHeight}}px;">
+    <view class="vs-nav-bar">
+      <view class="vs-nav-back" bindtap="onBack" hover-class="vs-hover"
+            aria-role="button" aria-label="返回">
+        <image class="vs-nav-back-ic" src="{{icons.chevronLeft}}" />
+      </view>
+      <view class="vs-nav-title">音色管理</view>
+    </view>
+  </view>
+
+  <!-- ② 当前默认音色 -->
+  <view class="vs-current">
+    <image class="vs-current-ic" src="{{icons.soundWave}}" />
+    <view class="vs-current-body">
+      <view class="vs-current-name">{{currentName || '暂无音色'}}</view>
+      <view class="vs-current-sub">当前默认音色</view>
+    </view>
+    <view class="vs-act" data-id="{{current}}" bindtap="onPreview"
+          aria-role="button" aria-label="试听当前音色">
+      <view class="vs-pill vs-pill-lg {{playingId === current ? 'vs-pill-on' : ''}}">
+        <text>{{playingId === current ? '试听中' : '试听'}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ③ 可选音色 -->
+  <view class="vs-section-title">可选音色</view>
+
+  <view wx:if="{{!rows.length}}" class="card vs-empty">
+    <image class="ic-lg" src="{{icons.volumeOff}}" />
+    <view class="vs-empty-t">暂无可选音色</view>
+    <view class="vs-empty-s">底部可恢复默认音色列表</view>
+  </view>
+
+  <view wx:else class="card vs-list">
+    <view wx:for="{{rows}}" wx:key="id"
+          class="vs-row {{item.sel ? 'vs-row-sel' : ''}}"
+          data-id="{{item.id}}" bindtap="onPick"
+          aria-role="radio" aria-checked="{{item.sel || item.on}}">
+      <view class="vs-row-main">
+        <image class="vs-row-ic" src="{{item.sel || item.on ? icons.soundWave : icons.soundWaveGray}}" />
+        <view class="vs-row-text">
+          <view class="vs-row-name">
+            <text class="vs-row-name-t">{{item.name}}</text>
+            <text wx:if="{{item.on}}" class="vs-row-cur">当前</text>
+            <text wx:elif="{{item.sel}}" class="vs-row-cur">已选</text>
+          </view>
+          <view class="vs-row-desc">{{item.desc}}</view>
+        </view>
+      </view>
+
+      <view class="vs-row-ops">
+        <view class="vs-act" data-id="{{item.id}}" catchtap="onPreview"
+              aria-role="button" aria-label="试听{{item.name}}">
+          <view class="vs-pill vs-pill-gray {{playingId === item.id ? 'vs-pill-on' : ''}}">
+            <text>{{playingId === item.id ? '试听中' : '试听'}}</text>
+          </view>
+        </view>
+
+        <view wx:if="{{item.custom}}" class="vs-act" data-id="{{item.id}}" catchtap="onRemove"
+              aria-role="button" aria-label="删除{{item.name}}">
+          <view class="vs-del">删除</view>
+        </view>
+        <view wx:elif="{{!item.on}}" class="vs-act" data-id="{{item.id}}" catchtap="onSetDefault"
+              aria-role="button" aria-label="设为默认{{item.name}}">
+          <view class="vs-pill vs-pill-solid">设为默认</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ④ 语速调节（增补） -->
+  <view class="card vs-speed">
+    <view class="vs-speed-head">
+      <view class="vs-speed-title">语速调节</view>
+      <view class="vs-speed-val">{{rateLabel}}</view>
+    </view>
+
+    <view class="vs-speed-track" bindtouchstart="onSpeedTouch" bindtouchmove="onSpeedTouch"
+          catchtouchmove="noop" aria-role="slider" aria-label="语速调节">
+      <view class="vs-speed-rail"></view>
+      <view class="vs-speed-fill" style="width: {{ratePct}}%;"></view>
+      <view class="vs-speed-thumb" style="left: {{ratePct}}%;"></view>
+    </view>
+
+    <view class="vs-speed-marks">
+      <text wx:for="{{rateMarks}}" wx:key="*this"
+            class="vs-speed-mark {{index === rateIndex ? 'vs-speed-mark-on' : ''}}">{{item}}</text>
+    </view>
+  </view>
+
+  <!-- 保存（音色 + 语速） -->
+  <view class="btn btn-primary vs-save" bindtap="onSave"
+        aria-role="button" aria-label="保存音色设置">
+    <text>保存</text>
+  </view>
+
+  <!-- 待保存提示 / 试听与保存失败提示（两条互不遮挡，可同时出现） -->
+  <view wx:if="{{pendingName}}" class="vs-hint">
+    <image class="ic-xs" src="{{icons.info}}" />
+    <text>已选中「{{pendingName}}」，点「保存」生效</text>
+  </view>
+  <view wx:if="{{engineHint}}" class="vs-hint">
+    <image class="ic-xs" src="{{icons.info}}" />
+    <text>{{engineHint}}</text>
+  </view>
+
+  <!-- 恢复默认音色列表（删过自定义音色才出现） -->
+  <view wx:if="{{hiddenCount}}" class="vs-reload" bindtap="onRestore"
+        aria-role="button" aria-label="恢复默认音色列表">
+    <image class="ic-xs" src="{{icons.refreshGray}}" />
+    <text>恢复默认音色列表（已删除 {{hiddenCount}} 个）</text>
+  </view>
+
+</view>

@@ -1,0 +1,111 @@
+<view class="page theme-{{theme}}">
+
+  <!-- 空态：没有可展示的报告 -->
+  <view wx:if="{{empty}}" class="card empty-card">
+    <image class="ic-lg" src="{{icons.clipboardList}}" />
+    <view class="empty-t">还没有导诊结果</view>
+    <view class="empty-s">请返回导诊页描述症状，AI 会先生成分诊建议，再生成完整报告。</view>
+    <view class="btn btn-primary empty-btn" bindtap="onRetry">返回描述症状</view>
+  </view>
+
+  <block wx:else>
+
+    <!-- ① 分级与建议时限（第一眼要回答：我能等吗？） -->
+    <view class="card rk-card">
+      <view class="rk-head">
+        <view class="badge {{r.levelCls}} rk-badge">{{r.levelText}}</view>
+        <view class="rk-window">建议 {{r.levelWindow}}内就诊</view>
+      </view>
+      <view class="rk-advice">{{r.levelAdvice}}</view>
+      <view class="rk-ops">
+        <view class="rk-op" bindtap="onSpeak">
+          <image class="ic-sm" src="{{speaking ? icons.volumeOff : icons.volume}}" />{{speaking ? '停止播报' : '语音播报'}}
+        </view>
+      </view>
+    </view>
+
+    <!-- ② 急诊预警（有红旗才显示，置顶最醒目） -->
+    <view wx:if="{{r.emergency}}" class="card emg-card">
+      <view class="emg-head">
+        <image class="ic-md" src="{{icons.alert}}" />
+        <view class="emg-title">检测到紧急信号</view>
+      </view>
+      <view class="emg-tags">
+        <text wx:for="{{r.redFlagLabels}}" wx:key="*this" wx:for-item="tag" class="emg-tag">{{tag}}</text>
+      </view>
+      <view class="emg-action">{{r.redFlagAction}}</view>
+      <view class="emg-ops">
+        <view class="btn btn-emg emg-op" bindtap="onCall120">
+          <image class="ic-sm" src="{{icons.phoneWhite}}" />立即拨打 120
+        </view>
+        <view class="btn btn-outline emg-op emg-op-2" bindtap="onNav">前往急诊区</view>
+      </view>
+    </view>
+
+    <!-- ③ 推荐科室 + 为什么 -->
+    <view class="card">
+      <view class="dept-head">
+        <view class="dept-icon-badge"><image class="ic-md" src="{{icons.hospital}}" /></view>
+        <view class="dept-main">
+          <view class="dept-label">建议就诊科室</view>
+          <view class="dept-name">{{r.dept}}</view>
+          <view class="dept-floor" wx:if="{{r.deptFloor}}">{{r.deptFloor}}</view>
+        </view>
+      </view>
+
+      <view class="dept-intro" wx:if="{{r.deptIntro}}">{{r.deptIntro}}</view>
+      <view class="dept-conf" wx:if="{{r.confidenceText}}">匹配度：{{r.confidenceText}}</view>
+
+      <view class="dept-basis" wx:if="{{r.reasons.length}}">
+        <view class="dept-basis-title">判断依据</view>
+        <view class="dept-basis-item" wx:for="{{r.reasons}}" wx:for-item="rr" wx:key="*this">· {{rr}}</view>
+      </view>
+
+      <view class="dept-alt" wx:if="{{r.alternates.length}}">
+        <text class="dept-alt-k">其他可能相关：</text>{{r.alternates}}
+      </view>
+
+      <view class="dept-ops">
+        <view class="btn btn-primary dept-op" bindtap="onDeptBook">去挂号</view>
+        <view class="btn btn-outline dept-op" wx:if="{{r.navigable}}" bindtap="onNav">院内路线</view>
+      </view>
+      <view class="dept-nav-hint" wx:if="{{!r.navigable}}">
+        <image class="ic-xs" src="{{icons.info}}" />急诊科走医院大门旁的绿色通道（独立入口），不在本层平面图内
+      </view>
+    </view>
+
+    <!-- ④ 症状回顾（结构化槽位 + 原文，供用户核对与医生参考） -->
+    <view class="card">
+      <view class="card-title"><image class="card-title-icon" src="{{icons.fileText}}" /> 症状回顾</view>
+      <view class="sym-slots" wx:if="{{r.slotsText}}">
+        <view class="sym-slots-title">系统理解到的信息</view>
+        <view class="sym-slots-text">{{r.slotsText}}</view>
+      </view>
+      <view class="sym-raw" wx:if="{{r.symptomText}}">
+        <view class="sym-raw-title">我的描述</view>
+        <view class="sym-raw-text">{{r.symptomText}}</view>
+      </view>
+    </view>
+
+    <!-- ⑤ 下一步 -->
+    <view class="card">
+      <view class="card-title"><image class="card-title-icon" src="{{icons.checkCircle}}" /> 建议下一步</view>
+      <view class="next-item" wx:for="{{r.nextSteps}}" wx:key="*this" wx:for-item="st">· {{st}}</view>
+    </view>
+
+    <view class="btn btn-ghost act-btn" bindtap="onRetry">补充症状，重新分析</view>
+
+    <!-- ⑥ 合规 / 隐私 -->
+    <view class="card law-card">
+      <view class="law-title"><image class="ic-xs" src="{{icons.shield}}" /> 免责与隐私说明</view>
+      <view class="law-text">{{r.disclaimer || '导诊结果仅供参考，不构成诊疗意见。'}}</view>
+      <view class="law-text">本报告仅保存在您的手机上，可随时删除；分诊过程不会上传姓名、手机号等身份信息。</view>
+      <view class="law-ops">
+        <view class="law-op" bindtap="onPolicy">隐私说明</view>
+        <view class="law-op" bindtap="onClear">删除本机记录</view>
+      </view>
+    </view>
+
+  </block>
+
+</view>

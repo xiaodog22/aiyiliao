@@ -1,0 +1,83 @@
+<!-- 健康科普列表（设计稿 17）：品牌蓝通栏 hero（标题 + 搜索）+ 分类 chip + 两列卡片 -->
+<view class="page theme-{{theme}} kb-page">
+
+  <!-- hero：实测纯色 --primary（非渐变）+ 白字标题 + 右侧心叶插画 + 底部白胶囊搜索 -->
+  <view class="kb-hero">
+    <view class="kb-hero-top">
+      <view class="kb-hero-body">
+        <view class="kb-hero-title">健康科普</view>
+        <view class="kb-hero-sub">了解健康知识，养成良好生活习惯</view>
+      </view>
+      <!-- 装饰：白色心形描边 + 叶片（复用现有图标，0 新增素材；对应设计稿右侧「心+叶」插画） -->
+      <view class="kb-hero-art">
+        <image class="kb-hero-heart" src="{{icons.heartWhite}}" />
+        <image class="kb-hero-leaf" src="{{icons.leafWhite}}" />
+      </view>
+    </view>
+
+    <!-- 搜索：本地过滤标题/摘要/分类，不请求后端（科普库随包发布，无检索接口） -->
+    <view class="kb-search">
+      <image class="kb-search-ic" src="{{icons.search}}" />
+      <input
+        class="kb-search-in"
+        placeholder="搜索健康知识"
+        placeholder-class="kb-search-ph"
+        value="{{keyword}}"
+        bindinput="onSearch"
+        confirm-type="search"
+      />
+      <view wx:if="{{keyword}}" class="kb-search-clear" bindtap="onClearSearch">清空</view>
+    </view>
+  </view>
+
+  <!-- 分类：横滑一行（分类数固定且不多，横滑比换行省纵向空间；设计稿最后一个 chip 同样被右边缘裁切） -->
+  <scroll-view class="kb-cats" scroll-x show-scrollbar="{{false}}">
+    <view class="kb-cats-in">
+      <view wx:for="{{cats}}" wx:key="*this"
+            class="kb-chip {{cat === item ? 'kb-chip-on' : ''}}"
+            data-cat="{{item}}" bindtap="onCat">{{item}}</view>
+    </view>
+  </scroll-view>
+
+  <!-- 类型：全部 / 图文 / 视频（与分类是两条独立维度，可叠加） -->
+  <view class="kb-types">
+    <view wx:for="{{types}}" wx:key="key"
+          class="kb-type {{type === item.key ? 'kb-type-on' : ''}}"
+          data-type="{{item.key}}" bindtap="onType">{{item.name}}</view>
+  </view>
+
+  <!-- 两列卡片：封面图在上（分包内 4:3 素材），标题与「分类 · 类型」在下 -->
+  <view class="kb-grid">
+    <view wx:for="{{list}}" wx:key="id" class="kb-card pressable"
+          data-id="{{item.id}}" bindtap="goDetail">
+
+      <view class="kb-cover">
+        <!-- 封面优先级：条目自带 cover（图/视频统一）→ 否则图标底板。
+             cover 指向分包内 assets/covers/，本页就在分包里，不会跨包裂图。 -->
+        <image wx:if="{{item.cover}}" class="kb-cover-img" src="{{item.cover}}" mode="aspectFill" />
+        <view wx:else class="kb-cover-art">
+          <image class="kb-cover-ic" src="{{item.iconPath}}" />
+        </view>
+        <!-- 视频角标：纯白三角（CSS 绘制，无深色底），对应设计稿卡片中央的播放键 -->
+        <view wx:if="{{item.type === 'video'}}" class="kb-play" />
+      </view>
+
+      <view class="kb-body">
+        <view class="kb-t">{{item.title}}</view>
+        <view class="kb-f">{{item.category}} · {{item.type === 'video' ? '视频' : '图文'}}</view>
+      </view>
+
+    </view>
+  </view>
+
+  <!-- 空态：搜索/分类无命中（不伪造占位内容） -->
+  <view wx:if="{{list.length === 0}}" class="kb-empty">
+    <image class="kb-empty-ic" src="{{icons.searchGray}}" />
+    <view class="kb-empty-t">没有找到相关内容</view>
+    <view class="kb-empty-s">换个分类或关键词试试</view>
+    <view wx:if="{{keyword}}" class="kb-empty-btn" bindtap="onClearSearch">清空搜索</view>
+  </view>
+
+  <view class="k-note">{{disclaimer}}</view>
+
+</view>

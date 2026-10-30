@@ -1,0 +1,16 @@
+<!-- 医生端底部导航：结构与 custom-tab-bar 一致（图标上、文字下，选中蓝色） -->
+<view class="dtb">
+  <view
+    wx:for="{{list}}"
+    wx:key="key"
+    class="dtb-item {{current === item.key ? 'dtb-on' : ''}}"
+    data-key="{{item.key}}"
+    bindtap="onTap"
+  >
+    <view class="dtb-icon-wrap">
+      <image class="dtb-icon" src="{{current === item.key ? item.activeIconUrl : item.iconUrl}}" mode="aspectFit" />
+      <view wx:if="{{item.key === 'messages' && unread}}" class="dtb-dot"></view>
+    </view>
+    <text class="dtb-text">{{item.text}}</text>
+  </view>
+</view>

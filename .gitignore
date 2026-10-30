@@ -1,0 +1,65 @@
+# 业务服务运行时数据（上传附件/头像、临时文件）——运行时产物不是源码，不入库
+# 说明：run/uploads/attachments 下的 32hex.* 是联调上传/手工塞的视频与图片，
+#      换机器或清空后可重新上传/复制，丢了不影响代码正确性。
+backend/business-service/run/
+
+# 资源服务端副本（由 tools/resource-import.py --write 生成，属构建产物不入库）
+# 为什么忽略：225+ 个图片副本是"包内源文件的派生品"，入库会让每次换图标都产生二进制 diff；
+# 部署前跑一次脚本即可重建（命令见 backend/deploy/README.md「资源副本生成」）。
+backend/deploy/resources/
+
+# 本地环境与凭据（口令值单一事实源，不入库）
+backend/deploy/env.local
+*.local
+
+# 运行证据/临时产物（含运行时凭据快照，不入库）
+backend/deploy/run/
+backend/deploy/logs/
+
+# 会话临时工作文件（验证输出/探测片段，不入库）
+_tmp_*
+
+# 本地记忆与工作区缓存
+.workbuddy/
+
+# 构建产物
+backend/business-service/target/
+*.class
+
+# 日志
+*.log
+
+# Python 虚拟环境与缓存
+.venv/
+__pycache__/
+*.pyc
+
+# ===== 上传 GitHub 前追加（2026-10-30）=====
+# 敏感个人信息：软著申请资料含真实姓名/身份证号，一律不入库
+软件著作权申请资料/
+软著旧V1.0材料备份_20260914/
+# 已下线数字人/模型备份（勿上传）
+avatar-backend/
+mao/
+models/
+mao_min.zip
+# 压缩备份包（backend.rar 485MB 超 GitHub 100MB 单文件限制）
+*.rar
+# 联调补丁/运行时证据（含问诊记录，不入库）
+docs/patches/
+backend/ai-service/runtime/
+backend/deploy/logs/
+# 本地开发与 AI 工具目录
+.acl-reports/
+.agents/
+.claude/
+.cursor/
+.opencode/
+.qoder/
+.trae/
+.pytest_cache/
+# 设计交付存档
+design-output/
+ui-design-runs/
+# 临时备份
+backend/business-service/.backup/

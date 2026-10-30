@@ -1,0 +1,66 @@
+<view class="page theme-{{theme}} rc-page">
+
+  <!-- 分段筛选（设计 06：全部 / 待就诊 / 已完成，带小号计数） -->
+  <view class="seg-tabs">
+    <view class="seg-tab {{filter === '全部' ? 'seg-tab-on' : ''}}" data-f="全部" bindtap="onSeg">全部<text class="seg-tab-count">{{counts.all}}</text></view>
+    <view class="seg-tab {{filter === '待就诊' ? 'seg-tab-on' : ''}}" data-f="待就诊" bindtap="onSeg">待就诊<text class="seg-tab-count">{{counts.active}}</text></view>
+    <view class="seg-tab {{filter === '已完成' ? 'seg-tab-on' : ''}}" data-f="已完成" bindtap="onSeg">已完成<text class="seg-tab-count">{{counts.done}}</text></view>
+  </view>
+
+  <!-- 骨架屏：加载中 -->
+  <skeleton wx:if="{{loading}}" type="list" rows="4" />
+
+  <!-- 上线阶段错误态（开发阶段由 withFallback 兜底演示数据，不会走到这里） -->
+  <view wx:elif="{{error}}" class="state">
+    <view class="state-badge state-badge-primary"><image class="state-ic" src="{{icons.alertWhite}}" /></view>
+    <view class="state-title">挂号记录加载失败</view>
+    <view class="state-sub">{{error}}</view>
+    <view class="btn btn-primary state-btn" bindtap="fetch">重新加载</view>
+  </view>
+
+  <!-- 记录卡（设计稿 06：科室·门诊标题 + 右上状态；医生行；院区行；浅蓝日期信息框；分隔线 + 双按钮） -->
+  <block wx:elif="{{displayed.length > 0}}">
+    <view wx:for="{{displayed}}" wx:key="id" class="rc-card">
+      <!-- ① 科室 + 状态 -->
+      <view class="rc-head">
+        <view class="rc-dept">{{item.dept}} · 门诊</view>
+        <view class="badge {{item.statusCls}}">{{item.status}}</view>
+      </view>
+
+      <!-- ② 医生 + 院区 -->
+      <view class="rc-main">
+        <view class="rc-doctor">{{item.doctor}}</view>
+        <view class="rc-when">{{item.place}}</view>
+      </view>
+
+      <!-- ③ 浅蓝日期信息框 -->
+      <view class="rc-datebox">
+        <image class="rc-date-ic" src="{{icons.calendar}}" />
+        <text class="rc-date-t">{{item.date}} {{item.time}}</text>
+      </view>
+
+      <!-- ④ 分隔线 + 双按钮（待就诊=取消预约/查看详情；已完成=查看报告/再次预约） -->
+      <view class="rc-actions">
+        <view wx:if="{{item.isActive}}" class="rc-btn rc-btn-outline" data-index="{{index}}" catchtap="onCancel">取消预约</view>
+        <view wx:if="{{item.isActive}}" class="rc-btn rc-btn-mint" data-index="{{index}}" catchtap="onDetail">查看详情</view>
+        <block wx:elif="{{item.isDone}}">
+          <view class="rc-btn rc-btn-outline" catchtap="onViewReport">查看报告</view>
+          <view class="rc-btn rc-btn-blue" catchtap="onRebook">再次预约</view>
+        </block>
+        <view wx:else class="rc-btn rc-btn-outline" data-index="{{index}}" catchtap="onDetail">查看详情</view>
+      </view>
+    </view>
+    <!-- 加载更多（设计稿 06：虚线转圈 + 「加载更多就医安排...」文字） -->
+    <view wx:if="{{hasMore}}" class="load-more"><view class="rc-spin"></view>加载更多就医安排…</view>
+    <view wx:else class="load-all">已显示全部 {{displayed.length}} 条</view>
+  </block>
+
+  <!-- 空态（设计稿 06 无空态图，按复刻要求补：图标 + 引导文案 + 「去挂号」CTA） -->
+  <view wx:else class="state">
+    <view class="state-badge state-badge-gray"><image class="state-ic" src="{{icons.calendar}}" /></view>
+    <view class="state-title">暂无挂号记录</view>
+    <view class="state-sub">预约成功后，就诊安排会显示在这里</view>
+    <view class="btn btn-primary state-btn" bindtap="onGoBook">去挂号</view>
+  </view>
+
+</view>

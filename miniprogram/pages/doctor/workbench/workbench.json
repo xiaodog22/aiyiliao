@@ -1,0 +1,11 @@
+{
+  "navigationStyle": "custom",
+  "navigationBarTextStyle": "white",
+  "navigationBarTitleText": "医生工作台",
+  "enablePullDownRefresh": true,
+  "backgroundColor": "#E4F1FF",
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "doctor-tabbar": "/components/doctor-tab-bar/index"
+  }
+}

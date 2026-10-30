@@ -1,0 +1,1036 @@
+/* ============================================================
+   pages/home —— 患者端首页
+   2026-10-19：按 design-output/患者端/01-首页.png 逐项校验后的对齐版。
+   区块顺序与参考图一致：
+     hero（品牌 → 问候+AI徽章 → 后端问候语）→ 症状输入卡（发送胶囊嵌在浅蓝输入行内）
+     → 四宫格(2×2) → 我的就医安排（标题在卡内）→ 常用服务 → 健康科普（横版封面 + 科室·时长）
+   ⚠️ 参考图中未出现、但既有业务入口（常用服务 / 健康提示短视频 / 智能导诊说明条 /
+      院内导航 / 全部健康科普 / 底部守护波浪）**一律保留**，排在参考图版式之后，
+      沿用同一套视觉语言（不因为视觉重构而删除既有入口或改动路由）。
+
+   ① 尺寸一律走本页变量：rpx 在宽屏会等比放大（1200pt 平板 1rpx≈1.6px），
+      集中 override 变量 = 一处改全页生效。
+   ② 类名统一 hm- 前缀，避免与 app.wxss / 其它页面同名互相污染。
+   ③ 颜色/圆角/字号只走 app.wxss 的 CSS 变量；本文件不出现新的十六进制色值
+      （仅 :active 的 rgba 阴影与既有渐变保留，属装饰）。
+   ============================================================ */
+.home {
+  /* 页面左右留白（与 app.wxss 的 --space-page 同值，仅供本页自带留白计算） */
+  --h-gutter: 32rpx;
+  /* 顶部渐变带：只铺顶部一条，其余保持页面底。参考图里浅蓝区域一直延伸到
+     「有什么不舒服?」卡片背后，故取值覆盖 hero + 首卡高度。 */
+  --h-band: 640rpx;
+  /* 间距刻度 */
+  --h-s1: 8rpx;
+  --h-s2: 12rpx;
+  --h-s3: 16rpx;
+  --h-s4: 20rpx;
+  --h-s5: 24rpx;
+  --h-s6: 32rpx;
+  /* 圆角 */
+  --h-r-sm: 18rpx;
+  --h-r-tile: 24rpx;          /* 参考图图标底板为「圆角方形」 */
+  /* 尺寸 */
+  --h-ai: 128rpx;             /* hero 右侧圆形 AI 徽章（参考图 ≈64rpx 直径的图标 + 大留白） */
+  --h-ai-ic: 56rpx;           /* 徽章内医疗加号字形（不铺满圆底，留出呼吸位） */
+  --h-bar: 88rpx;             /* 症状输入行高（与 .btn 同高，触控达标） */
+  --h-bar-mic: 36rpx;
+  --h-send-h: 80rpx;          /* 输入行内「发送」胶囊高：嵌在 88rpx 行内，上下各留 4rpx（原 72rpx=36px 触控偏小，D-B-P2-04） */
+  --h-send-w: 152rpx;         /* 胶囊最小宽度（参考图约行宽的 1/4） */
+  --h-tile: 88rpx;            /* 四宫格图标底板 */
+  --h-tile-ic: 44rpx;
+  --h-svc-tile: 80rpx;        /* 常用服务素材图标（自带浅蓝圆底） */
+  --h-cover-w: 192rpx;        /* 科普卡片封面（参考图为横版，非正圆角方形） */
+  --h-cover-h: 120rpx;
+  --h-empty-badge: 128rpx;    /* 空态圆形徽章 */
+  --h-empty-ic: 56rpx;
+  --h-banner-h: 132rpx;
+  --h-banner-art-w: 228rpx;
+  --h-banner-body-w: 62%;
+  --h-ic-xs: 24rpx;
+  --h-ic-sm: 26rpx;
+  --h-ic-md: 28rpx;
+
+  background-color: var(--bg);
+  /* 两层：右上角淡蓝光斑（参考图 hero 的浅蓝光晕）+ 顶部整条渐变 */
+  background-image:
+    radial-gradient(620rpx 520rpx at 86% 4%, rgba(150, 194, 255, 0.42) 0%, rgba(214, 232, 255, 0) 68%),
+    linear-gradient(180deg, #EAF3FF 0%, #EDF4FF 58%, var(--bg) 100%);
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 100%, 100% var(--h-band);
+  /* app.json 已启用自定义 TabBar（fixed 悬浮在页面之上），页面需预留其高度，
+     否则末屏内容（科普卡片/服务入口）会被遮挡：100rpx TabBar + 24rpx 呼吸位。 */
+  padding-bottom: calc(124rpx + env(safe-area-inset-bottom));
+}
+
+/* ==================== ① 顶部（品牌小标 → 问候行 → 后端问候语） ==================== */
+.hm-hero {
+  position: relative;
+  padding-top: var(--h-s3);
+  padding-bottom: var(--h-s4);
+}
+
+.hm-brand-name {
+  /* 参考图「AI 健康助手」= 小号品牌蓝粗体 */
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 700;
+  color: var(--primary);
+  line-height: 1.3;
+}
+
+/* 问候行：左=大问候语（可长可换行，flex:1 保证不顶破徽章）／右=圆形 AI 徽章。
+   ⚠️ 参考图里徽章垂直居中于大问候语（不是品牌行），故徽章放这一行。 */
+.hm-hero-row {
+  display: flex;
+  align-items: center;
+  gap: var(--h-s3);
+  margin-top: var(--h-s4);
+}
+
+/* 问候：参考图首页最大的一行字 */
+.hm-greet {
+  flex: 1;
+  min-width: 0;
+  font-size: calc(var(--font-title) + 4rpx);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.3;
+}
+
+/* AI 徽章：浅蓝圆底 + 柔和白色外环（参考图的"光晕"）+ 品牌蓝阴影 */
+.hm-ai {
+  width: var(--h-ai);
+  height: var(--h-ai);
+  border-radius: 50%;
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 10rpx rgba(255, 255, 255, 0.55), 0 10rpx 24rpx rgba(11, 110, 248, 0.16);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 徽章内字形：居中且不铺满圆底（原先铺满 100% 会顶到圆边） */
+.hm-ai-img {
+  width: var(--h-ai-ic);
+  height: var(--h-ai-ic);
+  display: block;
+}
+
+.hm-sub {
+  margin-top: var(--h-s1);
+  font-size: var(--font-body);
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
+/* ==================== ② 症状输入卡 ==================== */
+.hm-ask-card { padding: 32rpx; }
+
+.hm-ask-title {
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.35;
+}
+
+.hm-ask-row {
+  display: flex;
+  align-items: center;
+  gap: var(--h-s3);
+  margin-top: var(--h-s4);
+}
+
+/* 输入行：浅底「输入框」外观（首页不持有真实输入框 —— 点击即进导诊页，
+   那里才是真正的输入与分诊流程；此处不伪造可输入控件）。
+   ⚠️ 右内边距只留 8rpx：参考图的「发送」胶囊紧贴输入行右侧内壁。 */
+.hm-ask {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: var(--h-bar);
+  padding: 0 var(--h-s1) 0 var(--h-s5);
+  box-sizing: border-box;
+  border-radius: var(--h-r-tile);
+  background: var(--accent-soft);
+  transition: background-color var(--dur-fast) ease, transform var(--dur-fast) ease;
+}
+
+.hm-ask:active { background: var(--accent-press); transform: scale(0.985); }
+
+.hm-ask-ph {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-body);
+  /* 说明文字不是装饰：#828CA0 在白底仅 3.6:1，沿用 --text-sub（≈5~6:1）保证可读 */
+  color: var(--text-sub);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hm-ask-mic { flex-shrink: 0; margin-left: var(--h-s3); }
+.hm-ask-mic-ic { width: var(--h-bar-mic); height: var(--h-bar-mic); }
+
+/* 发送：实心蓝胶囊（参考图在浅蓝输入行内部右侧） */
+.hm-ask-send {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--h-send-w);
+  height: var(--h-send-h);
+  margin-left: var(--h-s3);
+  padding: 0 var(--h-s5);
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: var(--font-body);
+  font-weight: 600;
+  transition: background-color var(--dur-fast) ease, transform var(--dur-fast) ease;
+}
+
+.hm-ask-send:active { background: var(--primary-dark); transform: scale(0.985); }
+
+/* 发送/语音输入按钮组：仅适老化大字模式展示（标准档把发送放在输入行内） */
+.hm-ask-btns {
+  display: none;
+  align-items: center;
+  gap: var(--h-s3);
+}
+
+/* 语音输入按钮：仅适老化大字模式展示（设计效果图 08） */
+.hm-ask-voice {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: var(--h-s2);
+  height: var(--btn-height);
+  padding: 0 var(--h-s5);
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  border: 2rpx solid var(--primary);
+  background: #FFFFFF;
+  color: var(--primary);
+  font-size: var(--font-body);
+  font-weight: 600;
+}
+
+/* 症状快选词：浅蓝实底胶囊（参考图形态）。高度 ≥72rpx 保证触控达标。 */
+.hm-quick { margin-top: var(--h-s4); }
+
+.hm-quick-in { display: flex; flex-wrap: wrap; gap: var(--h-s2); }
+
+.hm-chip {
+  min-height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10rpx var(--h-s5);
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  background: var(--accent-soft);
+  font-size: calc(var(--font-caption) + 4rpx);
+  color: var(--text-sub);
+  line-height: 1.35;
+  transition: background-color var(--dur-fast) ease;
+}
+
+.hm-chip:active {
+  background: var(--accent-press);
+  color: var(--text-main);
+}
+
+/* ==================== ③ 四宫格 2×2 ==================== */
+/* ⚠️ 2026-10-25 真机修复（体验版实测：四宫格变单列、每行只剩左半张、右侧整片空白）
+   根因：原布局用 `gap: var(--h-s5)`（24rpx）做列间距，卡宽 `calc(50% - 12rpx)`，
+        两列之和 + gap = 100% —— 刚好卡在临界值。真机上 rpx→px 换算带亚像素误差，
+        实测两列总宽比容器多出约 1px → 第二列被 flex-wrap 挤到下一行，形成"单列 + 右半空白"。
+   修法：不用 gap，改 `justify-content: space-between` —— 缝隙由剩余空间自动分配；
+        卡宽仍是设计值 `50% - 12rpx`（两列合计 100%−24rpx，严格小于容器，永不再换行）。
+        同时保留 49.6% 作兜底：万一某端 calc(var()) 解析失败，仍是两列而不是单列。 */
+.hm-quad {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;   /* 两列贴边、中间留缝（不再用 gap） */
+}
+
+.hm-quad-card {
+  flex: 0 0 49.6%;                     /* 兜底宽（calc 失效时两列仍在） */
+  width: 49.6%;
+  flex-basis: calc(50% - var(--h-s2)); /* 设计宽：2×(50%−12rpx) = 100%−24rpx < 100% */
+  width: calc(50% - var(--h-s2));
+  margin-bottom: var(--h-s5);          /* 行间距（原由 gap 提供；按卡给不会影响列宽） */
+  min-width: 0;                        /* 不加会被长文案顶破 2 列等宽 */
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--h-s2);                    /* 12rpx：给右侧 8 字说明留出单行宽度 */
+  padding: var(--h-s5) var(--h-s3);    /* 左右 16rpx：与参考图「图标贴近卡边」一致 */
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+/* 图标底板：参考图为圆角方形 + 单一浅蓝（色相差异只留在图标本身） */
+.hm-tile {
+  width: var(--h-tile);
+  height: var(--h-tile);
+  border-radius: var(--h-r-tile);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.hm-tile-ic { width: var(--h-tile-ic); height: var(--h-tile-ic); }
+
+.hm-tile-blue { background: var(--tile-blue); }
+.hm-tile-green { background: var(--tile-blue); }
+.hm-tile-amber { background: var(--tile-blue); }
+.hm-tile-purple { background: var(--tile-blue); }
+/* 在线问诊 = 薄荷浅底板（设计效果图 01 第三格） */
+.hm-tile-mint { background: var(--tile-mint); }
+.hm-tile-red { background: #FFDCDB; }   /* 语义扩展位（体检/危险），与全局 .tile-red 同值 */
+
+.hm-quad-body { flex: 1; min-width: 0; }
+
+.hm-quad-title {
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-main);
+  line-height: 1.35;
+}
+
+/* 说明行：字号取 caption 档（24rpx）—— 参考图里 8 字说明在双列卡内**单行不折行**，
+   26rpx 在 330rpx 宽的卡（扣图标底板 88 + 间距 12 + 内边距 32）会差 3px 折出孤字。 */
+.hm-quad-desc {
+  margin-top: 4rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ==================== ④ 我的就医安排 ====================
+   参考图：标题与「查看全部」都在白卡内部顶部（不是卡外的 .section-header）。 */
+.apt-card { padding: 28rpx 32rpx 32rpx; }
+
+.apt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 56rpx;
+}
+
+.apt-head-title {
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.35;
+}
+
+/* 卡头与内容之间的呼吸位（「查看全部」自带 88rpx 命中高度，无需额外上边距） */
+.apt-card .apt-row { padding-top: var(--h-s2); }
+
+.apt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 左侧日期徽章：月 / 日 / 周 三行。解析失败时整个块不渲染（wx:if） */
+.apt-date {
+  width: 112rpx;
+  flex-shrink: 0;
+  padding: 12rpx 0 10rpx;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.apt-date-mon { font-size: calc(var(--font-caption) - 4rpx); font-weight: 600; color: var(--primary); line-height: 1.2; }
+.apt-date-day { font-size: var(--font-title); font-weight: 700; color: var(--primary-dark); line-height: 1.1; }
+.apt-date-week { font-size: calc(var(--font-caption) - 4rpx); color: var(--text-sub); line-height: 1.2; }
+
+.apt-left { flex: 1; min-width: 0; margin-left: 20rpx; }
+
+.apt-dept { font-size: var(--font-body); font-weight: 600; color: var(--text-main); }
+
+.apt-line2 {
+  display: flex;
+  align-items: center;
+  margin-top: 6rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+.apt-line2-ic { width: 24rpx; height: 24rpx; margin-right: 6rpx; opacity: 0.8; flex-shrink: 0; }
+
+.apt-line3 {
+  margin-top: 4rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+.apt-right { display: flex; align-items: center; gap: 12rpx; }
+
+.apt-arrow { width: 36rpx; height: 36rpx; opacity: 0.45; }
+
+/* 空态（参考图同款）：真实「暂无预约」，不是占位假数据 */
+.apt-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--h-s3) 0 0;
+  text-align: center;
+}
+
+.apt-empty-badge {
+  width: var(--h-empty-badge);
+  height: var(--h-empty-badge);
+  border-radius: 50%;
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.apt-empty-ic { width: var(--h-empty-ic); height: var(--h-empty-ic); }
+
+.apt-empty-t {
+  margin-top: var(--h-s4);
+  font-size: var(--font-h2);
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.apt-empty-s {
+  margin-top: var(--h-s1);
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
+/* 空态 CTA：描边胶囊，宽度随文案（参考图为内容宽度，不是固定 320rpx 大按钮） */
+.apt-empty-btn {
+  margin-top: var(--h-s5);
+  padding: 0 56rpx;
+  border-radius: 999rpx;
+}
+
+/* ==================== ⑤ 常用服务（4 列 × 2 行） ==================== */
+.hm-svc { padding: 24rpx 24rpx 8rpx; }
+
+.hm-svc-grid { display: flex; flex-wrap: wrap; }
+
+.hm-svc-item {
+  width: 25%;
+  box-sizing: border-box;     /* 不加 padding 会撑破 25% → 每行只排下 3 个 */
+  padding: 12rpx 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* 素材图自带浅蓝圆底，直接按圆底直径给尺寸（不必再套 .hm-tile） */
+.hm-svc-ic { width: var(--h-svc-tile); height: var(--h-svc-tile); }
+
+.hm-svc-name {
+  margin-top: 12rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-main);
+  text-align: center;
+  line-height: 1.3;
+}
+
+/* ==================== ⑥ 健康科普 ==================== */
+.hm-kb { padding: 32rpx; }
+
+.hm-kb-body { display: flex; align-items: center; gap: var(--h-s3); }
+
+/* 封面：参考图为横版圆角封面（≈1.6:1，取 aspectFill 不裁掉插画主体） */
+.hm-kb-cover {
+  width: var(--h-cover-w);
+  height: var(--h-cover-h);
+  border-radius: var(--h-r-tile);
+  background: var(--accent-soft);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* 插画封面：铺满（aspectFill），不留白边 */
+.hm-kb-cover-img { width: 100%; height: 100%; }
+
+.hm-kb-text { flex: 1; min-width: 0; }
+
+/* 卡片主标题：参考图字号与卡头同级（h2），字重 700 */
+.hm-kb-t {
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+/* 元信息：科室 · 约 N 分钟阅读（参考图第二行灰蓝小字） */
+.hm-kb-meta {
+  margin-top: var(--h-s1);
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  line-height: 1.5;
+}
+
+.hm-kb-chip {
+  margin-top: var(--h-s2);
+  align-self: flex-start;
+}
+
+/* ==================== 智能导诊说明条（既有入口保留，整条可点） ==================== */
+.hm-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: var(--h-banner-h);
+  padding: var(--h-s5) 0 var(--h-s5) var(--h-s5);
+  margin-bottom: var(--h-s5);
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  overflow: hidden;
+}
+
+.hm-banner-main {
+  position: relative;
+  z-index: 1;
+  max-width: var(--h-banner-body-w);
+  min-width: 0;
+}
+
+.hm-banner-title {
+  font-size: calc(var(--font-body) - 2rpx);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.3;
+}
+
+.hm-banner-desc {
+  margin-top: 4rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+  line-height: 1.4;
+}
+
+.hm-banner-art {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  width: var(--h-banner-art-w);
+  height: var(--h-banner-h);
+  border-top-left-radius: var(--radius-md);
+  -webkit-mask-image: linear-gradient(to right, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.5) 11%, #000000 30%);
+  mask-image: linear-gradient(to right, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.5) 11%, #000000 30%);
+}
+
+/* ============================================================
+   侧栏复用样式（健康提示短视频 / 院内导航 / 全部健康科普）
+   ============================================================ */
+.triage-card {
+  display: flex;
+  align-items: center;
+  border-left: 8rpx solid var(--primary);
+  padding: 32rpx;
+}
+
+.triage-icon { margin-right: 24rpx; }
+
+.triage-body { flex: 1; min-width: 0; }
+
+.triage-title {
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+
+.triage-arrow {
+  width: 36rpx;
+  height: 36rpx;
+  opacity: 0.45;
+  margin-left: 16rpx;
+}
+
+/* 健康提示（短视频）横滑块
+   ⚠️ 首页在主包，封面图在分包 → 这里只能用主包图标，不能放 /packageContent/**.jpg */
+.kb-strip { white-space: nowrap; margin-bottom: 24rpx; }
+
+.kb-strip-in { display: inline-flex; }
+
+.kb-item {
+  width: 280rpx;
+  margin-right: 20rpx;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.kb-badge {
+  position: relative;
+  width: 100%;
+  height: 158rpx;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: linear-gradient(135deg, var(--accent-soft) 0%, #B6DDFE 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kb-badge-ic { width: 64rpx; height: 64rpx; }
+
+.kb-corner {
+  position: absolute;
+  right: 14rpx;
+  bottom: 14rpx;
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  background: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kb-corner-ic { width: 24rpx; height: 24rpx; }
+
+.kb-title {
+  padding: 16rpx 20rpx 0;
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-main);
+  line-height: 1.4;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.kb-dur {
+  padding: 6rpx 20rpx 18rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+/* ============ 页面底部：守护条 + 波浪 ============ */
+.home-guard { margin-top: var(--h-s6); }
+
+/* 满宽：靠负 margin 抵消 .page 的左右内边距 */
+.home-wave {
+  margin-left: calc(-1 * var(--space-page));
+  margin-right: calc(-1 * var(--space-page));
+}
+
+/* ============================================================
+   宽屏档（≥600px）：尺寸变量 rpx → px（÷2，等于手机 375 视觉基准）
+   —— 不 override 的话，1200pt 平板上 1rpx≈1.6px，元素会胀大。
+   ============================================================ */
+@media (min-width: 600px) {
+  .home {
+    --h-gutter: 16px;
+    --h-band: 320px;
+    --h-s1: 4px;
+    --h-s2: 6px;
+    --h-s3: 8px;
+    --h-s4: 10px;
+    --h-s5: 12px;
+    --h-s6: 16px;
+    --h-r-sm: 9px;
+    --h-r-tile: 12px;
+    --h-ai: 64px;
+    --h-ai-ic: 28px;
+    --h-bar: 44px;
+    --h-bar-mic: 18px;
+    --h-send-h: 40px;
+    --h-send-w: 76px;
+    --h-tile: 44px;
+    --h-tile-ic: 22px;
+    --h-svc-tile: 40px;
+    --h-cover-w: 96px;
+    --h-cover-h: 60px;
+    --h-empty-badge: 64px;
+    --h-empty-ic: 28px;
+    --h-banner-h: 66px;
+    --h-banner-art-w: 114px;
+    --h-ic-xs: 12px;
+    --h-ic-sm: 13px;
+    --h-ic-md: 14px;
+  }
+
+  .hm-quick-in { gap: 6px; }
+  .hm-ask { padding: 0 4px 0 12px; }
+  .hm-ask-send { margin-left: 8px; padding: 0 12px; }
+  .hm-ask-row { gap: 8px; }
+  .hm-quad-card {
+    flex: 0 0 49.6%;
+    width: 49.6%;
+    flex-basis: calc(50% - var(--h-s2));
+    width: calc(50% - var(--h-s2));
+    padding: 12px 10px;
+    margin-bottom: 12px;
+  }
+
+  /* 大字档：rpx 尺寸全部 px 化（rpx ÷ 2），与手机端 750rpx 设计宽等值 */
+  .theme-large.home {
+    --h-greet-lg: 36px;
+    --h-greet-sub: 17px;
+    --h-ask-title: 22px;
+    --h-ask-h: 72px;
+    --h-ask-ph: 17px;
+    --h-btn-label: 18px;
+    --h-tile-lg: 48px;
+    --h-quad-label: 17px;
+    --h-sos-ic: 22px;
+    --h-sos-text: 18px;
+    --h-sos-pad: 14px;
+  }
+  .theme-xlarge.home {
+    --h-greet-lg: 39px;
+    --h-greet-sub: 19px;
+    --h-ask-title: 24px;
+    --h-ask-h: 80px;
+    --h-ask-ph: 19px;
+    --h-btn-label: 20px;
+    --h-tile-lg: 52px;
+    --h-quad-label: 19px;
+    --h-sos-ic: 24px;
+    --h-sos-text: 20px;
+    --h-sos-pad: 16px;
+  }
+  .theme-large.home, .theme-xlarge.home { padding-bottom: 16px; }
+  .theme-large .hm-hero, .theme-xlarge .hm-hero { padding: 20px 0 16px; }
+  .theme-large .hm-sub, .theme-xlarge .hm-sub { margin-top: 6px; }
+  .theme-large .hm-ask-row, .theme-xlarge .hm-ask-row { margin-top: 12px; }
+  .theme-large .hm-ask { padding: 16px 16px 0; }
+  .theme-large .hm-ask-btns, .theme-xlarge .hm-ask-btns { gap: 16px; margin-top: 16px; }
+  .theme-large .hm-ask-btns .hm-ask-send, .theme-xlarge .hm-ask-btns .hm-ask-send { padding: 0 8px; }
+  .theme-large .hm-ask-voice, .theme-xlarge .hm-ask-voice { gap: 6px; }
+  .theme-large .hm-ask-mic-ic, .theme-xlarge .hm-ask-mic-ic { width: 18px; height: 18px; }
+  .theme-large .hm-quad-card, .theme-xlarge .hm-quad-card {
+    flex-basis: calc(50% - var(--h-s2));
+    width: calc(50% - var(--h-s2));
+    gap: 12px;
+    padding: 14px 8px;
+    margin-bottom: 10px;
+  }
+  .theme-large .hm-sos, .theme-xlarge .hm-sos { margin-bottom: 12px; padding: 14px 12px; }
+  .theme-xlarge .hm-sos { padding: 16px 12px; }
+  .theme-large .hm-sos .notice-bar-ic, .theme-xlarge .hm-sos .notice-bar-ic { margin-right: 8px; }
+
+  .apt-empty-btn { padding: 0 28px; }
+  .apt-card { padding: 14px 16px 16px; }
+  .apt-head { min-height: 28px; }
+  .hm-ai { box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.55), 0 5px 12px rgba(11, 110, 248, 0.16); }
+
+  /* 列表/卡片元素尺寸 px 化（布局内边距仍走 rpx，见 app.wxss 纪律） */
+  .apt-date { width: 56px; padding: 6px 0 5px; }
+  .apt-date-mon { font-size: 10px; }
+  .apt-date-day { font-size: 20px; }
+  .apt-date-week { font-size: 10px; }
+  .apt-left { margin-left: 10px; }
+  .apt-line2-ic { width: 12px; height: 12px; margin-right: 3px; }
+  .apt-arrow { width: 18px; height: 18px; }
+
+  .triage-card { border-left-width: 4px; padding: 16px; }
+  .triage-icon { margin-right: 12px; }
+  .triage-arrow { width: 18px; height: 18px; margin-left: 8px; }
+
+  .kb-item { width: 200px; margin-right: 14px; }
+  .kb-badge { height: 113px; }
+  .kb-badge-ic { width: 42px; height: 42px; }
+  .kb-corner { right: 9px; bottom: 9px; width: 28px; height: 28px; }
+  .kb-corner-ic { width: 15px; height: 15px; }
+  .kb-title { padding: 10px 14px 0; }
+  .kb-dur { padding: 4px 14px 12px; }
+  .kb-strip { margin-bottom: 12px; }
+}
+
+/* ============================================================
+   平板竖屏（≥900px 且 ≥700px 且竖屏）：单列 720px 居中。
+   ============================================================ */
+@media (min-width: 900px) and (min-height: 700px) and (orientation: portrait) {
+  .home { --h-band: 380px; }
+}
+
+/* ============================================================
+   平板横屏（≥900px 且 ≥700px 且横屏）：双栏。
+   ⚠️ 三个条件缺一不可（见 app.wxss 说明）：竖屏不排双栏、横屏手机（926×428）不排双栏。
+   横屏下 hero 改为圆角卡片，整页那条渐变带去掉了（否则横贯两栏与卡片重叠）。
+   ============================================================ */
+@media (min-width: 900px) and (min-height: 700px) and (orientation: landscape) {
+  .home {
+    background-image: none;
+    --h-band: 320px;
+  }
+
+  .hm-hero {
+    padding: 16px;
+    border-radius: var(--radius-lg);
+    background-image:
+      radial-gradient(300px 240px at 86% 2%, rgba(150, 194, 255, 0.46) 0%, rgba(214, 232, 255, 0) 70%),
+      linear-gradient(180deg, #EAF3FF 0%, #EDF4FF 62%, #F4F8FF 100%);
+    background-repeat: no-repeat, no-repeat;
+    background-size: 100% 100%, 100% 100%;
+  }
+
+  .hm-svc-grid { row-gap: 4px; }
+}
+
+/* ============================================================
+   适老化大字模式（theme-large / theme-xlarge）—— 设计效果图 08：
+   问候 → 症状卡(大输入区 + 发送/语音输入双按钮) → 2×2 线性大卡 → 120 提示条；
+   隐藏品牌行/徽章/快选词/就医安排/常用服务/科普/侧栏/守护波浪。
+   尺寸按 08 稿 1391×3014 实测（1rpx≈1.8547px）：
+     问候 72rpx / 副问候 34rpx / 卡标题 44rpx / 输入区 144rpx /
+     按钮 88rpx·字 36rpx·间距 32rpx / 宫格图标 96rpx·标签 34rpx /
+     提示条高 ≈112rpx·图标 44rpx·文字 36rpx
+   ============================================================ */
+.hm-sos { display: none; }
+
+.theme-large.home,
+.theme-xlarge.home {
+  --h-greet-lg: 72rpx;
+  --h-greet-sub: 34rpx;
+  --h-ask-title: 44rpx;
+  --h-ask-h: 144rpx;
+  --h-ask-ph: 34rpx;
+  --h-btn-label: 36rpx;
+  --h-tile-lg: 96rpx;
+  --h-quad-label: 34rpx;
+  --h-sos-ic: 44rpx;
+  --h-sos-text: 36rpx;
+  --h-sos-pad: 28rpx;
+
+  /* 08 稿底色是均匀浅蓝（≈#EDF5FF）：白底 + 6% 主色叠加实现，不引入新色值 */
+  background-image: linear-gradient(180deg, rgba(11, 110, 248, 0.06) 0%, rgba(11, 110, 248, 0.06) 100%);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  padding-bottom: 32rpx;
+}
+
+/* 超大字档在适老档基础上整体放一档（仍走变量，不新增选择器分支） */
+.theme-xlarge.home {
+  --h-greet-lg: 78rpx;
+  --h-greet-sub: 38rpx;
+  --h-ask-title: 48rpx;
+  --h-ask-h: 160rpx;
+  --h-ask-ph: 38rpx;
+  --h-btn-label: 40rpx;
+  --h-tile-lg: 104rpx;
+  --h-quad-label: 38rpx;
+  --h-sos-ic: 48rpx;
+  --h-sos-text: 40rpx;
+  --h-sos-pad: 32rpx;
+}
+
+/* 大字档单列：平板横屏也不再排双栏（设计稿是单列阅读） */
+.theme-large .shell-cols,
+.theme-xlarge .shell-cols { display: block; }
+
+.theme-large .shell-main,
+.theme-xlarge .shell-main {
+  max-width: 720px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* 顶部：先问候、不要品牌行（设计稿首屏第一行就是「您好」） */
+.theme-large .hm-hero,
+.theme-xlarge .hm-hero {
+  padding: 40rpx 0 32rpx;
+  background-image: none;
+  border-radius: 0;
+}
+
+.theme-large .hm-hero-row,
+.theme-xlarge .hm-hero-row { margin-top: 0; }
+
+.theme-large .hm-greet,
+.theme-xlarge .hm-greet {
+  font-size: var(--h-greet-lg);
+  line-height: 1.25;
+}
+
+.theme-large .hm-sub,
+.theme-xlarge .hm-sub {
+  margin-top: 12rpx;
+  font-size: var(--h-greet-sub);
+  line-height: 1.5;
+}
+
+/* 品牌行与 AI 徽章在大字档隐去（把首屏留给问候与输入） */
+.theme-large .hm-brand-name,
+.theme-xlarge .hm-brand-name,
+.theme-large .hm-ai,
+.theme-xlarge .hm-ai { display: none; }
+
+.theme-large .hm-quick,
+.theme-xlarge .hm-quick { display: none; }
+
+/* 症状卡：标题放大；输入区变高（占位字贴顶排版，像多行输入框） */
+.theme-large .hm-ask-title,
+.theme-xlarge .hm-ask-title {
+  font-size: var(--h-ask-title);
+  line-height: 1.35;
+}
+
+.theme-large .hm-ask-row,
+.theme-xlarge .hm-ask-row {
+  flex-direction: column;
+  align-items: stretch;
+  margin-top: 24rpx;
+}
+
+.theme-large .hm-ask,
+.theme-xlarge .hm-ask {
+  height: var(--h-ask-h);
+  align-items: flex-start;
+  padding: 32rpx 32rpx 0;
+  border-radius: var(--radius-md);
+}
+
+.theme-large .hm-ask-ph,
+.theme-xlarge .hm-ask-ph {
+  font-size: var(--h-ask-ph);
+  line-height: 1.5;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.theme-large .hm-ask-mic,
+.theme-xlarge .hm-ask-mic { display: none; }
+
+/* 大字档：输入行内的发送胶囊隐藏，改由下方按钮组承载（发送 + 语音输入并排） */
+.theme-large .hm-ask > .hm-ask-send,
+.theme-xlarge .hm-ask > .hm-ask-send { display: none; }
+
+.theme-large .hm-ask-btns,
+.theme-xlarge .hm-ask-btns {
+  display: flex;
+  flex-direction: row;
+  gap: 32rpx;
+  margin-top: 32rpx;
+}
+
+.theme-large .hm-ask-btns .hm-ask-send,
+.theme-xlarge .hm-ask-btns .hm-ask-send {
+  flex: 1;
+  min-width: 0;
+  height: var(--btn-height);
+  margin-left: 0;
+  padding: 0 16rpx;
+  font-size: var(--h-btn-label);
+}
+
+.theme-large .hm-ask-voice,
+.theme-xlarge .hm-ask-voice {
+  display: flex;
+  flex: 1;
+  height: var(--btn-height);
+  gap: 12rpx;
+  font-size: var(--h-btn-label);
+}
+
+.theme-large .hm-ask-mic-ic,
+.theme-xlarge .hm-ask-mic-ic {
+  width: 36rpx;
+  height: 36rpx;
+}
+
+/* 四宫格：无底板线性大图标 + 居中标签（设计稿 08 与 01 的关键差异） */
+/* 间距走下边距（不再用 gap：gap 会同时加列间距，把两列挤成单列） */
+.theme-large .hm-quad-card,
+.theme-xlarge .hm-quad-card {
+  margin-bottom: 20rpx;
+}
+
+.theme-large .hm-quad-card,
+.theme-xlarge .hm-quad-card {
+  flex-direction: column;
+  gap: 24rpx;
+  padding: 28rpx 16rpx;
+  text-align: center;
+}
+
+.theme-large .hm-tile,
+.theme-xlarge .hm-tile {
+  width: var(--h-tile-lg);
+  height: var(--h-tile-lg);
+  border-radius: 0;
+  background: transparent;
+}
+
+.theme-large .hm-tile-ic,
+.theme-xlarge .hm-tile-ic {
+  width: var(--h-tile-lg);
+  height: var(--h-tile-lg);
+}
+
+.theme-large .hm-quad-body,
+.theme-xlarge .hm-quad-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.theme-large .hm-quad-title,
+.theme-xlarge .hm-quad-title {
+  font-size: var(--h-quad-label);
+  line-height: 1.35;
+}
+
+.theme-large .hm-quad-desc,
+.theme-xlarge .hm-quad-desc { display: none; }
+
+/* 紧急提示条：120 场景（设计稿在宫格正下方、通栏浅橙底） */
+.theme-large .hm-sos,
+.theme-xlarge .hm-sos {
+  display: flex;
+  margin-bottom: 24rpx;
+  padding: var(--h-sos-pad) 24rpx;
+}
+
+.theme-large .hm-sos .notice-bar-ic,
+.theme-xlarge .hm-sos .notice-bar-ic {
+  width: var(--h-sos-ic);
+  height: var(--h-sos-ic);
+  margin-right: 16rpx;
+}
+
+.theme-large .hm-sos .notice-bar-text,
+.theme-xlarge .hm-sos .notice-bar-text {
+  font-size: var(--h-sos-text);
+  line-height: 1.5;
+}
+
+/* 隐藏适老化模式下的冗余区块（就医安排卡在参考图 08 里不出现） */
+.theme-large .apt-card,
+.theme-xlarge .apt-card,
+.theme-large .hm-block-svc,
+.theme-xlarge .hm-block-svc,
+.theme-large .hm-block-kb,
+.theme-xlarge .hm-block-kb,
+.theme-large .shell-side,
+.theme-xlarge .shell-side,
+.theme-large .home-guard,
+.theme-xlarge .home-guard,
+.theme-large .home-wave,
+.theme-xlarge .home-wave { display: none; }

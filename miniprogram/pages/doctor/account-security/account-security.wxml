@@ -1,0 +1,42 @@
+<!--
+  pages/doctor/account-security —— 账号安全（医生端）
+  ⚠️ 手机号为服务端脱敏号；无密码体系（微信/短信登录），密码区不伪造。
+-->
+<view class="page theme-{{theme}} as-page" style="padding-top: {{navH}}px;">
+
+  <view class="as-nav" style="padding-top: {{statusBarHeight}}px;">
+    <view class="as-nav-bar">
+      <view class="as-nav-back" bindtap="onBack" hover-class="as-hover" aria-role="button" aria-label="返回">
+        <image class="as-nav-back-ic" src="{{icons.chevronLeft}}" />
+      </view>
+      <view class="as-nav-title">账号安全</view>
+    </view>
+  </view>
+
+  <view class="as-card">
+    <view class="as-row">
+      <text class="as-row-k">医生姓名</text>
+      <text class="as-row-v">{{account.name || '—'}}</text>
+    </view>
+    <view class="as-row">
+      <text class="as-row-k">绑定手机</text>
+      <text class="as-row-v">{{account.phone || '未绑定'}}</text>
+    </view>
+    <view class="as-row">
+      <text class="as-row-k">登录方式</text>
+      <text class="as-row-v">微信一键登录</text>
+    </view>
+  </view>
+
+  <view class="as-tip">
+    <view class="as-tip-title">安全提示</view>
+    <view class="as-tip-line">· 医生账号由院方统一开通，任职关系与工号由系统校验；</view>
+    <view class="as-tip-line">· 请勿向他人透露您的登录手机号或验证码；</view>
+    <view class="as-tip-line">· 发现异常登录请及时联系院方信息科。</view>
+  </view>
+
+  <view class="as-logout" bindtap="onLogout" hover-class="as-hover">退出登录</view>
+
+  <view class="as-footbar-space"></view>
+  <doctor-tabbar current="me" />
+</view>

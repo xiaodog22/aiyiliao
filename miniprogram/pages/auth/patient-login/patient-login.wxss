@@ -1,0 +1,165 @@
+/* pages/auth/patient-login —— 患者登录（对齐设计图 02）
+   浅蓝渐变背景 + 品牌 Logo + 标题/副标题 + 白卡（微信一键登录 + 协议勾选 + 授权说明）。
+   ⚠️ 不再 @import auth-common.wxss（其毛玻璃手输表单版式与设计稿 02 完全不同）。
+   颜色一律走 page{--*} 令牌，不硬编码 hex。 */
+
+/* 本页背景：极浅蓝白渐变（设计图 02 顶部微蓝、向下近白） */
+page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #E9F2FE 0%, #F4F8FE 60%, #F7FAFF 100%);
+}
+
+.pl-page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 0 var(--space-page) calc(48rpx + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- 品牌区（垂直偏上：Logo → 标题 → 副标题） ---- */
+.pl-brand {
+  padding-top: 150rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.pl-logo {
+  width: 184rpx;
+  height: 184rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 16rpx 40rpx rgba(11, 110, 248, 0.22);
+  overflow: hidden;
+}
+
+.pl-logo-img {
+  width: 100%;
+  height: 100%;
+}
+
+.pl-title {
+  margin-top: 48rpx;
+  font-size: calc(var(--font-title) + 2rpx);
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: 1rpx;
+}
+
+.pl-subtitle {
+  margin-top: 18rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+/* ---- 白卡（推到下半部） ---- */
+.pl-card {
+  margin-top: auto;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  padding: 56rpx 40rpx 44rpx;
+  box-shadow: 0 12rpx 40rpx rgba(31, 62, 145, 0.10);
+}
+
+/* 主按钮：蓝色全圆角胶囊，白字，左侧白色气泡图标 */
+.pl-btn-primary {
+  width: 100%;
+  height: 96rpx;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 16rpx;
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: calc(var(--font-body) + 2rpx);
+  font-weight: 600;
+  border-radius: 999rpx;
+  padding: 0;
+  margin: 0;
+  line-height: normal;
+}
+
+.pl-btn-primary::after { border: none; }
+
+.pl-btn-icon {
+  width: 40rpx;
+  height: 40rpx;
+}
+
+/* ---- 协议行（空心圆勾选，默认不勾） ---- */
+.pl-agree-row {
+  margin-top: 44rpx;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  row-gap: 8rpx;
+}
+
+.pl-checkbox {
+  width: 34rpx;
+  height: 34rpx;
+  border-radius: 50%;
+  border: 2rpx solid var(--text-weak);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12rpx;
+}
+
+.pl-checkbox-on {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+/* 勾选小勾：CSS 绘制的对勾 */
+.pl-checkbox-tick {
+  width: 16rpx;
+  height: 9rpx;
+  border-left: 3rpx solid #FFFFFF;
+  border-bottom: 3rpx solid #FFFFFF;
+  transform: rotate(-45deg) translateY(-2rpx);
+}
+
+.pl-agree-text {
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-sub);
+}
+
+.pl-agree-link {
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--primary);
+  margin-left: 12rpx;
+  padding: 4rpx 6rpx;
+}
+
+/* 授权说明小字 */
+.pl-tip {
+  margin-top: 24rpx;
+  text-align: center;
+  font-size: calc(var(--font-caption) - 2rpx);
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+
+/* ============ 平板/宽屏（600px 档）：硬编码 rpx → px（KNOWN_ISSUES #21） ============ */
+@media (min-width: 600px) {
+  .pl-brand { padding-top: 75px; }
+  .pl-logo { width: 92px; height: 92px; }
+  .pl-title { margin-top: 24px; font-size: 21px; }
+  .pl-subtitle { margin-top: 9px; font-size: 13px; }
+  .pl-card { border-radius: 16px; padding: 28px 20px 22px; }
+  .pl-btn-primary { height: 48px; font-size: 16px; gap: 8px; }
+  .pl-btn-icon { width: 20px; height: 20px; }
+  .pl-agree-row { margin-top: 22px; }
+  .pl-checkbox { width: 17px; height: 17px; margin-right: 6px; }
+  .pl-checkbox-tick { width: 8px; height: 5px; border-left-width: 2px; border-bottom-width: 2px; }
+  .pl-agree-text, .pl-agree-link { font-size: 13px; }
+  .pl-tip { font-size: 11px; margin-top: 12px; }
+}

@@ -1,0 +1,27 @@
+{
+  "version": "tts-pregen-v1",
+  "updatedAt": "2026-10-22",
+  "description": "TTS 预生成固定句式清单（不含患者个人信息，均为通用提示语）。未命中仍走实时合成。",
+  "phrases": [
+    { "id": "triage-result", "text": "建议您挂{科室}，位置在{位置}。" },
+    { "id": "triage-normal", "text": "根据您的描述，建议您到相应科室就诊。" },
+    { "id": "triage-emergency", "text": "您的症状需要尽快就医，请到急诊。" },
+    { "id": "triage-appointment", "text": "已为您预约，请注意就诊时间。" },
+    { "id": "greeting-morning", "text": "早上好，请问有什么可以帮您。" },
+    { "id": "greeting-afternoon", "text": "您好，请问有什么可以帮您。" },
+    { "id": "greeting-evening", "text": "晚上好，请问有什么可以帮您。" },
+    { "id": "thinking", "text": "正在为您查询，请稍候。" },
+    { "id": "processing", "text": "正在处理，请稍候。" },
+    { "id": "success-generic", "text": "操作成功。" },
+    { "id": "error-generic", "text": "操作失败，请稍后重试。" },
+    { "id": "network-error", "text": "网络不太好，请检查后重试。" },
+    { "id": "voice-recognized", "text": "我听到您说的话了，请稍候。" },
+    { "id": "voice-not-heard", "text": "没有听清，请再说一遍。" },
+    { "id": "appointment-confirmed", "text": "预约成功，请按时就诊。" },
+    { "id": "appointment-canceled", "text": "预约已取消。" },
+    { "id": "medication-reminder", "text": "该服药了，请按医嘱服用。" },
+    { "id": "blood-pressure-reminder", "text": "该测量血压了，请记录数值。" },
+    { "id": "fall-warning", "text": "请注意脚下，防止跌倒。" },
+    { "id": "sleep-tip", "text": "睡前请远离手机，保持卧室安静。" }
+  ]
+}

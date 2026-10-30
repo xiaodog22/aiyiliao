@@ -1,0 +1,79 @@
+<!--
+  pages/consult/picker —— 选择医生（在线问诊发起）
+  版式：对齐患者端选医生风格（医生卡 + 职称胶囊 + 科室）
+-->
+<view class="page theme-{{theme}} cp-page" style="padding-top: {{navH}}px;">
+
+  <!-- 自定义导航栏：返回 + 居中标题 -->
+  <view class="cp-nav" style="padding-top: {{statusBarHeight}}px;">
+    <view class="cp-nav-bar">
+      <view class="cp-nav-back-wrap" bindtap="onBack" hover-class="cp-nav-hover" aria-role="button" aria-label="返回">
+        <image class="cp-nav-back" src="{{icons.chevronLeft}}" />
+      </view>
+      <view class="cp-nav-title">选择医生</view>
+    </view>
+  </view>
+
+  <!-- 加载中 -->
+  <skeleton wx:if="{{loading}}" type="list" rows="5" />
+
+  <!-- 加载失败 -->
+  <view wx:elif="{{error}}" class="cp-state">
+    <view class="cp-state-badge"><image class="cp-state-ic" src="{{icons.alertWhite}}" /></view>
+    <view class="cp-state-title">医生列表加载失败</view>
+    <view class="cp-state-sub">{{error}}</view>
+    <view class="cp-btn cp-btn-primary cp-state-btn" bindtap="fetch">重试</view>
+  </view>
+
+  <block wx:else>
+
+    <!-- 科室横向筛选 -->
+    <view wx:if="{{departments.length}}" class="cp-depts">
+      <scroll-view scroll-x class="cp-depts-scroll" show-scrollbar="{{false}}">
+        <view class="cp-depts-row">
+          <view class="cp-dept {{activeDept === '' ? 'cp-dept-on' : ''}}"
+                data-id="" bindtap="onDeptTap">全部</view>
+          <view wx:for="{{departments}}" wx:key="id" wx:for-item="dep"
+                class="cp-dept {{activeDept === dep.id ? 'cp-dept-on' : ''}}"
+                data-id="{{dep.id}}" bindtap="onDeptTap">{{dep.name}}</view>
+        </view>
+      </scroll-view>
+    </view>
+
+    <!-- 医生列表 -->
+    <view class="cp-list">
+      <view wx:for="{{shown}}" wx:key="id" wx:for-item="doc"
+            class="cp-doc" data-doctor="{{doc}}" bindtap="onPickDoctor" hover-class="cp-doc-hover">
+        <view class="cp-doc-face">
+          <image class="cp-doc-face-ic" src="{{icons.user}}" />
+        </view>
+        <view class="cp-doc-body">
+          <view class="cp-doc-top">
+            <text class="cp-doc-name">{{doc.name || '医生'}}</text>
+            <view wx:if="{{doc.title}}" class="cp-doc-chip">{{doc.title}}</view>
+          </view>
+          <view class="cp-doc-sub">{{doc.departmentName || '互联网医院'}}</view>
+          <view wx:if="{{doc.specialties && doc.specialties.length}}" class="cp-doc-spec">
+            {{doc.specialties[0]}}
+          </view>
+        </view>
+        <view class="cp-doc-side">
+          <view wx:if="{{doc.slotStatusText}}" class="cp-doc-slot">{{doc.slotStatusText}}</view>
+          <text class="cp-doc-pick">选择</text>
+        </view>
+      </view>
+
+      <!-- 空列表 -->
+      <view wx:if="{{!shown.length}}" class="cp-state cp-state-inline">
+        <view class="cp-state-title">该科室暂无医生</view>
+        <view class="cp-state-sub">请选择其他科室，或由智能分诊匹配</view>
+      </view>
+    </view>
+
+    <!-- 不指定医生入口 -->
+    <view class="cp-foot" bindtap="onSkip" hover-class="cp-doc-hover">
+      <text class="cp-foot-t">不指定医生，由智能分诊匹配</text>
+    </view>
+
+  </block>
+</view>

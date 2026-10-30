@@ -1,0 +1,201 @@
+/* pages/doctor/personal —— 个人管理
+   版式依据：design-output/医生端/E-医生端/15-医生个人管理.png（1391×3014，1rpx ≈ 1.8547px）
+   实测落值：页边距 50px≈27rpx（落 24rpx）/ 卡高 520px=280rpx / 头像 196px≈106rpx（落 112rpx）/
+            姓名字形 84px→48rpx·700 / 职称 30rpx / 科室 32rpx / 手机 28rpx /
+            分组头 79rpx / 行高 220px=119rpx（落 116rpx）/ 行图标 44rpx / 分隔线左缩进 32rpx /
+            导航 44px 高、标题 34rpx
+   颜色全走 app.wxss 令牌；卡片底色沿用 .hero-light 的 --hero-grad。 */
+
+.pd-page {
+  padding-left: 24rpx;
+  padding-right: 24rpx;
+  padding-bottom: 48rpx;
+  box-sizing: border-box;
+}
+
+/* ============ 自绘导航（白底 + 蓝色返回 + 居中标题） ============ */
+.pd-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  background: #FFFFFF;
+}
+
+.pd-nav-bar {
+  position: relative;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+}
+
+.pd-nav-back {
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: 24rpx;
+  box-sizing: border-box;
+}
+
+.pd-hover { opacity: 0.6; }
+
+.pd-nav-back-ic { width: 44rpx; height: 44rpx; }
+
+.pd-nav-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--text-main);
+  pointer-events: none;
+}
+
+/* ============ 医生信息卡 ============ */
+.pd-card {
+  display: flex;
+  align-items: center;
+  min-height: 280rpx;
+  padding: 56rpx 32rpx;
+  margin-top: 16rpx;
+  box-sizing: border-box;
+}
+
+.pd-avatar {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--accent-soft);
+}
+
+.pd-avatar-img { width: 100%; height: 100%; display: block; }
+
+.pd-info {
+  flex: 1;
+  min-width: 0;
+  margin-left: 24rpx;
+}
+
+.pd-name-line {
+  display: flex;
+  align-items: baseline;
+}
+
+.pd-name {
+  font-size: calc(var(--font-title) + 8rpx);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.25;
+}
+
+.pd-title {
+  margin-left: 16rpx;
+  font-size: var(--font-body);
+  font-weight: 400;
+  color: var(--text-sub);
+  line-height: 1.3;
+}
+
+.pd-dept {
+  margin-top: 10rpx;
+  font-size: var(--font-body);
+  color: var(--text-main);
+  line-height: 1.35;
+}
+
+.pd-phone {
+  margin-top: 10rpx;
+  font-size: calc(var(--font-caption) + 4rpx);
+  color: var(--text-sub);
+  line-height: 1.35;
+}
+
+/* ============ 账号管理分组 ============ */
+.pd-group {
+  margin-top: 28rpx;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.pd-group .group-head {
+  margin: 0 -32rpx;
+  padding: 20rpx 32rpx;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.pd-row {
+  padding: 36rpx 0;
+}
+
+.pd-row-ic {
+  width: 44rpx;
+  height: 44rpx;
+  flex-shrink: 0;
+}
+
+.pd-row-text {
+  flex: 1;
+  min-width: 0;
+  margin-left: 20rpx;
+  font-size: var(--font-body);
+  font-weight: 500;
+  color: var(--text-main);
+}
+
+/* ============ 版本 + 退出 ============ */
+.pd-version {
+  margin-top: 24rpx;
+  text-align: center;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.4;
+}
+
+/* 设计稿无退出入口；按需求保留，做成白底红字全宽按钮，与页面其余白卡同形 */
+.pd-logout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--btn-height);
+  margin-top: 48rpx;
+  border-radius: var(--radius-md);
+  background: var(--card);
+  border: 2rpx solid var(--border);
+  color: var(--accent-red);
+  font-size: var(--font-body);
+  font-weight: 600;
+  box-sizing: border-box;
+}
+
+/* ================= 平板断点（≥600px：全部 rpx ÷ 2 → px） ================= */
+@media (min-width: 600px) {
+  .pd-page { padding-left: 12px; padding-right: 12px; padding-bottom: 24px; }
+
+  .pd-nav-bar { height: 44px; }
+  .pd-nav-back { width: 44px; height: 44px; padding-left: 12px; }
+  .pd-nav-back-ic { width: 22px; height: 22px; }
+  .pd-nav-title { font-size: 17px; }
+
+  .pd-card { min-height: 140px; padding: 28px 16px; margin-top: 8px; }
+  .pd-avatar { width: 56px; height: 56px; }
+  .pd-info { margin-left: 12px; }
+  .pd-name { font-size: 24px; }
+  .pd-title { margin-left: 8px; }
+  .pd-dept { margin-top: 5px; }
+  .pd-phone { margin-top: 5px; font-size: 14px; }
+
+  .pd-group { margin-top: 14px; }
+  .pd-group .group-head { padding: 10px 16px; }
+  .pd-row { padding: 18px 0; }
+  .pd-row-ic { width: 22px; height: 22px; }
+  .pd-row-text { margin-left: 10px; }
+
+  .pd-version { margin-top: 12px; }
+  .pd-logout { margin-top: 24px; border-width: 1px; }
+}

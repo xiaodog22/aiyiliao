@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>演示管理 · 号源重置</title>
+<style>
+  :root { --blue:#0B6EF8; --bg:#F5F7FA; --ok:#16A34A; --warn:#DC2626; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+         background:var(--bg); color:#1F2937; padding:32px; }
+  .card { background:#fff; border-radius:12px; padding:24px; max-width:960px; margin:0 auto;
+          box-shadow:0 2px 8px rgba(0,0,0,.06); }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:#6B7280; font-size:13px; margin-bottom:20px; }
+  .btn { background:var(--blue); color:#fff; border:0; border-radius:8px; padding:12px 24px;
+         font-size:15px; cursor:pointer; }
+  .btn:disabled { opacity:.6; cursor:not-allowed; }
+  .msg { margin-top:12px; padding:10px 14px; border-radius:8px; font-size:14px; display:none; }
+  .msg.ok { background:#ECFDF5; color:var(--ok); display:block; }
+  .msg.err { background:#FEF2F2; color:var(--warn); display:block; }
+  table { width:100%; border-collapse:collapse; margin-top:20px; font-size:14px; }
+  th, td { padding:10px 12px; border-bottom:1px solid #E5E7EB; text-align:left; }
+  th { background:#F9FAFB; color:#6B7280; font-weight:500; }
+  .full { color:var(--warn); font-weight:600; }
+  .free { color:var(--ok); font-weight:600; }
+  .summary { margin-top:14px; font-size:13px; color:#6B7280; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>演示管理 · 医生号源</h1>
+  <div class="sub">一键把所有 OPEN 号源重置为「空余 20」，避免演示几轮后前端全显示「约满」。仅 dev 环境可用。</div>
+
+  <button id="resetBtn" class="btn">一键重置号源为空余 20</button>
+  <div id="msg" class="msg"></div>
+
+  <table>
+    <thead><tr><th>科室</th><th>医生</th><th>职称</th><th>开放号源</th><th>剩余合计</th><th>状态</th></tr></thead>
+    <tbody id="tbody"><tr><td colspan="6" style="color:#9CA3AF">加载中…</td></tr></tbody>
+  </table>
+  <div class="summary" id="summary"></div>
+</div>
+
+<script>
+const API = location.origin; // 同源（business-service :8088 或网关 :8000）
+const tbody = document.getElementById('tbody');
+const msgEl = document.getElementById('msg');
+const btn = document.getElementById('resetBtn');
+
+function showMsg(text, ok) {
+  msgEl.textContent = text;
+  msgEl.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+
+async function loadStatus() {
+  tbody.innerHTML = '<tr><td colspan="6" style="color:#9CA3AF">加载中…</td></tr>';
+  try {
+    const r = await fetch(API + '/api/v1/dev/slots/status');
+    const env = await r.json();
+    const data = env.data || env;
+    const list = data.doctors || [];
+    tbody.innerHTML = list.map(d => {
+      const rem = Number(d.totalRemaining || 0);
+      const state = rem <= 0 ? '<span class="full">约满</span>' : '<span class="free">空余 ' + rem + '</span>';
+      return '<tr><td>' + esc(d.departmentName) + '</td><td>' + esc(d.doctorName) +
+             '</td><td>' + esc(d.title) + '</td><td>' + (d.openSlots || 0) +
+             '</td><td>' + rem + '</td><td>' + state + '</td></tr>';
+    }).join('');
+    document.getElementById('summary').textContent =
+      '约满医生 ' + (data.fullDoctors || 0) + ' 位 · 目标空余 ' + (data.resetRemaining || 20) + '/条号源';
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:#DC2626">加载失败：' + esc(e.message) + '</td></tr>';
+  }
+}
+
+btn.addEventListener('click', async () => {
+  btn.disabled = true;
+  try {
+    const r = await fetch(API + '/api/v1/dev/slots/reset', { method: 'POST' });
+    const env = await r.json();
+    const data = env.data || env;
+    showMsg(data.message || ('已重置 ' + data.resetSlots + ' 条号源'), true);
+    await loadStatus();
+  } catch (e) {
+    showMsg('重置失败：' + e.message, false);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+
+loadStatus();
+</script>
+</body>
+</html>

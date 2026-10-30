@@ -1,0 +1,239 @@
+/* pages/doctor/appointments —— 挂号管理（医生端患者队列）
+   版式逐项实测自 design-output/医生端/E-医生端/13-挂号管理.png（1391×3014，1rpx ≈ 1.8547px）：
+     导航条 170rpx（状态栏 + 88rpx 行）· 概览卡 194~382rpx（高 188）· 患者卡 406~782rpx（高 375）
+     卡片左右边距 24.8 · 卡内距 36 · 卡间距 23.7 · 卡圆角 ≈ 24 · 分隔线内缩 35
+     序号 40rpx/700 · 姓名 30rpx/600 · 时间 28rpx · 徽章 117×48（圆角 12）· 动作按钮 116×50
+
+   色彩纪律：只用 app.wxss 令牌，本页零字面色值（唯一例外 #FFFFFF 白字）。
+   ⚠️ 尺寸一律 rpx；文件末尾的 ≥600px 断点把**每一处** rpx 折成 px（÷2），
+      含 border-width 与 ::before 补偿值 —— 漏一个就会按 vw 等比放大（KNOWN_ISSUES #21）。
+   ⚠️ 概览卡与患者卡**不复用全局 .card**：设计稿卡内距 36（全局 32）、圆角 24（全局 32），
+      复用会被静默覆盖（check-project ④ 守这条）。 */
+
+/* ================= 页面根 ================= */
+/* 设计稿内容左边距 24.8rpx（比全局 --space-page 32 更紧凑） */
+.dapt-page {
+  padding: 0 24rpx 48rpx;
+  box-sizing: border-box;
+  background: var(--bg);
+}
+
+/* ================= ① 自定义导航栏 ================= */
+.dapt-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 100;
+  background: var(--card);
+}
+
+/* 实测：标题墨迹 306.8~443.2rpx（屏幕正中）、返回箭头墨迹 35~53.4rpx */
+.dapt-nav-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 88rpx;
+}
+
+.dapt-nav-back {
+  position: relative;
+  z-index: 2;
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dapt-hover { opacity: 0.6; }
+
+/* chevronLeft.png 墨迹 31×54 / 96：56rpx 盒子 → 墨迹 18×31.5（设计稿 18×31） */
+.dapt-nav-back-ic {
+  width: 56rpx;
+  height: 56rpx;
+}
+
+/* 绝对居中：不受左侧热区影响 */
+.dapt-nav-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  pointer-events: none;
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 88rpx;
+}
+
+/* ================= ② 概览 / 筛选卡 =================
+   四列等宽、文字居中、**无列间竖线**（设计稿实测：四列中心 110/282/454/627，等距 172） */
+.apt-stats {
+  display: flex;
+  margin: 24rpx 0;
+  padding: 32rpx 0 36rpx;
+  border-radius: 24rpx;
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.ast-col {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+.ast-label {
+  font-size: calc(var(--font-body) - 2rpx);
+  color: var(--text-sub);
+  line-height: 1.4;
+}
+
+/* 选中态：只换文字色（不加下划线/底色 —— 设计稿没有，加会改变卡片高度与视觉重心） */
+.ast-col-on .ast-label {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.ast-v {
+  margin-top: 14rpx;
+  font-size: calc(var(--font-title) + 8rpx);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.2;
+}
+
+.ast-col-on .ast-v { color: var(--primary); }
+
+/* 错误态：数字位改用「—」（语义=未知），区别于"加载中"骨架块 */
+.ast-v-mute { color: var(--text-weak); font-weight: 600; }
+
+/* 加载骨架：等宽灰块（设计稿的数字位就是灰块占位） */
+.ast-skel {
+  width: 96rpx;
+  height: 44rpx;
+  margin: 18rpx auto 0;
+  border-radius: 8rpx;
+  background: var(--border);
+  animation: astPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes astPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* ================= ③ 患者卡 ================= */
+.apt-card {
+  padding: 42rpx 36rpx 35rpx;
+  margin-bottom: 24rpx;
+  border-radius: 24rpx;
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.apt-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+/* 候诊序号：卡内最大一级（设计稿 40rpx/700） */
+.apt-no {
+  font-size: var(--font-title);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.2;
+  letter-spacing: 1rpx;
+}
+
+/* 状态徽章：设计稿 117×48rpx、圆角 12rpx、字号 28rpx（全局 .badge 是胶囊 + caption，
+   这里只做尺寸/圆角覆写；配色仍由全局 .badge-blue / -mint / -gray 决定） */
+.apt-badge {
+  flex-shrink: 0;
+  height: 48rpx;
+  padding: 0 17rpx;
+  border-radius: 12rpx;
+  font-size: calc(var(--font-body) - 2rpx);
+  line-height: 48rpx;
+  font-weight: 500;
+}
+
+.apt-name {
+  margin-top: 32rpx;
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-main);
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.apt-when {
+  margin-top: 22rpx;
+  font-size: calc(var(--font-body) - 2rpx);
+  color: var(--text-sub);
+  line-height: 1.45;
+}
+
+/* 动作区：上方通栏内缩分隔线 + 右下实心蓝胶囊
+   ⚠️ 触控红線 88rpx=44px（D-D-P2-01：原 50rpx=25px 仅达标 57%，医生端最高频操作）。 */
+.apt-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 88rpx;
+  margin-top: 32rpx;
+  padding-top: 26rpx;
+  border-top: 1rpx solid var(--border);
+}
+
+.apt-btn {
+  min-width: 168rpx;
+  height: 88rpx;
+  padding: 0 30rpx;
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: calc(var(--font-body) - 2rpx);
+  font-weight: 600;
+  line-height: 88rpx;
+  text-align: center;
+}
+
+.apt-btn:active { background: var(--primary-dark); }
+
+/* 终态（已完成/已取消/已过期/未到诊）：右下灰字，无按钮 */
+.apt-done {
+  font-size: calc(var(--font-body) - 2rpx);
+  color: var(--text-weak);
+  line-height: 50rpx;
+}
+
+/* ================= ≥600px：整段折 px（÷2） =================
+   ⚠️ 断点内令牌已是 px，calc 加码也必须写 px（混单位会整条失效）。 */
+@media (min-width: 600px) {
+  .dapt-page { padding: 0 12px 24px; }
+
+  .dapt-nav-bar { height: 44px; }
+  .dapt-nav-back { width: 44px; height: 44px; }
+  .dapt-nav-back-ic { width: 28px; height: 28px; }
+  .dapt-nav-title { font-size: 17px; line-height: 44px; }
+
+  .apt-stats { margin: 12px 0; padding: 16px 0 18px; border-radius: 12px; }
+  .ast-label { font-size: 14px; }
+  .ast-v { margin-top: 7px; font-size: 24px; }
+  .ast-skel { width: 48px; height: 22px; margin-top: 9px; border-radius: 4px; }
+
+  .apt-card { padding: 21px 18px 18px; margin-bottom: 12px; border-radius: 12px; }
+  .apt-no { font-size: 20px; letter-spacing: 1px; }
+  .apt-badge { height: 24px; padding: 0 9px; border-radius: 6px; font-size: 14px; line-height: 24px; }
+  .apt-name { margin-top: 16px; font-size: 15px; }
+  .apt-when { margin-top: 11px; font-size: 14px; }
+  .apt-actions { min-height: 44px; margin-top: 16px; padding-top: 13px; border-top-width: 1px; }
+  .apt-btn { min-width: 84px; height: 44px; padding: 0 15px; font-size: 14px; line-height: 44px; }
+  .apt-done { font-size: 14px; line-height: 25px; }
+}

@@ -1,0 +1,90 @@
+<!--
+  pages/auth/manual-login —— 手动登录降级页
+  对齐 design-output/患者端/A-认证/04-手动登录降级页.png
+  版式：浅蓝背景 + 蓝色大圆品牌 Logo + 标题/副标题
+       + 白卡内下划线式输入框（手机号/密码，右侧图标）
+       + 蓝色胶囊登录按钮 + 返回微信一键登录 + 未注册提示。
+  协议勾选行因合规要求保留，置于卡片外底部（设计图未画，不删）。
+-->
+<view class="ml-page theme-{{theme}}">
+
+  <!-- 品牌区：蓝圆 Logo + 标题 + 副标题 -->
+  <view class="ml-brand">
+    <view class="ml-logo">
+      <image class="ml-logo-img" src="/assets/brand/logo-mark.png" mode="aspectFit" />
+    </view>
+    <view class="ml-title">手机号登录</view>
+    <view class="ml-subtitle">请输入手机号和密码登录</view>
+  </view>
+
+  <!-- 白卡：表单 + 按钮 + 返回链接 + 提示 -->
+  <view class="ml-card">
+
+    <!-- 手机号：下划线输入框 + 右侧通讯录图标 -->
+    <view class="ml-field">
+      <text class="ml-label">手机号</text>
+      <view class="ml-input-row">
+        <input
+          class="ml-input"
+          type="number"
+          maxlength="11"
+          placeholder="请输入11位手机号"
+          placeholder-class="ml-ph"
+          value="{{phone}}"
+          bindinput="onPhoneInput"
+        />
+        <image
+          class="ml-input-icon"
+          src="/assets/icons/clipboardList_gray.png"
+          mode="aspectFit"
+        />
+      </view>
+    </view>
+
+    <!-- 密码：下划线输入框 + 右侧眼睛图标切换显隐 -->
+    <view class="ml-field">
+      <text class="ml-label">密码</text>
+      <view class="ml-input-row">
+        <input
+          class="ml-input"
+          password="{{!showPwd}}"
+          placeholder="请输入密码"
+          placeholder-class="ml-ph"
+          value="{{pwd}}"
+          bindinput="onPwdInput"
+        />
+        <image
+          class="ml-input-icon"
+          src="{{showPwd ? '/assets/icons/eye.png' : '/assets/icons/eye_gray.png'}}"
+          mode="aspectFit"
+          bindtap="togglePwd"
+        />
+      </view>
+    </view>
+
+    <!-- 登录按钮：蓝色胶囊 -->
+    <button
+      class="ml-btn"
+      loading="{{submitting}}"
+      disabled="{{submitting}}"
+      bindtap="onSubmit"
+    >登录</button>
+
+    <!-- 返回微信一键登录 -->
+    <view class="ml-back" bindtap="onBackToWx">返回微信一键登录</view>
+
+    <!-- 未注册提示 -->
+    <view class="ml-tip">未注册的手机号验证通过后将自动注册</view>
+  </view>
+
+  <!-- 协议行（合规：卡片外底部小字，默认不勾） -->
+  <view class="ml-agree-row" bindtap="onToggleAgreement">
+    <view class="ml-checkbox {{agreed ? 'ml-checkbox-on' : ''}}">
+      <view wx:if="{{agreed}}" class="ml-tick"></view>
+    </view>
+    <text class="ml-agree-text">我已阅读并同意</text>
+    <text class="ml-agree-link" catchtap="onOpenAgreement">用户协议</text>
+    <text class="ml-agree-link" catchtap="onOpenPrivacy">隐私政策</text>
+  </view>
+
+</view>

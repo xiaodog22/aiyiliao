@@ -1,0 +1,207 @@
+/* 挂号记录卡
+   2026-10-18 批次 C-2：按设计参考图 患者端/C-个人中心/06-挂号记录.png 对齐层级——
+   · 科室改为卡片中最大一级（40rpx 粗体）；医生次之；院区·日期·时间最小一级灰字；
+   · 去掉「科室行 / 医生行」之间的分隔线与竖线分隔（参考图只在底部预约号行上方有一条分隔线）；
+   · 医生行下方补**院区地点**（契约 location 字段，原页面只在详情弹窗里显示）；
+   · 「查看详情」胶囊补足触控高度；硬编码色值收口到令牌。
+   ⚠️ 本页只改 WXML/WXSS：契约 GET /api/v1/appointments/me、状态徽章映射（statusCls）、
+     骨架屏 / 错误态 / 空态 / 上拉分页 / 详情弹窗全部保持原样。 */
+
+/* 页面边距 24rpx（设计稿 06 实测卡片左右各 51px≈27rpx；与第 12 页健康档案统一到 24rpx，
+   比全局 --space-page 32rpx 窄 —— 两页都是 profile 下的卡片流） */
+.rc-page {
+  padding: 24rpx;
+}
+
+.rc-card {
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 28rpx 28rpx 20rpx;
+  margin-bottom: 24rpx;
+}
+
+/* ① 科室行（参考图：科室是卡内最大一级信息） */
+.rc-head {
+  display: flex;
+  align-items: center;
+}
+
+.rc-dept-ic {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 20rpx;
+}
+
+.rc-dept-ic .tile-ic { width: 36rpx; height: 36rpx; }
+
+.rc-dept {
+  flex: 1;
+  min-width: 0;
+  /* 效果图 06：科室标题直接起行（图标底板已移除，故不再需要左侧让位） */
+  margin-left: 0;
+  font-size: var(--font-title);
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ② 医生 + 院区/时间（列式）
+   实测：医生行字形高 49px=26rpx、地点行 46px=25rpx —— 两者字号几乎一样，
+   层级靠**字重 + 颜色**区分（医生深色 600，地点灰色 400），不靠字号拉开
+   （原实现给 --font-h2 34rpx，比设计稿大 8rpx，会把"医生"顶成第二主标题） */
+.rc-main {
+  display: flex;
+  flex-direction: column;
+  margin-top: 16rpx;
+}
+
+.rc-doctor {
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 600;
+  color: var(--text-main);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rc-when {
+  margin-top: 6rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.45;
+}
+
+/* ③ 浅蓝日期信息框（设计 06：日历图标 + 日期时间） */
+.rc-datebox {
+  display: flex;
+  align-items: center;
+  margin-top: 20rpx;
+  padding: 24rpx 20rpx;      /* 实测日期块比纯文字高一圈（约 88rpx 总高），不是 68rpx */
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+}
+
+.rc-date-ic { width: 32rpx; height: 32rpx; margin-right: 12rpx; flex-shrink: 0; }
+
+.rc-date-t {
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* ④ 分隔线 + 双按钮行 */
+.rc-actions {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  margin-top: 24rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid var(--border);
+}
+
+.rc-btn {
+  flex: 1;
+  min-height: 76rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 600;
+  box-sizing: border-box;
+}
+
+.rc-btn-outline {
+  background: var(--card);
+  border: 2rpx solid var(--primary);
+  color: var(--primary);
+}
+
+.rc-btn-mint {
+  background: var(--mint);
+  border: 2rpx solid var(--mint);
+  color: #FFFFFF;
+}
+
+.rc-btn-blue {
+  background: var(--accent-soft);
+  border: 2rpx solid var(--accent-soft);
+  color: var(--primary);
+}
+
+/* ================= 加载更多：虚线转圈（设计稿 06 的 spinner，纯 CSS，0 新增素材） ================= */
+/* ⚠️ 覆盖全局 .load-more 的纯文字排版，改成「图标 + 文字」横排 */
+.rc-page .load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rc-spin {
+  width: 28rpx;
+  height: 28rpx;
+  margin-right: 12rpx;
+  border-radius: 50%;
+  border: 3rpx dashed var(--text-placeholder);
+  box-sizing: border-box;
+  animation: rc-rotate 1.4s linear infinite;
+}
+
+@keyframes rc-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ================= 平板断点（≥600px）：rpx → px（÷2）+ 主栏 375px 居中 ================= */
+@media (min-width: 600px) {
+  .rc-page {
+    max-width: 375px;
+    margin: 0 auto;
+    padding: 12px;
+  }
+
+  .rc-card {
+    padding: 14px 14px 10px;
+    margin-bottom: 12px;
+  }
+
+  .rc-main { margin-top: 8px; }
+  .rc-when { margin-top: 3px; }
+  .rc-doctor { font-size: 13px; }
+  .rc-datebox { margin-top: 10px; padding: 12px 10px; }
+  .rc-date-ic { width: 16px; height: 16px; margin-right: 6px; }
+  .rc-actions { margin-top: 12px; padding-top: 10px; gap: 10px; }
+  .rc-btn { min-height: 38px; }
+  .rc-btn-outline,
+  .rc-btn-mint,
+  .rc-btn-blue { border-width: 1px; }
+
+  .rc-spin { width: 14px; height: 14px; margin-right: 6px; border-width: 2px; }
+  .rc-page .load-more { padding: 12px 0 18px; }
+}
+
+/* ================= 平板横屏：卡片更紧凑，右栏不空 ================= */
+@media (min-width: 900px) and (min-height: 700px) and (orientation: landscape) {
+  .rc-card {
+    padding: 18px 18px 13px;
+    margin-bottom: 16px;
+    border-radius: 16px;
+  }
+  .rc-dept-ic { width: 42px; height: 42px; border-radius: 12px; }
+  .rc-dept-ic .tile-ic { width: 21px; height: 21px; }
+  .rc-dept { margin-left: 12px; font-size: 22px; }
+  .rc-main { margin-top: 9px; }
+  .rc-when { margin-top: 3px; }
+  .rc-datebox { margin-top: 12px; padding: 9px 12px; }
+  .rc-date-ic { width: 18px; height: 18px; margin-right: 7px; }
+  .rc-actions { margin-top: 14px; padding-top: 12px; gap: 10px; }
+  .rc-btn { min-height: 40px; font-size: 12px; }
+}
+
+/* 错误态/空态统一走 app.wxss 的 .state 系列：
+   原 .error-box/.error-title/.error-desc/.retry-btn 已无引用，删除以免留死样式。 */

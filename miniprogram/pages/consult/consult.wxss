@@ -1,0 +1,833 @@
+/**
+ * pages/consult/consult —— 在线问诊（医患图文会话）
+ * 版式：design-output/患者端/04-在线问诊.png（1391×3014，1rpx ≈ 1.8547px）
+ *
+ * ⚠️ 颜色只走 app.wxss 的 page{--*} 令牌，本页零字面色值（唯一例外 #FFFFFF 白字）。
+ *    设计稿里的中性灰底（系统提示胶囊 #EEF2F8 / 输入框 #EEF2F9）统一用 --accent-soft，
+ *    保持「全仓唯一色源」；色相偏蓝已在偏离项登记。
+ * ⚠️ 尺寸一律 rpx；≥600px 在文件末整段折 px（÷2，含 border-width 与伪元素补偿值）。
+ * ⚠️ 导航栏自绘（navigationStyle=custom）：根节点内联 padding-top: navH，导航本身 fixed。
+ */
+
+/* ================= 页面根 ================= */
+/* 设计稿内容左边距 25rpx（比全局 --space-page 32rpx 更紧凑，聊天页有意收紧），
+   底部留白让出固定输入条 + Home 指示条。 */
+.cs-page {
+  padding: 0 24rpx 200rpx;
+  box-sizing: border-box;
+  background: var(--bg);
+}
+
+/* ================= ① 自定义导航栏 ================= */
+.cs-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 100;
+  background: var(--card);
+}
+
+/* 实测：标题墨迹 309.5~440.5rpx（屏幕正中）、返回箭头墨迹 25.9~44.8rpx */
+.cs-nav-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 88rpx;
+}
+
+.cs-nav-back-wrap {
+  position: relative;
+  z-index: 2;
+  width: 88rpx;
+  height: 88rpx;
+  margin-left: -8rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cs-nav-hover { opacity: 0.6; }
+
+/* chevronLeft.png 墨迹 31×54 / 96：56rpx 盒子 → 墨迹 18×31.5，对齐设计稿 19×33 */
+.cs-nav-back {
+  width: 56rpx;
+  height: 56rpx;
+}
+
+/* 绝对居中：不受左侧热区影响，对齐设计稿屏幕正中 */
+.cs-nav-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  pointer-events: none;
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 88rpx;
+}
+
+/* ================= ② 医生信息卡 ================= */
+.cs-doc {
+  margin-top: 22rpx;
+  padding: 28rpx 30rpx 0;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.cs-doc-main {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 104rpx;
+}
+
+/* 设计稿头像直径 104rpx（54→157rpx），浅蓝底 + 品牌蓝线性人形 */
+.cs-doc-face {
+  width: 104rpx;
+  height: 104rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cs-doc-face-ic { width: 56rpx; height: 56rpx; }
+
+.cs-doc-body {
+  flex: 1;
+  min-width: 0;
+  margin-left: 24rpx;
+  padding-right: 150rpx;          /* 让位右上「● 接诊中」，避免姓名被压 */
+  box-sizing: border-box;
+}
+
+.cs-doc-top {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* 设计稿姓名墨迹高 35rpx → 40rpx/700 */
+.cs-doc-name {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 职称胶囊：设计稿 122×34rpx、圆角 8rpx、浅蓝底蓝字 */
+.cs-doc-chip {
+  flex-shrink: 0;
+  margin-left: 14rpx;
+  height: 34rpx;
+  line-height: 34rpx;
+  padding: 0 12rpx;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--primary);
+  font-size: var(--font-caption);
+}
+
+.cs-doc-sub {
+  margin-top: 4rpx;
+  font-size: 28rpx;
+  color: var(--text-sub);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 接诊状态：圆点 + 文字（不靠颜色单独表意）；未知一律「待接诊」 */
+.cs-doc-state {
+  position: absolute;
+  right: 0;
+  top: 4rpx;
+  display: flex;
+  align-items: center;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  white-space: nowrap;
+}
+
+.cs-doc-state-on { color: var(--mint-text); }
+.cs-doc-state-off { color: var(--text-sub); }
+
+.cs-doc-dot {
+  width: 14rpx;
+  height: 14rpx;
+  margin-right: 8rpx;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+/* 分隔线：设计稿 y=357rpx，左右各内缩 25rpx */
+.cs-doc-divider {
+  margin: 26rpx -4rpx 0;
+  height: 1rpx;
+  background: var(--border);
+}
+
+/* 等待提示行：设计稿 357→447rpx（高 90rpx），转圈图标 + 28rpx 灰字 */
+.cs-doc-tip {
+  display: flex;
+  align-items: center;
+  padding: 22rpx 0 26rpx;
+  font-size: 26rpx;
+  color: var(--text-weak);
+  line-height: 1.4;
+}
+
+.cs-spin-wrap {
+  width: 32rpx;
+  height: 32rpx;
+  margin-right: 14rpx;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 转圈：设计稿是缺口圆环（品牌蓝），用 CSS 环替代位图，省一个图标资源 */
+.cs-spin {
+  width: 28rpx;
+  height: 28rpx;
+  border-radius: 50%;
+  border: 4rpx solid var(--accent-soft);
+  border-top-color: var(--primary);
+  box-sizing: border-box;
+  animation: cs-rotate 0.9s linear infinite;
+}
+
+@keyframes cs-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.cs-doc-tip-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ================= ③ 对话区 ================= */
+.cs-chat { display: block; }
+
+/* 日期分隔：—— 今天 9:30 —— */
+.cs-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 40rpx 0 24rpx;
+}
+
+.cs-day-line {
+  width: 56rpx;
+  height: 1rpx;
+  background: var(--border);
+}
+
+.cs-day-t {
+  margin: 0 14rpx;
+  font-size: 22rpx;
+  color: var(--text-weak);
+}
+
+/* 系统 / 安全提示：居中胶囊（设计稿 566→588rpx） */
+.cs-sys {
+  /* display:table + auto 外边距 = 按内容收缩并居中（设计稿胶囊 480rpx，非通栏） */
+  display: table;
+  max-width: 92%;
+  margin: 0 auto 20rpx;
+  padding: 12rpx 26rpx;
+  border-radius: 999rpx;
+  background: var(--accent-soft);
+  color: var(--text-sub);
+  font-size: 26rpx;
+  line-height: 1.4;
+  text-align: center;
+}
+
+/* 安全提示（急症红线）：橙色底，必须比普通系统提示更醒目 */
+.cs-sys-warn {
+  background: var(--amber-soft);
+  color: var(--amber-text);
+  border-radius: var(--radius-md);
+  text-align: left;
+}
+
+.cs-msg {
+  display: flex;
+  flex-direction: column;
+  margin: 20rpx 0;
+}
+
+.cs-msg-user { align-items: flex-end; }
+.cs-msg-doc { align-items: flex-start; flex-direction: row; }
+
+/* 气泡：设计稿 532×112rpx（2 行）、圆角 24rpx、右下/左下小尾巴 */
+.cs-bubble {
+  position: relative;
+  max-width: 76%;
+  padding: 20rpx 24rpx;
+  box-sizing: border-box;
+  border-radius: var(--radius-md);
+  font-size: 32rpx;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cs-bubble-user {
+  background: var(--primary);
+  color: #FFFFFF;
+  border-bottom-right-radius: 8rpx;
+}
+
+/* 右下小尾巴：贴着气泡底边向右外挑（近似设计稿的弧形收口） */
+.cs-bubble-user::after {
+  /* 小尾巴：与气泡右边缘叠 4rpx，避免圆角和尾巴之间露底色（斜切模拟设计稿的弧形收口） */
+  content: '';
+  position: absolute;
+  right: -8rpx;
+  bottom: 0;
+  width: 18rpx;
+  height: 18rpx;
+  background: var(--primary);
+  border-bottom-right-radius: 8rpx;
+  transform: skewX(-16deg);
+  transform-origin: bottom left;
+}
+
+.cs-bubble-doc {
+  background: var(--card);
+  color: var(--text-main);
+  border-bottom-left-radius: 8rpx;
+  box-shadow: var(--shadow-card);
+}
+
+.cs-bubble-doc::before {
+  content: '';
+  position: absolute;
+  left: -8rpx;
+  bottom: 0;
+  width: 18rpx;
+  height: 18rpx;
+  background: var(--card);
+  border-bottom-left-radius: 8rpx;
+  transform: skewX(16deg);
+  transform-origin: bottom right;
+}
+
+/* 「已发送 9:31」：右对齐，比气泡缩进 22rpx（设计稿右端 700rpx） */
+.cs-msg-meta {
+  margin-top: 10rpx;
+  padding-right: 22rpx;
+  font-size: 22rpx;
+  color: var(--text-weak);
+  line-height: 1.3;
+}
+
+/* 医生头像：64rpx 圆，浅蓝底 + 蓝人形 */
+.cs-msg-face {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 18rpx;
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cs-msg-face-ic { width: 36rpx; height: 36rpx; }
+
+/* 附件：图片缩略 */
+.cs-att-img-wrap {
+  width: 240rpx;
+  height: 240rpx;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--accent-soft);
+}
+
+.cs-att-img { width: 100%; height: 100%; display: block; }
+
+/* 附件：文件卡（设计稿 415×140rpx） */
+.cs-file {
+  display: flex;
+  align-items: center;
+  width: 415rpx;
+  max-width: 100%;
+  padding: 30rpx;
+  box-sizing: border-box;
+  border-radius: var(--radius-md);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.cs-file-ic-wrap {
+  width: 76rpx;
+  height: 76rpx;
+  flex-shrink: 0;
+  border-radius: 12rpx;
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cs-file-ic { width: 40rpx; height: 40rpx; }
+
+.cs-file-body {
+  margin-left: 24rpx;
+  min-width: 0;
+}
+
+.cs-file-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text-main);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cs-file-sub {
+  margin-top: 8rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.3;
+}
+
+/* 医生结构化回复卡（处方建议 / 检查建议）：仅在服务端下发 structured 时出现 */
+.cs-rx {
+  max-width: 76%;
+  padding: 24rpx;
+  box-sizing: border-box;
+  border-radius: var(--radius-md);
+  border-left: 6rpx solid var(--primary);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+.cs-rx-head {
+  display: flex;
+  align-items: center;
+}
+
+.cs-rx-ic { width: 32rpx; height: 32rpx; margin-right: 12rpx; flex-shrink: 0; }
+
+.cs-rx-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.cs-rx-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 16rpx;
+}
+
+.cs-rx-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  color: var(--text-main);
+  line-height: 1.5;
+}
+
+.cs-rx-dose {
+  flex-shrink: 0;
+  margin-left: 20rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
+.cs-rx-note {
+  margin-top: 18rpx;
+  padding: 14rpx 18rpx;
+  border-radius: var(--radius-sm);
+  background: var(--amber-soft);
+  color: var(--amber-text);
+  font-size: var(--font-caption);
+  line-height: 1.5;
+}
+
+/* 正在输入：浅蓝气泡 + 三点 + 蓝字 */
+.cs-bubble-typing {
+  display: flex;
+  align-items: center;
+  background: var(--accent-soft);
+  border-radius: var(--radius-md) var(--radius-md) var(--radius-md) 8rpx;
+  box-shadow: none;
+}
+
+.cs-bubble-typing::before { background: var(--accent-soft); }
+
+.cs-dots {
+  display: flex;
+  align-items: center;
+  margin-right: 14rpx;
+}
+
+.cs-dot {
+  width: 10rpx;
+  height: 10rpx;
+  margin-right: 6rpx;
+  border-radius: 50%;
+  background: var(--text-weak);
+  animation: cs-blink 1.2s infinite ease-in-out;
+}
+
+.cs-dot:nth-child(2) { animation-delay: 0.2s; }
+.cs-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes cs-blink {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+.cs-typing-t {
+  font-size: 28rpx;
+  color: var(--primary);
+}
+
+/* 消息接口不可用：可见降级提示（后端过渡态，不留白屏） */
+.cs-msgoff {
+  margin: 20rpx 0;
+  padding: 16rpx 24rpx;
+  border-radius: var(--radius-md);
+  background: var(--amber-soft);
+  color: var(--amber-text);
+  font-size: var(--font-caption);
+  line-height: 1.5;
+}
+
+/* 空消息引导 */
+.cs-empty {
+  padding: 56rpx 0 40rpx;
+  text-align: center;
+}
+
+.cs-empty-ic-wrap {
+  width: 128rpx;
+  height: 128rpx;
+  margin: 0 auto 20rpx;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cs-empty-ic { width: 60rpx; height: 60rpx; }
+
+.cs-empty-t {
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.cs-empty-s {
+  margin-top: 8rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+}
+
+/* ================= ④ 本次问诊摘要 ================= */
+.cs-sum {
+  margin-top: 24rpx;
+  padding: 0 30rpx 34rpx;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+
+/* 标题行：通栏分隔线（设计稿 1117→1200rpx） */
+.cs-sum-title {
+  margin: 0 -30rpx;
+  padding: 24rpx 30rpx 24rpx;
+  border-bottom: 1rpx solid var(--border);
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.3;
+}
+
+/* 行距 68rpx：label 固定 224rpx 列宽（设计稿 value 统一从 280rpx 起） */
+.cs-sum-row {
+  display: flex;
+  align-items: center;
+  padding: 10rpx 0;
+}
+
+.cs-sum-row + .cs-sum-row { border-top: 0; }
+
+.cs-sum-k {
+  width: 224rpx;
+  flex-shrink: 0;
+  font-size: var(--font-body);
+  color: var(--text-sub);
+}
+
+.cs-sum-v {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-body);
+  font-weight: 500;
+  color: var(--text-main);
+  word-break: break-word;
+}
+
+.cs-sum-v-warn {
+  color: var(--amber-text);
+  font-weight: 600;
+}
+
+/* ================= ⑤ 底部输入栏 ================= */
+.cs-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  padding: 20rpx 24rpx;
+  padding-bottom: calc(20rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: var(--card);
+}
+
+/* 键盘弹起：输入栏已由 translateY 抬到键盘上方，safe-area 不再需要避让
+   （否则输入栏与键盘之间会多出一条 34px 的空隙） */
+.cs-bar-kb { padding-bottom: 20rpx; }
+
+/* 已结束：底部换成只读条（占位与输入栏一致，页面不塌陷） */
+.cs-closed {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  padding: 24rpx;
+  padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: var(--card);
+  border-top: 1rpx solid var(--border);
+  text-align: center;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+}
+
+/* 键盘占位（高度由内联 style 给）：保证最后一条消息能滚到输入栏上方 */
+.cs-kb-spacer { width: 100%; }
+
+/* 视觉 50rpx，热区 88rpx（::after 外扩，不改变排版间距） */
+.cs-bar-btn {
+  position: relative;
+  width: 50rpx;
+  height: 50rpx;
+  flex-shrink: 0;
+}
+
+.cs-bar-btn::after {
+  content: '';
+  position: absolute;
+  left: -19rpx;
+  top: -19rpx;
+  right: -19rpx;
+  bottom: -19rpx;
+}
+
+.cs-bar-circle {
+  width: 50rpx;
+  height: 50rpx;
+  border-radius: 50%;
+  border: 2rpx solid var(--border);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card);
+}
+
+.cs-bar-circle-on {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+/* plus_gray 墨迹 57/96 → 40rpx 盒 ≈ 24rpx 墨迹；mic 墨迹满高 → 26rpx 盒才与 50rpx 圆相称 */
+.cs-bar-ic-plus { width: 40rpx; height: 40rpx; }
+.cs-bar-ic-mic { width: 26rpx; height: 26rpx; }
+
+/* 语音态圆内白 mic 略大一点，避免被实心圆吃掉视觉重量 */
+.cs-bar-circle-on .cs-bar-ic-mic { width: 28rpx; height: 28rpx; }
+
+.cs-bar-input {
+  flex: 1;
+  min-width: 0;
+  height: 64rpx;
+  padding: 0 26rpx;
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  background: var(--accent-soft);
+  font-size: var(--font-body);
+  color: var(--text-main);
+}
+
+.cs-ph { color: var(--text-placeholder); }
+
+/* 录音中：输入框变成可点结束的提示条 */
+.cs-bar-input-rec {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cs-rec-t {
+  font-size: var(--font-body);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* 发送：设计稿 123×64rpx 蓝底白字（不是图标按钮） */
+.cs-send {
+  flex-shrink: 0;
+  min-width: 116rpx;
+  height: 64rpx;
+  padding: 0 26rpx;
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: 28rpx;
+  font-weight: 600;
+  line-height: 64rpx;
+  text-align: center;
+}
+
+.cs-send:active { background: var(--primary-dark); }
+
+.cs-send-off { opacity: 0.5; }
+
+/* 上传中：顶部浮动提示（防重复提交的可见反馈） */
+.cs-uploading {
+  position: fixed;
+  left: 50%;
+  top: 120rpx;
+  transform: translateX(-50%);
+  z-index: 65;
+  padding: 16rpx 32rpx;
+  border-radius: 999rpx;
+  background: var(--text-main);
+  color: #FFFFFF;
+  font-size: var(--font-caption);
+  opacity: 0.92;
+}
+
+/* ================= ≥600px：整段折 px（÷2） =================
+   ⚠️ 断点内令牌已是 px，calc 里的加码也必须写 px（写 rpx 会整条失效）。
+   ⚠️ 含 rpx 的选择器**逐个**重声明：漏一个就按 vw 等比放大（KNOWN_ISSUES #21）。 */
+@media (min-width: 600px) {
+  .cs-page { padding: 0 12px 100px; }
+
+  /* 导航 */
+  .cs-nav-bar { height: 44px; }
+  .cs-nav-back-wrap { width: 44px; height: 44px; margin-left: -4px; }
+  .cs-nav-back { width: 28px; height: 28px; }
+  .cs-nav-title { font-size: 17px; line-height: 44px; }
+
+  /* 医生卡 */
+  .cs-doc { margin-top: 11px; padding: 14px 15px 0; }
+  .cs-doc-main { min-height: 52px; }
+  .cs-doc-face { width: 52px; height: 52px; }
+  .cs-doc-face-ic { width: 28px; height: 28px; }
+  .cs-doc-body { margin-left: 12px; padding-right: 75px; }
+  .cs-doc-name { font-size: 20px; }
+  .cs-doc-chip { margin-left: 7px; height: 17px; line-height: 17px; padding: 0 6px; }
+  .cs-doc-sub { margin-top: 2px; font-size: 14px; }
+  .cs-doc-state { top: 2px; }
+  .cs-doc-dot { width: 7px; height: 7px; margin-right: 4px; }
+  .cs-doc-divider { margin: 13px -2px 0; height: 1px; }
+  .cs-doc-tip { padding: 11px 0 13px; font-size: 13px; }
+  .cs-spin-wrap { width: 16px; height: 16px; margin-right: 7px; }
+  .cs-spin { width: 14px; height: 14px; border-width: 2px; }
+
+  /* 对话区 */
+  .cs-day { margin: 20px 0 12px; }
+  .cs-day-line { width: 28px; height: 1px; }
+  .cs-day-t { margin: 0 7px; font-size: 11px; }
+  .cs-sys { margin: 0 auto 10px; padding: 6px 13px; font-size: 13px; }
+  .cs-msg { margin: 10px 0; }
+  .cs-bubble { padding: 10px 12px; font-size: 16px; }
+  .cs-bubble-user { border-bottom-right-radius: 4px; }
+  .cs-bubble-doc { border-bottom-left-radius: 4px; }
+  .cs-bubble-typing { border-radius: 12px 12px 12px 4px; }
+  .cs-bubble-user::after { right: -4px; bottom: 0; width: 9px; height: 9px; border-bottom-right-radius: 4px; }
+  .cs-bubble-doc::before { left: -4px; bottom: 0; width: 9px; height: 9px; border-bottom-left-radius: 4px; }
+  .cs-msg-meta { margin-top: 5px; padding-right: 11px; font-size: 11px; }
+  .cs-msg-face { width: 32px; height: 32px; margin-right: 9px; }
+  .cs-msg-face-ic { width: 18px; height: 18px; }
+  .cs-att-img-wrap { width: 120px; height: 120px; }
+  .cs-file { width: 207px; padding: 15px; }
+  .cs-file-ic-wrap { width: 38px; height: 38px; border-radius: 6px; }
+  .cs-file-ic { width: 20px; height: 20px; }
+  .cs-file-body { margin-left: 12px; }
+  .cs-file-name { font-size: 15px; }
+  .cs-file-sub { margin-top: 4px; font-size: 11px; }
+  .cs-rx { padding: 12px; border-left-width: 3px; }
+  .cs-rx-ic { width: 16px; height: 16px; margin-right: 6px; }
+  .cs-rx-title { font-size: 15px; }
+  .cs-rx-row { margin-top: 8px; }
+  .cs-rx-name { font-size: 14px; }
+  .cs-rx-dose { margin-left: 10px; font-size: 11px; }
+  .cs-rx-note { margin-top: 9px; padding: 7px 9px; font-size: 11px; }
+  .cs-dots { margin-right: 7px; }
+  .cs-dot { width: 5px; height: 5px; margin-right: 3px; }
+  .cs-typing-t { font-size: 14px; }
+  .cs-msgoff { margin: 10px 0; padding: 8px 12px; font-size: 11px; }
+  .cs-empty { padding: 28px 0 20px; }
+  .cs-empty-ic-wrap { width: 64px; height: 64px; margin-bottom: 10px; }
+  .cs-empty-ic { width: 30px; height: 30px; }
+  .cs-empty-t { font-size: 14px; }
+  .cs-empty-s { margin-top: 4px; font-size: 11px; }
+
+  /* 摘要卡 */
+  .cs-sum { margin-top: 12px; padding: 0 15px 17px; }
+  .cs-sum-title { margin: 0 -15px; padding: 12px 15px 12px; border-bottom-width: 1px; font-size: 17px; }
+  .cs-sum-row { padding: 5px 0; }
+  .cs-sum-k { width: 112px; }
+  .cs-sum-v { font-size: 13px; }
+
+  /* 输入栏 */
+  .cs-bar { gap: 12px; padding: 10px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .cs-bar-kb { padding-bottom: 10px; }
+  .cs-closed { padding: 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); border-top-width: 1px; font-size: 12px; }
+  .cs-bar-btn { width: 25px; height: 25px; }
+  .cs-bar-btn::after { left: -9px; top: -9px; right: -9px; bottom: -9px; }
+  .cs-bar-circle { width: 25px; height: 25px; border-width: 1px; }
+  .cs-bar-ic-plus { width: 20px; height: 20px; }
+  .cs-bar-ic-mic { width: 13px; height: 13px; }
+  .cs-bar-circle-on .cs-bar-ic-mic { width: 14px; height: 14px; }
+  .cs-bar-input { height: 32px; padding: 0 13px; }
+  .cs-send { min-width: 58px; height: 32px; padding: 0 13px; font-size: 14px; line-height: 32px; }
+  .cs-uploading { top: 60px; padding: 8px 16px; font-size: 11px; }
+}

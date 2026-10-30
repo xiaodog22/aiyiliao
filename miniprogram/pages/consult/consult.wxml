@@ -1,0 +1,218 @@
+<!--
+  pages/consult/consult —— 在线问诊（医患图文会话）
+  版式：design-output/患者端/04-在线问诊.png（1391×3014，1rpx ≈ 1.8547px）
+  ⚠️ navigationStyle = custom（consult.json）：设计稿导航栏是「返回 + 居中标题 + 右侧胶囊」，
+     胶囊由微信自绘，故只自绘返回与标题（与 detail/triage/workbench 同范式）。
+  ⚠️ 不伪造：医生姓名/职称/科室/接诊态全部来自服务端（契约 Consultation），缺失时走中性占位；
+     历史消息接口不可用时给可见降级提示，绝不用本地假数据冒充医生回复。
+-->
+<view class="page theme-{{theme}} cs-page" style="padding-top: {{navH}}px;">
+
+  <!-- ① 自定义导航栏（吸顶）：返回 + 居中标题（右侧微信胶囊自绘，不重复画） -->
+  <view class="cs-nav" style="padding-top: {{statusBarHeight}}px;">
+    <view class="cs-nav-bar">
+      <view class="cs-nav-back-wrap" bindtap="onBack" hover-class="cs-nav-hover"
+            aria-role="button" aria-label="返回">
+        <image class="cs-nav-back" src="{{icons.chevronLeft}}" />
+      </view>
+      <view class="cs-nav-title">在线问诊</view>
+    </view>
+  </view>
+
+  <!-- 加载中 -->
+  <skeleton wx:if="{{loading}}" type="list" rows="4" />
+
+  <!-- 加载失败：图标 + 中文说明 + 实心重试按钮 -->
+  <view wx:elif="{{error}}" class="state">
+    <view class="state-badge state-badge-primary"><image class="state-ic" src="{{icons.alertWhite}}" /></view>
+    <view class="state-title">问诊会话加载失败</view>
+    <view class="state-sub">{{error}}</view>
+    <view class="btn btn-primary state-btn" bindtap="fetch">重试</view>
+  </view>
+
+  <block wx:else>
+
+    <!-- ② 医生信息卡（设计稿 04：头像 / 姓名 + 职称胶囊 / 科室 · 互联网医院 / 右上接诊态
+         + 分隔线 + 等待提示） -->
+    <view class="cs-doc">
+      <view class="cs-doc-main">
+        <view class="cs-doc-face">
+          <image class="cs-doc-face-ic" src="{{icons.user}}" />
+        </view>
+        <view class="cs-doc-body">
+          <view class="cs-doc-top">
+            <text class="cs-doc-name">{{doctorName}}</text>
+            <view wx:if="{{doctorTitle}}" class="cs-doc-chip">{{doctorTitle}}</view>
+          </view>
+          <view class="cs-doc-sub">{{docSub}}</view>
+        </view>
+        <view class="cs-doc-state {{closed ? 'cs-doc-state-off' : (accepting ? 'cs-doc-state-on' : '')}}">
+          <view class="cs-doc-dot"></view>
+          <text>{{closed ? '已结束' : (accepting ? '正在接诊' : '待接诊')}}</text>
+        </view>
+      </view>
+      <view class="cs-doc-divider"></view>
+      <view class="cs-doc-tip">
+        <view wx:if="{{!closed}}" class="cs-spin-wrap"><view class="cs-spin"></view></view>
+        <text class="cs-doc-tip-t">{{tipText}}</text>
+      </view>
+    </view>
+
+    <!-- ③ 对话区 -->
+    <view class="cs-chat">
+
+      <!-- 无会话：空态（未选医生 → 引导选择；已选医生 → 等待首条消息创建） -->
+      <view wx:if="{{!activeId && !hasDoctor}}" class="state">
+        <view class="state-badge state-badge-gray"><image class="state-ic" src="{{icons.chatGray}}" /></view>
+        <view class="state-title">暂无进行中的问诊</view>
+        <view class="state-sub">选择医生发起在线问诊，医生接诊后即时沟通</view>
+        <view class="btn btn-primary state-btn" bindtap="onPickDoctor">选择医生</view>
+      </view>
+      <view wx:elif="{{!activeId && hasDoctor}}" class="state">
+        <view class="state-badge state-badge-primary"><image class="state-ic" src="{{icons.chatGray}}" /></view>
+        <view class="state-title">已选择医生</view>
+        <view class="state-sub">发送您的症状描述，即可发起在线问诊</view>
+      </view>
+
+      <block wx:else>
+        <block wx:for="{{messages}}" wx:key="id" wx:for-item="m">
+
+          <!-- 日期分隔：—— 今天 9:30 —— -->
+          <view wx:if="{{m.kind === 'day'}}" class="cs-day">
+            <view class="cs-day-line"></view>
+            <text class="cs-day-t">{{m.label}}</text>
+            <view class="cs-day-line"></view>
+          </view>
+
+          <!-- 系统 / 安全提示：居中胶囊 -->
+          <view wx:elif="{{m.kind === 'sys'}}" class="cs-sys {{m.safety ? 'cs-sys-warn' : ''}}">{{m.text}}</view>
+
+          <!-- 用户文本：右蓝气泡 + 「已发送 9:31」 -->
+          <view wx:elif="{{m.kind === 'user'}}" class="cs-msg cs-msg-user">
+            <view class="cs-bubble cs-bubble-user">{{m.text}}</view>
+            <view wx:if="{{m.timeText}}" class="cs-msg-meta">已发送 {{m.timeText}}</view>
+          </view>
+
+          <!-- 医生文本：左白气泡 -->
+          <view wx:elif="{{m.kind === 'doc'}}" class="cs-msg cs-msg-doc">
+            <view class="cs-msg-face"><image class="cs-msg-face-ic" src="{{icons.user}}" /></view>
+            <view class="cs-bubble cs-bubble-doc">{{m.text}}</view>
+          </view>
+
+          <!-- 附件卡：图片缩略 / 文件卡（设计稿 04 的「检验报告.pdf / 已上传 · 2.3MB」） -->
+          <view wx:elif="{{m.kind === 'file'}}" class="cs-msg cs-msg-user">
+            <view wx:if="{{m.isImage}}" class="cs-att-img-wrap" data-url="{{m.url}}" bindtap="onPreviewAttach">
+              <image class="cs-att-img" src="{{m.url}}" mode="aspectFill" />
+            </view>
+            <view wx:else class="cs-file" data-url="{{m.url}}" data-pdf="{{m.isPdf}}" bindtap="onOpenFile">
+              <view class="cs-file-ic-wrap"><image class="cs-file-ic" src="{{icons.fileText}}" /></view>
+              <view class="cs-file-body">
+                <view class="cs-file-name">{{m.fileName}}</view>
+                <view class="cs-file-sub">{{m.fileSub}}</view>
+              </view>
+            </view>
+          </view>
+
+          <!-- 医生结构化回复卡（处方建议 / 检查建议）：
+               ⚠️ 仅当服务端下发 message.structured 时渲染 —— 契约暂无该 contentType，
+                  页面不做关键词猜测，更不生成假卡片。 -->
+          <view wx:elif="{{m.kind === 'rx'}}" class="cs-msg cs-msg-doc">
+            <view class="cs-msg-face"><image class="cs-msg-face-ic" src="{{icons.user}}" /></view>
+            <view class="cs-rx">
+              <view class="cs-rx-head">
+                <image class="cs-rx-ic" src="{{m.rxIcon}}" />
+                <text class="cs-rx-title">{{m.rxTitle}}</text>
+              </view>
+              <view wx:for="{{m.rxItems}}" wx:key="name" wx:for-item="it" class="cs-rx-row">
+                <text class="cs-rx-name">{{it.name}}</text>
+                <text wx:if="{{it.dose}}" class="cs-rx-dose">{{it.dose}}</text>
+              </view>
+              <view wx:if="{{m.rxNote}}" class="cs-rx-note">{{m.rxNote}}</view>
+            </view>
+          </view>
+
+        </block>
+
+        <!-- 医生正在输入（仅当服务端确有生成中任务时才出现，见 consult.js#_startPolling） -->
+        <view wx:if="{{typing}}" class="cs-msg cs-msg-doc">
+          <view class="cs-msg-face"><image class="cs-msg-face-ic" src="{{icons.user}}" /></view>
+          <view class="cs-bubble cs-bubble-typing">
+            <view class="cs-dots"><view class="cs-dot"></view><view class="cs-dot"></view><view class="cs-dot"></view></view>
+            <text class="cs-typing-t">正在输入…</text>
+          </view>
+        </view>
+
+        <!-- 消息接口不可用：可见降级提示（网络异常/服务不可达时的防御性提示） -->
+        <view wx:if="{{consultError}}" class="cs-msgoff">{{consultError}}</view>
+
+        <!-- 空消息：引导（与上面的降级提示互斥，故用组合条件而不是 wx:elif —— 避免注释夹在条件链里） -->
+        <view wx:if="{{!consultError && messages.length === 0 && !typing}}" class="cs-empty">
+          <view class="cs-empty-ic-wrap"><image class="cs-empty-ic" src="{{icons.chat}}" /></view>
+          <view class="cs-empty-t">问诊已创建，等待医生回复</view>
+          <view class="cs-empty-s">您可以补充症状描述或上传检查报告</view>
+        </view>
+      </block>
+    </view>
+
+    <!-- ④ 本次问诊摘要（设计稿 04：就诊事项 / 已传资料 / 剩余时间） -->
+    <view wx:if="{{activeId}}" class="cs-sum">
+      <view class="cs-sum-title">本次问诊</view>
+      <view class="cs-sum-row">
+        <text class="cs-sum-k">就诊事项</text>
+        <text class="cs-sum-v">{{activeTitle || '—'}}</text>
+      </view>
+      <view class="cs-sum-row">
+        <text class="cs-sum-k">已传资料</text>
+        <text class="cs-sum-v">{{attachCount}} 份</text>
+      </view>
+      <view wx:if="{{remainingText}}" class="cs-sum-row">
+        <text class="cs-sum-k">剩余时间</text>
+        <text class="cs-sum-v cs-sum-v-warn">{{remainingText}}</text>
+      </view>
+    </view>
+
+  </block>
+
+  <!-- ⑤ 底部输入栏（设计稿 04：＋ / 输入框 / 语音 / 发送；无会话已选医生时也允许输入发起）
+       已结束 → 换成只读提示；键盘弹出时只上移本栏（adjust-position=false） -->
+  <view wx:if="{{!loading && !error && closed}}" class="cs-closed">本次问诊已结束</view>
+  <view wx:elif="{{!loading && !error && (activeId || hasDoctor)}}"
+        class="cs-bar {{kbHeight > 0 ? 'cs-bar-kb' : ''}}"
+        style="transform: translateY(-{{kbHeight}}px);">
+    <view class="cs-bar-btn" bindtap="onPickAttach" aria-role="button" aria-label="上传检查资料">
+      <view class="cs-bar-circle"><image class="cs-bar-ic-plus" src="{{icons.plusGray}}" /></view>
+    </view>
+    <view wx:if="{{recording}}" class="cs-bar-input cs-bar-input-rec" bindtap="onVoice">
+      <text class="cs-rec-t">正在聆听… 点击结束</text>
+    </view>
+    <input
+      wx:else
+      class="cs-bar-input"
+      placeholder="输入消息…"
+      placeholder-class="cs-ph"
+      value="{{input}}"
+      bindinput="onInput"
+      confirm-type="send"
+      bindconfirm="onSend"
+      disabled="{{sending}}"
+      adjust-position="{{false}}"
+      cursor-spacing="0"
+      bindfocus="onKbHeight"
+      bindblur="onKbBlur"
+      bindkeyboardheightchange="onKbHeight"
+    />
+    <view class="cs-bar-btn" bindtap="onVoice" aria-role="button" aria-label="语音输入">
+      <view class="cs-bar-circle {{recording ? 'cs-bar-circle-on' : ''}}">
+        <image class="cs-bar-ic-mic" src="{{recording ? icons.micWhite : icons.micGray}}" />
+      </view>
+    </view>
+    <view class="cs-send {{sending ? 'cs-send-off' : ''}}" bindtap="onSend" aria-role="button" aria-label="发送">发送</view>
+  </view>
+
+  <!-- 键盘占位：把内容撑高到「键盘高度 + 输入栏」，最后一条消息不会被输入栏压住 -->
+  <view wx:if="{{kbHeight > 0}}" class="cs-kb-spacer" style="height: {{kbHeight}}px;"></view>
+
+  <!-- 上传中提示（防重复提交的可见反馈） -->
+  <view wx:if="{{uploading}}" class="cs-uploading">正在上传资料…</view>
+
+</view>
