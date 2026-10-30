@@ -63,3 +63,5 @@ design-output/
 ui-design-runs/
 # 临时备份
 backend/business-service/.backup/
+# 完整版 README（含开发口令，仅本地保留，不入库）
+README_FULL.md
