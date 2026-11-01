@@ -1,6 +1,6 @@
 <div align="center">
 
-# 大夫
+# 楚大夫
 
 面向中老年患者的医疗健康 AI 微信小程序
 
@@ -10,12 +10,15 @@
 [![Platform](https://img.shields.io/badge/platform-WeChat%20Mini%20Program-07C160)](https://developers.weixin.qq.com/miniprogram/dev/framework/)
 [![Frontend](https://img.shields.io/badge/frontend-WXML%20%2F%20WXSS%20%2F%20JS-0B6EF8)](#)
 [![Backend](https://img.shields.io/badge/backend-FastAPI%20%2B%20Spring%20Boot-3E8CFF)](#)
+[![Site](https://img.shields.io/badge/website-online-0B6EF8)](https://xiaodog22.github.io/aiyiliao/)
 
 </div>
 
 ---
 
 ## 界面
+
+在线浏览：<https://xiaodog22.github.io/aiyiliao/>（页面源码在 `site/index.html`，单文件、无外部依赖）
 
 <table>
   <tr>
