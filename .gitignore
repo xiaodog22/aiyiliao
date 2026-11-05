@@ -140,5 +140,8 @@ __pycache__/
 docs/验收与评估_*/assets/
 docs/验收与评估_*/*.png
 
+# ---- 前端工具目录下的资源源文件（生成 PNG 的中间产物）----
+miniprogram/tools/_assets_src/
+
 
 
