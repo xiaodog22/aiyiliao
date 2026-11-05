@@ -1,0 +1,77 @@
+{
+  "_comment": "院内导航源数据（唯一真源）：build-floorplan.py 读它 → ①渲染底图 PNG ②生成 indoor-map.js。改坐标只改这里。",
+  "_layout_comment": "1F 布局：上部 7 间（4 个真实科室 消化内科/呼吸内科/心血管内科/骨科 + 放射科/检验科/药房）→ 主走廊 → 下部（儿科诊区/楼梯间 | 门诊大厅(内含全科医学科、卫生间) | 电梯厅/输液室）；南侧 y=770 的 110 宽门洞是医院大门，所有路线从这里起步。门诊大厅内的「全科医学科」是一站式全科诊室（导诊兜底科室，必须能带路）。",
+  "canvas": { "w": 1440, "h": 860, "pxPerMeter": 20 },
+  "floor": { "name": "门诊楼 1F", "image": "/packageNav/assets/floor1.png", "scaleNote": "1 米 ≈ 20 像素" },
+  "palette": {
+    "ground": "#FFFFFF",
+    "clinic": "#E8F3FF",
+    "exam": "#E6F7F1",
+    "service": "#FFF4E6",
+    "treat": "#F0EDFF",
+    "utility": "#F2F3F5",
+    "hall": "#EEF4FF",
+    "corridor": "#F7F9FC",
+    "wall": "#94A3B8",
+    "outline": "#64748B"
+  },
+  "outer": { "x": 60, "y": 60, "w": 1320, "h": 740 },
+  "zones": [
+    { "name": "消化内科",   "kind": "clinic",   "x": 90,   "y": 90,  "w": 180, "h": 295 },
+    { "name": "呼吸内科",   "kind": "clinic",   "x": 270,  "y": 90,  "w": 180, "h": 295 },
+    { "name": "心血管内科", "kind": "clinic",   "x": 450,  "y": 90,  "w": 180, "h": 295 },
+    { "name": "骨科",       "kind": "clinic",   "x": 630,  "y": 90,  "w": 180, "h": 295 },
+    { "name": "放射科",     "kind": "exam",     "x": 810,  "y": 90,  "w": 180, "h": 295 },
+    { "name": "检验科",     "kind": "exam",     "x": 990,  "y": 90,  "w": 180, "h": 295 },
+    { "name": "药房",       "kind": "service",  "x": 1170, "y": 90,  "w": 180, "h": 295 },
+
+    { "name": "主走廊",     "kind": "corridor", "x": 90,   "y": 385, "w": 1260, "h": 90, "label": [112, 440, 20] },
+
+    { "name": "儿科诊区",   "kind": "clinic",   "x": 90,   "y": 475, "w": 225, "h": 140 },
+    { "name": "楼梯间",     "kind": "utility",  "x": 90,   "y": 615, "w": 225, "h": 155 },
+    { "name": "门诊大厅",   "kind": "hall",     "x": 315,  "y": 475, "w": 810, "h": 295, "label": [470, 500, 34] },
+    { "name": "卫生间",     "kind": "utility",  "x": 1010, "y": 655, "w": 110, "h": 115 },
+    { "name": "全科医学科", "kind": "clinic",   "x": 800,  "y": 535, "w": 300, "h": 110 },
+    { "name": "电梯厅",     "kind": "utility",  "x": 1125, "y": 475, "w": 225, "h": 140 },
+    { "name": "输液室",     "kind": "treat",    "x": 1125, "y": 615, "w": 225, "h": 155 }
+  ],
+  "_doors_comment": "门洞：axis=h 表示在水平墙 y=c 上、以 x=a 为中心开 gap 宽的洞；axis=v 反之。",
+  "doors": [
+    { "axis": "h", "c": 475,  "a": 720,  "gap": 100 },
+    { "axis": "h", "c": 385,  "a": 180,  "gap": 60 },
+    { "axis": "h", "c": 385,  "a": 360,  "gap": 60 },
+    { "axis": "h", "c": 385,  "a": 540,  "gap": 60 },
+    { "axis": "h", "c": 385,  "a": 720,  "gap": 60 },
+    { "axis": "h", "c": 385,  "a": 900,  "gap": 60 },
+    { "axis": "h", "c": 385,  "a": 1080, "gap": 60 },
+    { "axis": "h", "c": 385,  "a": 1260, "gap": 60 },
+    { "axis": "v", "c": 315,  "a": 570,  "gap": 60 },
+    { "axis": "v", "c": 315,  "a": 705,  "gap": 60 },
+    { "axis": "v", "c": 1125, "a": 525,  "gap": 60 },
+    { "axis": "v", "c": 1125, "a": 705,  "gap": 60 },
+    { "axis": "h", "c": 655,  "a": 1065, "gap": 60 },
+    { "axis": "h", "c": 770,  "a": 720,  "gap": 110 }
+  ],
+  "extraLabels": [
+    { "text": "医院大门", "x": 720, "y": 832, "size": 26, "color": "#165DFF", "anchor": "mm" }
+  ],
+  "origin": { "id": "gate", "name": "医院大门", "x": 720, "y": 770, "icon": "hospital" },
+  "categories": ["门诊", "检查", "服务", "治疗", "设施"],
+  "_routes_comment": "所有路线**从医院大门（x=720,y=770 门洞处）出发**：先沿中轴走廊进楼，再分发到各目的地 —— 对应真实到院动线（患者在门外 → 进门 → 取号/就诊）。",
+  "destinations": [
+    { "id": "gi",        "name": "消化内科",   "category": "门诊", "icon": "stethoscope",   "x": 180,  "y": 250, "desc": "胃炎 · 反酸 · 胃肠不适", "path": [[720,770],[720,430],[180,430],[180,250]] },
+    { "id": "resp",      "name": "呼吸内科",   "category": "门诊", "icon": "stethoscope",   "x": 360,  "y": 250, "desc": "咳嗽 · 发热 · 气喘",     "path": [[720,770],[720,430],[360,430],[360,250]] },
+    { "id": "cardio",    "name": "心血管内科", "category": "门诊", "icon": "heartbeat",     "x": 540,  "y": 250, "desc": "胸闷 · 心慌 · 血压",     "path": [[720,770],[720,430],[540,430],[540,250]] },
+    { "id": "ortho",     "name": "骨科",       "category": "门诊", "icon": "activity",      "x": 720,  "y": 250, "desc": "外伤 · 关节 · 腰腿痛",   "path": [[720,770],[720,250]] },
+    { "id": "radiology", "name": "放射科",     "category": "检查", "icon": "monitor",       "x": 900,  "y": 250, "desc": "CT · DR 影像检查",        "path": [[720,770],[720,430],[900,430],[900,250]] },
+    { "id": "lab",       "name": "检验科",     "category": "检查", "icon": "flask",         "x": 1080, "y": 250, "desc": "抽血 · 体液 · 报告",      "path": [[720,770],[720,430],[1080,430],[1080,250]] },
+    { "id": "pharmacy",  "name": "药房（取药）","category": "服务", "icon": "pill",          "x": 1260, "y": 250, "desc": "凭处方取药",              "path": [[720,770],[720,430],[1260,430],[1260,250]] },
+    { "id": "reg",       "name": "挂号 / 缴费","category": "服务", "icon": "clipboardList", "x": 480,  "y": 625, "desc": "人工窗口与自助机",        "path": [[720,770],[720,625],[480,625]] },
+    { "id": "pediatric", "name": "儿科诊区",   "category": "门诊", "icon": "heart",         "x": 200,  "y": 565, "desc": "儿童常见病诊疗",          "path": [[720,770],[720,570],[200,570]] },
+    { "id": "gp",        "name": "全科医学科", "category": "门诊", "icon": "stethoscope",   "x": 950,  "y": 590, "desc": "症状不典型 · 多系统不适首选", "path": [[720,770],[720,590],[950,590]] },
+    { "id": "elevator",  "name": "电梯厅",     "category": "设施", "icon": "arrowUpRight",  "x": 1235, "y": 540, "desc": "前往 2F / 3F",            "path": [[720,770],[720,525],[1235,525]] },
+    { "id": "stairs",    "name": "楼梯间",     "category": "设施", "icon": "personStanding","x": 200,  "y": 700, "desc": "步行上下楼",              "path": [[720,770],[720,705],[200,705]] },
+    { "id": "infusion",  "name": "输液室",     "category": "治疗", "icon": "activity",      "x": 1235, "y": 690, "desc": "静脉输液 · 肌注",         "path": [[720,770],[720,705],[1235,705]] },
+    { "id": "toilet",    "name": "卫生间",     "category": "设施", "icon": "users",         "x": 1065, "y": 700, "desc": "无障碍卫生间在南侧",      "path": [[720,770],[720,655],[1065,655]] }
+  ]
+}

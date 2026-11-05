@@ -1,0 +1,16 @@
+{
+  "$array": {
+    "departmentId": "string",
+    "departmentName": "string",
+    "hasAvailableSlot": "boolean",
+    "id": "string",
+    "introduction": "string",
+    "name": "string",
+    "slotStatus": "string",
+    "slotStatusText": "string",
+    "specialties": {
+      "$array": "string"
+    },
+    "title": "string"
+  }
+}

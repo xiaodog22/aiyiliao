@@ -1,0 +1,47 @@
+# 统一换行与二进制判定（2026-11-05 开源整理新增）
+# 目的：避免 Windows 的 core.autocrlf=true 把 CRLF 提交进仓库，导致 GitHub 上大量伪 diff；
+#      并让 Git 明确知道哪些文件是二进制，不做文本合并与换行转换。
+#
+# ⚠️ 本次只新增规则，**不要**立即执行 `git add --renormalize .`：
+#    那会把仓库存量文件全部重新规范化，产生数千行与业务无关的 diff。
+#    等下一次批量整理时再单独提一个 "chore: renormalize line endings" 提交。
+
+* text=auto eol=lf
+
+# 源码与文档：文本，LF
+*.js      text eol=lf
+*.json    text eol=lf
+*.wxml    text eol=lf
+*.wxss    text eol=lf
+*.md      text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.sql     text eol=lf
+*.java    text eol=lf
+*.py      text eol=lf
+*.ps1     text eol=lf
+*.bat     text eol=crlf
+*.cmd     text eol=crlf
+
+# 二进制：不转换、不合并
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.gif   binary
+*.ico   binary
+*.mp4   binary
+*.mp3   binary
+*.wav   binary
+*.moc3  binary
+*.vrm   binary
+*.glb   binary
+*.pmx   binary
+*.docx  binary
+*.doc   binary
+*.pdf   binary
+*.rar   binary
+*.zip   binary
+
+# 测试快照与契约基线：按文本处理（便于 review 差异）
+tools/**/*.snapshot.json  text eol=lf

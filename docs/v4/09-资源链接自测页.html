@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>资源链接自测页 · 前端适配（docs/v4/09）</title>
+<style>
+  :root { --primary:#165DFF; --bg:#F5F7FA; --text:#1D2129; --sub:#4E5969; --ok:#00B42A; --bad:#F53F3F; --line:#E5E6EB; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:32px; background:var(--bg); color:var(--text);
+         font:14px/1.6 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  .sub { color:var(--sub); margin:0 0 20px; }
+  .steps { background:#fff; border:1px solid var(--line); border-radius:12px; padding:14px 18px; margin-bottom:20px; }
+  .steps b { color:var(--primary); }
+  .steps code { background:#F2F3F5; border-radius:4px; padding:1px 6px; font-size:13px; }
+  .links { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:22px; }
+  .links a { display:inline-block; background:#fff; border:1px solid var(--primary); color:var(--primary);
+             border-radius:999px; padding:6px 14px; text-decoration:none; font-size:13px; }
+  .links a:hover { background:var(--primary); color:#fff; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:14px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .card img { display:block; width:100%; height:110px; object-fit:contain; background:#FAFBFC; }
+  .meta { padding:8px 10px; border-top:1px solid var(--line); }
+  .name { font-size:12px; color:var(--sub); word-break:break-all; }
+  .st { font-size:12px; margin-top:2px; }
+  .st.ok { color:var(--ok); } .st.bad { color:var(--bad); }
+  .banner { display:none; margin-bottom:18px; padding:12px 16px; border-radius:12px;
+            background:#FFF7E8; border:1px solid #FFD08A; color:#8B5E00; }
+  .banner.show { display:block; }
+  .foot { margin-top:26px; color:var(--sub); font-size:12px; }
+</style>
+</head>
+<body>
+  <h1>资源链接自测页 —— 素材经后端传递</h1>
+  <p class="sub">对应文档 <b>docs/v4/09-前端适配与资源外置.md</b> §6 · 通道 <code>GET /api/gw/assets/&lt;name&gt;</code>（统一网关 :8000）</p>
+
+  <div class="steps">
+    <b>使用步骤：</b>① 先在 <code>backend/deploy/</code> 双击 <code>start-all.bat</code>（或 <code>restart.bat</code>）确保网关为<b>含素材通道的新构建</b>；
+    ② 用浏览器打开本页；③ 图片全部渲染 + 状态全绿 = 链接效果 OK。
+    也可以命令行跑：<code>node tools/test-resource-links.js</code>（含 sha256 / 304 校验）。
+  </div>
+
+  <div class="banner" id="banner">⚠️ 有图片加载失败：通常是<b>网关尚未重启</b>（新路由未生效）或网关未启动。请先运行 restart.bat 后刷新本页。</div>
+
+  <p><b>入口链接（点击即测）</b></p>
+  <div class="links">
+    <a href="http://127.0.0.1:8000/api/gw/health" target="_blank" rel="noreferrer">网关健康 /api/gw/health</a>
+    <a href="http://127.0.0.1:8000/api/gw/routes" target="_blank" rel="noreferrer">路由表 /api/gw/routes（需 Authorization）</a>
+    <a href="http://127.0.0.1:8000/api/v1/resources/manifest?platform=wechat-miniprogram" target="_blank" rel="noreferrer">资源清单 /api/v1/resources/manifest（需登录态）</a>
+    <a href="http://127.0.0.1:8000/api/gw/assets/banner-hospital.jpg" target="_blank" rel="noreferrer">示例素材 banner-hospital.jpg</a>
+  </div>
+
+  <p><b>种子素材（13 张，来自 backend/deploy/resources/）</b></p>
+  <div class="grid" id="grid"></div>
+
+  <div class="foot">
+    <div>基础地址（如改端口/穿透域名，修改本页脚本顶部 BASE 常量）：<code id="baseTxt"></code></div>
+    <div>失败排障：见文档 §6.4「排障」，或运行 <code>node tools/test-resource-links.js</code> 查看逐项诊断。</div>
+  </div>
+
+<script>
+  var BASE = 'http://127.0.0.1:8000'
+  document.getElementById('baseTxt').textContent = BASE
+
+  var ASSETS = [
+    'banner-hospital.jpg', 'ai-doctor.png',
+    'svc-advice.png', 'svc-archive.png', 'svc-care.png', 'svc-checkup.png',
+    'svc-dept.png', 'svc-doctor.png', 'svc-more.png', 'svc-triage.png',
+    'measure-bp.jpg', 'stand-up.jpg', 'wash-hands.jpg'
+  ]
+
+  var grid = document.getElementById('grid')
+  var failed = 0
+
+  ASSETS.forEach(function (name) {
+    var card = document.createElement('div')
+    card.className = 'card'
+
+    var img = document.createElement('img')
+    img.alt = name
+    img.loading = 'lazy'
+    img.src = BASE + '/api/gw/assets/' + name
+
+    var meta = document.createElement('div')
+    meta.className = 'meta'
+    var nm = document.createElement('div'); nm.className = 'name'; nm.textContent = name
+    var st = document.createElement('div'); st.className = 'st'; st.textContent = '加载中…'
+    meta.appendChild(nm); meta.appendChild(st)
+
+    img.onload = function () {
+      st.className = 'st ok'
+      st.textContent = '✓ 渲染成功（' + img.naturalWidth + '×' + img.naturalHeight + '）'
+    }
+    img.onerror = function () {
+      failed++
+      st.className = 'st bad'
+      st.textContent = '✗ 加载失败（通道未生效 / 文件缺失）'
+      document.getElementById('banner').classList.add('show')
+    }
+
+    card.appendChild(img); card.appendChild(meta)
+    grid.appendChild(card)
+  })
+</script>
+</body>
+</html>

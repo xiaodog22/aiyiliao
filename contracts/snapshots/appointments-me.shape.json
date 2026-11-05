@@ -1,0 +1,22 @@
+{
+  "$array": {
+    "createdAt": "string",
+    "departmentId": "string",
+    "departmentName": "string",
+    "doctorId": "string",
+    "doctorName": "string",
+    "doctorTitle": "string",
+    "endTime": "string",
+    "hospitalName": "string",
+    "id": "string",
+    "location": "string",
+    "patientAvatarUrl": "string",
+    "patientName": "string",
+    "slotId": "string",
+    "startTime": "string",
+    "status": "string",
+    "symptomSummary": "string",
+    "updatedAt": "string",
+    "version": "number"
+  }
+}

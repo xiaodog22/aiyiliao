@@ -1,0 +1,256 @@
+repo	status	path	unit	purpose	proposed_action
+SUB	??	assets/brand/	U9	10-18 素材与素材接线	commit
+SUB	??	assets/home/kb-cover-person-leaf.png	U9	10-18 素材与素材接线	commit
+SUB	??	assets/img/	U9	10-18 素材与素材接线	commit
+SUB	??	packageContent/assets/	U9	10-18 素材与素材接线	commit
+SUB	M	packageContent/pages/detail/detail.wxml	U9	10-18 素材与素材接线	commit
+SUB	M	packageContent/pages/detail/detail.wxss	U9	10-18 素材与素材接线	commit
+SUB	M	packageContent/pages/knowledge/knowledge.wxml	U9	10-18 素材与素材接线	commit
+SUB	M	pages/appointment/appointment.wxml	U9	10-18 素材与素材接线	commit
+SUB	M	pages/appointment/appointment.wxss	U9	10-18 素材与素材接线	commit
+SUB	M	pages/auth/auth-common.wxss	U9	10-18 素材与素材接线	commit
+SUB	M	pages/auth/patient-login/patient-login.wxml	U9	10-18 素材与素材接线	commit
+SUB	M	pages/doctor/personal/personal.js	U9	10-18 素材与素材接线	commit
+SUB	M	pages/doctor/personal/personal.wxml	U10	前端语法修复（N-12 / N-15）	commit
+SUB	M	pages/doctor/personal/personal.wxss	U10	前端语法修复（N-12 / N-15）	commit
+SUB	M	pages/home/home.wxml	U9	10-18 素材与素材接线	commit
+SUB	M	pages/home/home.wxss	U9	10-18 素材与素材接线	commit
+SUB	M	pages/profile/personal-info/personal-info.wxml	U9	10-18 素材与素材接线	commit
+SUB	M	pages/profile/profile.wxml	U9	10-18 素材与素材接线	commit
+SUB	M	pages/profile/profile.wxss	U9	10-18 素材与素材接线	commit
+SUB	M	tools/svg2png.py	U9	素材生成管线（--assets 分支）	commit
+SUB	M	utils/knowledge-kb.js	U9	10-18 素材与素材接线	commit
+TOP	??	backend/business-service/run/	U8	运行产物（含用户上传头像）	ignore
+TOP	??	backend/business-service/src/main/java/com/wechar/biz/home/HomeBlockConfigRepository.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/main/java/com/wechar/biz/patient/dto/FamilyInvitationSummaryData.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/main/java/com/wechar/biz/user/AvatarController.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/main/java/com/wechar/biz/user/AvatarStorage.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/main/java/com/wechar/biz/user/ExtendedProfileRepository.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/main/java/com/wechar/biz/user/dto/AccountUpdateRequest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/main/java/com/wechar/biz/user/dto/ExtendedProfileData.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/main/java/com/wechar/biz/user/dto/ExtendedProfileUpdateRequest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/main/java/com/wechar/biz/user/dto/IdentityBindRequest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/main/java/com/wechar/biz/user/dto/InsuranceBindRequest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/main/resources/db/dev/V9003__frontend_contract_seed.sql	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/main/resources/db/migration/V7__frontend_contract_fields.sql	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/main/resources/db/migration/V8__user_extended_profile.sql	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/test/java/com/wechar/biz/M4ConcurrencyIdemTest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/test/java/com/wechar/biz/M4ConcurrencyVersionTest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/test/java/com/wechar/biz/M4ContractConsultTest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/test/java/com/wechar/biz/M4ContractCoreTest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/test/java/com/wechar/biz/M4ContractDoctorTest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/business-service/src/test/java/com/wechar/biz/M4MigrationDrillTest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	??	backend/deploy/resources/	U4	部署配置与验收脚本	commit
+TOP	??	backend/deploy/scripts/accept-frontend-contract.ps1	U4	部署配置与验收脚本	commit
+TOP	??	backend/edge-gateway/app/assets.py	U3	网关 compat/proxy/assets 与测试	commit
+TOP	??	backend/edge-gateway/tests/test_assets.py	U3	网关 compat/proxy/assets 与测试	commit
+TOP	??	backend/edge-gateway/tests/test_proxy_headers.py	U3	网关 compat/proxy/assets 与测试	commit
+TOP	??	design-output/	U7	设计交付物（12M+828K，二进制）	decide
+TOP	??	docs/_backup/	U8	本地备份归档（tar.gz）	ignore
+TOP	??	docs/v4/09-API调试台.html	U6	文档与审计产物	commit
+TOP	??	docs/v4/09-前端适配与资源外置.md	U6	文档与审计产物	commit
+TOP	??	docs/v4/09-资源链接自测页.html	U6	文档与审计产物	commit
+TOP	??	docs/v4/api-catalog.json	U6	文档与审计产物	commit
+TOP	??	docs/前端数据依赖与后端接口需求_20261017.md	U6	文档与审计产物	commit
+TOP	??	docs/后端启动检测报告_20261016.md	U6	文档与审计产物	commit
+TOP	??	docs/验收与评估_20261015/08-前端视觉基调对齐与优化方案.md	U6	文档与审计产物	commit
+TOP	??	docs/验收与评估_20261015/assets/generated/	U6	文档与审计产物	commit
+TOP	??	docs/验收与评估_20261017/	U6	文档与审计产物	commit
+TOP	??	docs/验收与评估_20261018/	U6	文档与审计产物	commit
+TOP	??	tools/check-styles.js	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	??	tools/gen-api-catalog.py	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	??	tools/test-apt-date.js	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	??	tools/test-pages-contract.js	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	??	tools/test-resource-links.js	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	??	ui-design-runs/	U7	设计交付物（12M+828K，二进制）	decide
+TOP	A	backend/ai-service/app/redact.py	U2	AI 服务安全加固（脱敏/留存/TTS 产物治理）	commit
+TOP	A	backend/ai-service/app/retention.py	U2	AI 服务安全加固（脱敏/留存/TTS 产物治理）	commit
+TOP	A	backend/ai-service/tests/test_retention.py	U2	AI 服务安全加固（脱敏/留存/TTS 产物治理）	commit
+TOP	A	backend/ai-service/tests/test_security_spotcheck.py	U2	AI 服务安全加固（脱敏/留存/TTS 产物治理）	commit
+TOP	A	backend/ai-service/tests/test_tts_artifact_hygiene.py	U2	AI 服务安全加固（脱敏/留存/TTS 产物治理）	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/bed/BedController.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/bed/BedRepository.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/bed/BedService.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/bed/dto/BedAssignmentRequest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/bed/dto/BedData.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/common/AuditInterceptor.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/common/AuditLog.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/common/RateLimitInterceptor.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/common/WebMvcConfig.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/consent/ConsentController.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/consent/ConsentRepository.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/consent/ConsentService.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/consent/dto/ConsentGrantRequest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/deletion/DeletionController.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/deletion/DeletionRepository.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/deletion/DeletionService.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/deletion/dto/DeletionRequestCreateRequest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/deletion/dto/DeletionRequestData.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/deletion/dto/RetainedItemData.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/doctor/AppointmentStatusMachine.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/doctor/DoctorController.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/doctor/DoctorRepository.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/doctor/DoctorService.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/doctor/dto/AppointmentStatusUpdateRequest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/doctor/dto/DoctorWorkbenchData.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/java/com/wechar/biz/triage/TriageNormalizer.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/resources/db/dev/V9002__m3_dev_seed.sql	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/resources/db/migration/V5__m3_tables.sql	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/main/resources/db/migration/V6__m4_audit.sql	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/test/java/com/wechar/biz/M3IntegrationTest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/test/java/com/wechar/biz/M4AuditTest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/test/java/com/wechar/biz/M4AuthTest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/test/java/com/wechar/biz/M4RateLimitTest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/test/java/com/wechar/biz/M4StrictAuthTest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/test/java/com/wechar/biz/triage/TriageNormalizerTest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/business-service/src/test/resources/db/test-m3-seed.sql	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	A	backend/deploy/scripts/fault_drill.py	U4	部署配置与验收脚本	commit
+TOP	A	backend/deploy/scripts/spawn_detached_gateway.py	U4	部署配置与验收脚本	commit
+TOP	A	backend/edge-gateway/app/ratelimit.py	U3	网关 compat/proxy/assets 与测试	commit
+TOP	A	backend/edge-gateway/app/redact.py	U3	网关 compat/proxy/assets 与测试	commit
+TOP	A	backend/edge-gateway/tests/test_m2_tts_audio.py	U3	网关 compat/proxy/assets 与测试	commit
+TOP	A	backend/edge-gateway/tests/test_m3_coverage.py	U3	网关 compat/proxy/assets 与测试	commit
+TOP	A	backend/edge-gateway/tests/test_ratelimit.py	U3	网关 compat/proxy/assets 与测试	commit
+TOP	A	backend/edge-gateway/tests/test_security_spotcheck.py	U3	网关 compat/proxy/assets 与测试	commit
+TOP	A	docs/v4/08G-M2集成门验收单.md	U6	文档与审计产物	commit
+TOP	A	docs/v4/08H-M3集成门验收单.md	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/01-未完成项清单与验收测试方案.md	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/02-后端代码质量评估报告.md	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/03-前端小程序代码评估报告（微信官方规范）.md	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/05-后端资源传输与存储对接规划.md	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/06-前端操作流程与设置页参数同步规划.md	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/07-评价模块现状分析与设计方案.md	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/28ec2e84-cbab-42ec-b2a3-f47807fd671e.png	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/50256bad-19df-4a65-b900-08f709c6a74f.png	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/assets/asset-avatar-ai-doctor.png	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/assets/asset-banner-hospital.png	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/assets/refs/ref-R1-consult.png	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/assets/refs/ref-R1-health.png	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/assets/refs/ref-R1-home.png	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/assets/refs/ref-R1-profile.png	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/assets/refs/ref-R2-workbench.png	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/assets/ui-consultation-result.png	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/assets/ui-doctor-workbench.png	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/assets/ui-home-concept.png	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/assets/ui-nav-route.png	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/d9b4ea43-f95c-44e9-a8fb-fe3242372085.png	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/eac347c8-0adc-454d-8393-cdf1dcd1e633.png	U6	文档与审计产物	commit
+TOP	A	docs/验收与评估_20261015/f9b25d34-842c-4602-8446-3286fff8e1d9.png	U6	文档与审计产物	commit
+TOP	AD	_gates_final.txt	U8	临时验证输出（已暂存但工作区删除）	exclude
+TOP	AM	backend/business-service/src/main/java/com/wechar/biz/common/AuthInterceptor.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	AM	docs/验收与评估_20261015/04-界面截图生图参考手册.md	U6	文档与审计产物	commit
+TOP	M	AI_CONTEXT.md	U6	文档与审计产物	commit
+TOP	M	README.md	U6	文档与审计产物	commit
+TOP	M	backend/ai-service/README.md	U2	AI 服务安全加固（脱敏/留存/TTS 产物治理）	commit
+TOP	M	backend/ai-service/app/cache.py	U2	AI 服务安全加固（脱敏/留存/TTS 产物治理）	commit
+TOP	M	backend/ai-service/app/config.py	U2	AI 服务安全加固（脱敏/留存/TTS 产物治理）	commit
+TOP	M	backend/ai-service/app/executors/tts.py	U2	AI 服务安全加固（脱敏/留存/TTS 产物治理）	commit
+TOP	M	backend/ai-service/app/main.py	U2	AI 服务安全加固（脱敏/留存/TTS 产物治理）	commit
+TOP	M	backend/ai-service/app/tasks.py	U2	AI 服务安全加固（脱敏/留存/TTS 产物治理）	commit
+TOP	M	backend/ai-service/app/voice.py	U2	AI 服务安全加固（脱敏/留存/TTS 产物治理）	commit
+TOP	M	backend/ai-service/requirements.txt	U2	AI 服务安全加固（脱敏/留存/TTS 产物治理）	commit
+TOP	M	backend/ai-service/tests/test_m2_executors.py	U2	AI 服务安全加固（脱敏/留存/TTS 产物治理）	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/appointment/AppointmentController.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/appointment/dto/AppointmentData.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/auth/AuthService.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/careplan/CarePlanService.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/careplan/dto/CarePlanRequest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/catalog/CatalogRepository.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/catalog/CatalogService.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/catalog/dto/DepartmentData.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/common/AuthSessionStore.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/common/CurrentUserContext.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/common/GlobalExceptionHandler.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/content/ContentRepository.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/content/ContentService.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/content/dto/ContentDetailData.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/content/dto/ContentItemData.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/home/HomeService.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/patient/FamilyRepository.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/patient/HealthRecordRepository.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/patient/PatientController.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/patient/PatientService.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/patient/dto/FamilyMemberCreateRequest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/patient/dto/FamilyMemberData.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/patient/dto/HealthRecordCreateRequest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/patient/dto/HealthRecordData.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/triage/TriageRuleEngine.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/triage/TriageService.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/user/MeController.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/user/dto/UserData.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/test/java/com/wechar/biz/M1IntegrationTest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/test/java/com/wechar/biz/M2IntegrationTest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/test/java/com/wechar/biz/common/EnvelopeAndNotImplementedTest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/business-service/src/test/java/com/wechar/biz/triage/TriageRuleEngineTest.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	M	backend/contracts/business-openapi.yaml	U0	B0 契约登记（6 路径 / 9 operation）	commit
+TOP	M	backend/edge-gateway/app/envelope.py	U3	网关 compat/proxy/assets 与测试	commit
+TOP	M	backend/edge-gateway/app/proxy.py	U3	网关 compat/proxy/assets 与测试	commit
+TOP	M	backend/edge-gateway/tests/mock_business.py	U3	网关 compat/proxy/assets 与测试	commit
+TOP	M	backend/edge-gateway/tests/test_m1_integration.py	U3	网关 compat/proxy/assets 与测试	commit
+TOP	M	docs/v4/08-后端实施双Agent总纲.md	U6	文档与审计产物	commit
+TOP	M	docs/v4/08D-M1集成门验收单.md	U6	文档与审计产物	commit
+TOP	M	docs/v4/08F-M侧转交任务书-R1补缺与登记-MiMo-V2.6-Flash.md	U6	文档与审计产物	commit
+TOP	M	miniprogram	U11	顶层 gitlink 指针（需在子仓提交后更新）	follow
+TOP	M	tools/_pad_appointment.html	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_appointment_landscapePhone.png	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_appointment_padLandscape.png	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_appointment_padPortrait.png	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_appointment_phone.png	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_consultation.html	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_consultation_landscapePhone.png	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_consultation_padLandscape.png	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_consultation_padPortrait.png	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_consultation_phone.png	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_home.html	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_home_landscapePhone.png	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_home_padLandscape.png	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_home_padPortrait.png	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_home_phone.png	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_workbench.html	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_workbench_landscapePhone.png	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_workbench_padLandscape.png	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_workbench_padPortrait.png	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/_pad_workbench_phone.png	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/build-icon-colors.py	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/check-project.js	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/preview-pad-pages.js	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	M	tools/test-nav-page.js	U0	B0 测试解析器修复	commit
+TOP	M	tools/test-pages-paginate.js	U5	门禁与工具链（含 4 个未跟踪门禁脚本）	commit
+TOP	MM	DEV_LOG.md	U6	文档与审计产物	commit
+TOP	MM	backend/ai-service/runtime/tasks.json	U2	AI 服务安全加固（脱敏/留存/TTS 产物治理）	commit
+TOP	MM	backend/business-service/README.md	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	MM	backend/business-service/src/main/java/com/wechar/biz/appointment/AppointmentRepository.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	MM	backend/business-service/src/main/java/com/wechar/biz/appointment/AppointmentService.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	MM	backend/business-service/src/main/java/com/wechar/biz/user/UserRepository.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	MM	backend/business-service/src/main/java/com/wechar/biz/user/UserService.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	MM	backend/business-service/src/main/java/com/wechar/biz/voice/VoiceController.java	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	MM	backend/business-service/src/main/resources/application.yml	U1	后端业务四域 + Flyway V7/V8/V9003 + M4 测试	commit
+TOP	MM	backend/deploy/README.md	U4	部署配置与验收脚本	commit
+TOP	MM	backend/deploy/config.json	U4	部署配置与验收脚本	commit
+TOP	MM	backend/deploy/env.example	U4	部署配置与验收脚本	commit
+TOP	MM	backend/edge-gateway/COMPAT.md	U3	网关 compat/proxy/assets 与测试	commit
+TOP	MM	backend/edge-gateway/README.md	U3	网关 compat/proxy/assets 与测试	commit
+TOP	MM	backend/edge-gateway/app/compat.py	U3	网关 compat/proxy/assets 与测试	commit
+TOP	MM	backend/edge-gateway/app/config.py	U3	网关 compat/proxy/assets 与测试	commit
+TOP	MM	backend/edge-gateway/app/main.py	U3	网关 compat/proxy/assets 与测试	commit
+TOP	M	backend/business-service/src/main/java/com/wechar/biz/auth/ProdWechatSessionProvider.java	U13+U14	微信 Provider 实现(19:58~20:00)+审查4修复(20:34)	commit
+TOP	??	backend/business-service/src/main/java/com/wechar/biz/auth/WechatHttpTransport.java	U13	JDK HttpClient 传输层(零依赖/禁重试/显式超时)	commit
+TOP	??	backend/business-service/src/main/java/com/wechar/biz/auth/WechatMiniProgramProperties.java	U13	配置绑定(键名脱敏/无toString/超时回退)	commit
+TOP	AM	backend/business-service/src/main/java/com/wechar/biz/doctor/DoctorService.java	U6+U13	医生登录任职关系判定(19:38 未暂存侧)	add-p
+TOP	AM	backend/business-service/src/main/java/com/wechar/biz/doctor/DoctorController.java	U6+U13	doctorLogin 端点(19:39 未暂存侧)	add-p
+TOP	??	backend/business-service/src/test/java/com/wechar/biz/auth/	U13	MockWechatServer+Provider单测30+HTTP实测11	commit
+TOP	??	backend/business-service/src/test/java/com/wechar/biz/M5WechatLoginIntegrationTest.java	U13	登录链路集成10例	commit
+TOP	??	backend/business-service/src/test/java/com/wechar/biz/M5WechatLoginNotConfiguredTest.java	U13	缺配置0上游2例	commit
+TOP	??	backend/business-service/src/test/java/com/wechar/biz/M5LoginFailureTest.java	U13	登录失败不签会话2例	commit
+TOP	??	backend/business-service/src/test/java/com/wechar/biz/M5CursorPaginationE2ETest.java	U13	cursor分页E2E 8例	commit
+TOP	??	backend/business-service/src/test/resources/db/test-m5-seed.sql	U13	M5测试种子	commit
+TOP	MM	backend/business-service/src/main/resources/application.yml	U1+U13	wechat.miniprogram 5键占位(含历史段)	add-p
+TOP	MM	backend/business-service/README.md	U1+U13+U14	失败语义表+配置键表(含历史段)	add-p
+TOP	MM	backend/deploy/env.example	U1+U13	WECHAT_* 注释模板(含历史段)	add-p
+TOP	MM	backend/deploy/README.md	U1+U13	部署说明(含历史段)	add-p
+TOP	M	backend/contracts/business-openapi.yaml	U6+U13	auth/doctorLogin 契约	commit
+TOP	MM	DEV_LOG.md	U0-U15	开发日志(多轮混合)	add-p
+TOP	??	docs/验收与评估_20261018/09-微信登录Provider上线前安全审查与风险闭环.md	U14	安全审查报告+勘误头	commit
+TOP	??	docs/验收与评估_20261018/10-提交准备审计与门禁修复报告.md	U15	提交准备审计报告	commit
+TOP	M	design-output/医疗_AI_智能健康小程序_UIUX_原型设计与界面说明书_V4.md	U15	路由表+personal-info第25行(门禁最小修复)	commit
+TOP	MM	backend/ai-service/runtime/tasks.json	U2	⚠️AI服务运行态并发写(PID18572)——任何提交必须排除	exclude

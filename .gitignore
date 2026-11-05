@@ -65,3 +65,80 @@ ui-design-runs/
 backend/business-service/.backup/
 # 完整版 README（含开发口令，仅本地保留，不入库）
 README_FULL.md
+
+# ===== 开源整理补充（2026-11-05）=====
+# ---- 本地数据与运行证据：含真实业务数据、序列化产物、Word 生成链，禁止入库 ----
+# .trash/ 是数据库备份与救援快照（含真实档案/账号数据），output/ 是文档流水线产物，
+# artifacts/ 是数据采集中间结果与交付证据（含 PII 脱敏样例与全库基线 SQL）。
+.trash/
+output/
+artifacts/
+*.dumpstream
+
+# ---- 早期原型与本地工具目录 ----
+# prototype-web/ 是设计前的静态 HTML 原型，已被 miniprogram/ 取代；
+# software-certificate-skill/ 自带独立 .git，直接入库会变成坏掉的 submodule 引用。
+prototype-web/
+software-certificate-skill/
+
+# ---- 微信开发者工具本机配置（含 appid 与本机绝对路径）----
+project.private.config.json
+project.config.json.bak
+# 根目录的 project.config.json 是「用仓库根打开项目」误生成的，真正的小程序根在 miniprogram/
+/project.config.json
+# 小程序预览二维码与预览参数（含 appid / 页面路径，属本机联调凭据）
+docs/preview-qr*.png
+docs/preview-info*.json
+
+# ---- 误创建的 0 字节文件与导出副本（历史误操作产物）----
+编写时间：2026-10-21
+面向：小程序前端开发、联调人员、后端开发。
+_V16_from_jar.sql
+
+# ---- 个人笔记与内部复盘文档：保留本地，不随开源仓库发布 ----
+work.txt
+待优化问题清单_交付GPT版.md
+项目优化总结报告-2026-10-23.md
+测试用例调整建议-2026-10-23.md
+DeepSeek启动提示词_页面复刻.md
+# 开发日志与上下文索引：含内部联调账号、口令线索与本机路径，README 已声明不发布
+DEV_LOG.md
+AI_CONTEXT.md
+# 二进制手册与软著材料同源，体积大且含真实身份信息
+手册DOCX最新版.docx
+manual_操作手册待转PDF.docx
+
+# ---- 文档中间产物 ----
+docs/_backup/
+docs/shots/
+
+# ---- 2026-11-05 第二轮：乱码草稿与被取代版本（保留本地，不随仓库发布）----
+# 1.md~5.md 是从 GBK 文档误转的乱码草稿（标题即 mojibake），内容已被 UIUX V4 / LAYOUT_PLAN 取代
+1.md
+2.md
+3.md
+4.md
+5.md
+# V3.1 已被 V4 取代，同时入库会让读者选错版本
+医疗_AI_智能健康小程序_UIUX_原型设计与界面说明书_V3.1_修正版.md
+# 页面复刻类草案：含第三方医院页面的复刻描述与本机绝对路径，公开仓库不适合收录
+页面复刻文档_DeepSeek版.md
+页面复刻遗留问题清单.md
+项目结构与代码规范_DeepSeek版.md
+# AI 代理工作规约：只对本机协作工具有意义，含内部流程约定
+WORKBODY_AGENT_RULES.md
+
+# ---- tools 下的临时调试产物（截图 / 预览 HTML / 中间源文件 / 字节码）----
+# 正式门禁与生成器是 check-*.js / test-*.js / build-*.py / gen-*.py，它们要被跟踪；
+# 以 _ 开头的是为单次排查产出的 UI 截图与预览页，不入库
+tools/_*
+tools/__pycache__/
+__pycache__/
+*.pyc
+
+# ---- 验收证据截图：32MB PNG，只保留同名 .md 报告 ----
+docs/验收与评估_*/assets/
+docs/验收与评估_*/*.png
+
+
+

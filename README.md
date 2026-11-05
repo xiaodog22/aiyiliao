@@ -72,7 +72,7 @@ flowchart LR
 
 ```
 miniprogram/          原生小程序前端
-  pages/              主包 21 页（首页 / 导诊 / 问诊 / 养生 / 挂号 / 我的 / 医生工作台）
+  pages/              主包 31 页（首页 / 导诊 / 问诊 / 养生 / 挂号 / 我的 / 医生工作台 等）
   packageNav/         分包：院内导航
   packageContent/     分包：健康科普
   services/           数据访问层，页面不直接发请求
@@ -83,10 +83,24 @@ backend/
   ai-service/         FastAPI：导诊 / 问诊 / 养生 / ASR / TTS
   business-service/   Spring Boot：医生 / 挂号 / 床位 / 用户
   deploy/             一键启停脚本与环境模板
-tools/                构建与校验脚本（依赖、样式、契约、分页等）
+tools/                构建与校验脚本（依赖、样式、契约、分页、包体门禁等）
 site/                 项目主页（单文件 HTML）
 docs/screenshots/     界面截图
 ```
+
+### 包体基线（2026-11-05 质量面板整改后）
+
+| 项 | 体积 | 限制 |
+| --- | --- | --- |
+| 主包 | **1.327MB** | 微信硬上限 2MB |
+| 分包 `packageContent` | 0.048MB | 单包 2MB |
+| 分包 `packageNav` | 0.083MB | 单包 2MB |
+| 包内图片+音频+视频 | **193KB**（197,638B） | 质量面板建议 200K |
+
+整改前主包 2.101MB（超限）、全包媒体 787KB（质量面板未通过：图片 618K + mp4 170K）。
+媒体（封面/海报/科普视频）已全部网络化出包（F2 Phase A+B），服务端副本与资源清单见
+`docs/计划_云部署与包体整改_前端后端_20261104.md` §F1.1 与 §F2.1。
+`node tools/check-project.js` 已内置包体门禁（主包 >1.7MB 告警 / >1.9MB 失败、单图 >100KB 失败、主包内音视频失败、分包图片音频 >200KB 告警）。
 
 ## 快速开始
 
@@ -130,10 +144,91 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 - 语音能力依赖后端在线，失败时自动退回文字输入
 - 未接入微信隐私授权接口，生产环境需要补
 
+## 性能测试
+
+患者端只读链路 8 端点，终态基线（2026-11-01，三轮修复后）：
+
+| 并发 | RPS | P50 | P95 | 错误率 |
+| --- | --- | --- | --- | --- |
+| 1 | **96.9** | 9.7ms | 15.5ms | 0% |
+| 10 | 413.9 | 18.3ms | 50.7ms | 0% |
+| 25 | **345.7** | 54.2ms | **185.9ms** | 0% |
+| 50 | 276.4 | 176.0ms | 225.2ms | 0% |
+
+> 1 VU 与 25 VU 为 v2.2（修 PERF-09 后）；10 VU 与 50 VU 仍是 v2.1 数据，未重测。
+
+- 首轮未修复时 25 并发只有 55 RPS / P95 1115ms；修复后 **296.6 RPS / 213.7ms（5.4× / -81%）**，四档按自定阈值全达标（阈值未经业务确认）。
+- **甜点并发是 10 VU**：413.9 RPS / P95 50.7ms 是吞吐最高、延迟最低的双优点；25 VU 掉 28%、50 VU 继续掉 —— 过拐点后加并发只增排队。扩 worker 的价值是**把拐点推远**，不是提高峰值。
+- 两个 P0 根因，均零硬件投入：① 逐请求日志同步写控制台（`logging.perRequest=false` 已关）；② **venv 缺 `sniffio`**，导致 anyio 每次调用重扫 sys.path，py-spy 实测占 48.6% CPU（已补装并钉进 `requirements.txt`）。
+- 跨实现校准：40 行 Node 反代同机同端点 **986 RPS**，证明"多一跳 / Windows loopback / 单事件循环"都不是瓶颈；剩余差距是 httpx+anyio+asyncio 的分布式开销，再上量级需换反代层。
+- **多 worker 实测**：`--workers 2` 562.5 RPS（1.90×）、`--workers 4` 906.4 RPS（达同机直连 Java 的 84%，网关损耗从 20.6× 降到 1.19×）。但 2→4 只有 1.61×、主机 CPU 已 91~95% —— 瓶颈已转移到「施压端+网关+Java 三方抢 16 线程」，验证 8 worker 需先上独立压测机。
+- **DB 全程未被压到**：25 VU / 60s 期间 MySQL CPU ≈0%、buffer pool 命中 100%、连接峰值 11/151、慢查询 0。**但全局 SQL 成本 20.7 次/请求**（正常应为 1~3），是换反代层后的下一个瓶颈。
+- **口径**：闭合环极限口径、无思考时间，数字是"极限吞吐"不是"生产容量"；施压端与被压端同机，不得横向引用或外推为 SLA。
+- 施压脚本：`tools/perf-runner.js`（零依赖，`node tools/perf-runner.js --scenario=read --vu=25 --duration=45`）；采样聚合：`artifacts/perf/pyspy-aggregate.js`。
+- **PERF-09 已修（v2.2）**：`/doctors` 曾是 N+1（20 医生 = 41 SQL/请求），改为一次 `GROUP BY doctor_id` 批量聚合。实测 **1VU P50 55→14.5ms（-74%）、全局 1VU RPS +77%、SQL 20.67→8.92 次/请求（-56.9%）**。
+- **性能回归门禁**：`node tools/perf-gate.js`（25VU/20s，预算 RPS 掉 10% / P95 涨 20% / 错误率 0.5%，退化 exit 1）。基线在 `artifacts/perf/baseline.json`，`--update-baseline` 提基线。
+- 完整报告：`artifacts/perf/03_性能测试报告_20261101.md` / `.html`（v2.2）；选型与踩坑：`docs/性能测试流水线_选型与落地附录_20261101.md`。
+
+## 测试体系
+
+| 层 | 载体 | 规模 |
+| --- | --- | --- |
+| Java 单元/契约/集成 | `backend/business-service/src/test` | 48 个测试类 / 319 项（`mvnw -o test` 实测） |
+| 网关行为 | `backend/edge-gateway/tests` | 132 项 pytest |
+| SQL 次数预算（防 N+1） | `DoctorQueryBudgetTest` + `QueryCounter` | 5 项 |
+| 端点级 SQL 画像 | `EndpointSqlProfileTest` | 2 项（逐端点上限 + 与数据量无关） |
+| **小程序逻辑层（并发）** | `miniprogram/tests/` + `tools/test-fe.js` | **8 项**（零依赖 `node:test`） |
+| **前后端契约快照** | `tools/contract-snapshot.js` + `contracts/snapshots/` | **5 端点**结构快照 |
+| 性能回归门禁 | `tools/perf-gate.js` | 25VU/20s，支持 `--rounds=N` + 配置指纹 |
+
+- 分层现状、技术选型取舍（为什么 Pact / MSW 在本项目用不了）与补齐顺序：`docs/测试体系_分层现状与补齐计划_20261101.md`。
+- 日常门禁：`node tools/check-project.js`（路径/禁址/图标/类名）+ `mvnw -o test` + `pytest tests` + `node tools/test-fe.js` + `node tools/contract-snapshot.js --token=…`
+- **契约快照语义**：只比结构与类型、不比值；字段消失/类型变化 → FAIL；**新增字段 → WARN 不阻断**。`--update` 会先打印差异，必须人工 review。
+- **组件测试与 E2E 仍空白**（小程序原生栈无 DOM，需 `miniprogram-simulate`，代价高、优先级 P3）。
+- **PERF-11（未修，P1）**：每请求**固定 5 次会话语句**（`Com_set_option` 4.08 + `Com_commit` 1.00），占 SQL 报文 83%。连接复用已证（`Threads_created` 40 次请求零增长），非建连成本；`useLocalSessionState` / `elideSetAutoCommits` 两个常见参数**实测无效**。端点自身只 1~4 次（`home/summary` 最贵），无 N+1 形态。
+- AI 链路（分诊 / 问诊 / care-plan / TTS）**未做压测**：本机内存余量不足驻留 7B 模型。
+
 ## 开发记录
 
 - [DEV_LOG_README.md](DEV_LOG_README.md)：2026-10-30 之前的 README，已归档
 - `DEV_LOG.md`、`AI_CONTEXT.md`：本地开发日志与上下文索引，含内部联调信息，不随仓库发布
+- `artifacts/db-doc/wechar数据库说明文档.docx`（2026-11-05）：完整数据库说明文档，覆盖 36 张表的字段/索引/约束、
+  真实数据样例与枚举、库表设计说明、跨服务关联与「待补充」清单；只读采集，业务库零写入。
+  可复现链：`artifacts/db-doc/export_db_data.py` → `facts.json` → `build_doc.py` → `final_draft.md` → `md_to_html.py`。
+  ⚠️ `artifacts/` 是本地生成目录（含数据采集结果与全库基线 SQL），**不入库**；克隆后需按需自行重建。
+- `backend/deploy/REPORT_DELIVERY_20261105.md`（2026-11-05）：电子检查报告体系交付报告（V27/V9010/V9011 迁移、
+  4 张新表、3 个演示患者、报告列表/详情页、状态门禁与权限实测、ER 前后对比、备份与未解决问题）。
+  阶段 01 审计见 `DB_AUDIT_20261105.md`，结构定稿见 `DB_SCHEMA_DESIGN_20261105.md`。
+  ⚠️ H2 单测档因 V27 含 MySQL 专有 DDL 停在 `spring.flyway.target=26`；真实库已应用 V27/V28/V9010/V9011。
+
+## 文档
+
+按「设计 → 架构 → 数据库 → 测试 → 部署」分层，完整索引见 **[docs/INDEX.md](docs/INDEX.md)**。
+
+- 设计规范：[`1.md`](1.md)~[`5.md`](5.md)、[`LAYOUT_PLAN.md`](LAYOUT_PLAN.md)、[UIUX 说明书 V4](医疗_AI_智能健康小程序_UIUX_原型设计与界面说明书_V4.md)
+- 架构与契约：[`docs/v4/`](docs/v4/)、[`backend/contracts/business-openapi.yaml`](backend/contracts/business-openapi.yaml)
+- 数据库：[`数据库表结构总览`](数据库表结构总览_20261022.md)、[`DATA_GOVERNANCE.md`](backend/deploy/DATA_GOVERNANCE.md)、[检查报告体系交付报告](backend/deploy/REPORT_DELIVERY_20261105.md)
+- 协作规范：[`AGENTS.md`](AGENTS.md)、[`WORKBODY_AGENT_RULES.md`](WORKBODY_AGENT_RULES.md)
+
+## 贡献
+
+见 **[CONTRIBUTING.md](CONTRIBUTING.md)**（环境、启动、9 条代码红线、数据库迁移规则、提交前必跑的四条验证命令）。
+仓库当前**未配置 CI**，`check-project` / `test-fe` / `mvnw test` / `pytest` 是唯一门禁来源。
+
+## 安全
+
+漏洞请走 GitHub Security Advisory 私密渠道，不要开公开 Issue，详见 **[SECURITY.md](SECURITY.md)**。
+
+关于仓库内的 `DEV_LOGIN_KEY`：它是**本地联调演示值**，只用于 `dev` profile 的派生登录闸门；
+生产 profile 不装配该 provider，且真实边界在「后端开关 + 手机号白名单 + 生产不装配」，
+因此它不构成生产凭据。部署方仍应使用自己的随机值并保持 `APP_AUTH_DEV_LOGIN_ENABLED=false`。
+
+## 免责声明
+
+本项目是**技术演示与教学项目**，不是医疗器械，未取得任何医疗器械注册/备案资质，
+输出内容不构成诊断、处方或治疗建议，**不得用于真实诊疗**。仓库内患者、医生、机构、检查结果
+均为模拟数据（编号 `DEMO-*`，机构名带「（模拟）」），不含真实个人信息、签名或公章。
+如需用于临床或商业场景，须自行完成合规评估与资质申请。
 
 ## 许可
 

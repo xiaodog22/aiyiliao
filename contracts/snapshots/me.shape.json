@@ -1,0 +1,18 @@
+{
+  "avatarUrl": "string",
+  "birthDate": "string",
+  "consents": {
+    "$array": "empty"
+  },
+  "createdAt": "string",
+  "displayName": "string",
+  "gender": "string",
+  "id": "string",
+  "maskedPhone": "string",
+  "phoneBound": "boolean",
+  "profileCompleteness": "number",
+  "roles": {
+    "$array": "string"
+  },
+  "updatedAt": "string"
+}
