@@ -10,17 +10,30 @@
 | 项 | 值 |
 |---|---|
 | 当前分支 | `main` |
-| HEAD | `cde4ee1`（与 `origin/main` 完全一致） |
-| remote | `https://github.com/xiaodog22/aiyiliao.git` |
-| 提交历史 | 3 个提交，**历史上未出现** `env.local` / 软著材料 / `*.rar` / 预览二维码 |
-| 已跟踪文件 | 928 |
-| 工作区差异 | `D` 206（`miniprogram/assets` 图标与封面历史清理）、`M` 181、`??` 157 |
-| `.git` 体积 | 4.0 MB |
-| 已跟踪最大文件 | `site/index.html` 0.35 MB |
+| HEAD | 本地领先 `origin/main` **6 个提交**（尚未推送；具体 hash 见 `git log --oneline -6`） |
+| remote | `https://github.com/xiaodog22/aiyiliao.git`（公开仓库，GitHub Pages: `xiaodog22.github.io/aiyiliao`） |
+| 提交历史 | 原 3 个 + 本轮 5 个（assets / report / fix / docs / test） |
+| 已跟踪文件 | 975 |
+| 工作区差异 | 0（clean） |
+| `.git` 体积 | 4.6 MB |
+| 已跟踪最大文件 | `site/index.html` 0.36 MB |
+| 待推送变更 | 635 files changed（含本文），约 +66,400 / −786 |
 | 许可证 | MIT（`Copyright (c) 2026 xiaodog22`） |
 
+**本轮提交**（由旧到新）
+
+```
+chore(assets): 资源网络化与包体瘦身
+feat(report): 电子检查报告体系（V27 + 报告接口 + 小程序两页）
+fix: 联调链路修复与云托管配置
+docs: 补齐文档体系与开源仓库配置
+test(fe): 补附件上传与 AI 分诊用例，附图片压缩脚本与官网优化
+docs: 上传检查清单更新为执行后状态
+```
+
 **结论**：仓库体积健康，无 GitHub 100 MB 单文件与 1 GB 仓库限制风险。
-`backend.rar`(463 MB)、`.workbuddy/backup`(356 MB) 均为**未忽略但未跟踪**的本地大件，已被新一轮 `.gitignore` 覆盖。
+`backend.rar`(463 MB)、`docs/patches/workspace-full.patch`(17.9 MB)、`docs/验收与评估_*/assets`(32 MB)、
+`.workbuddy/backup`(356 MB) 均为本地大件，已被 `.gitignore` 覆盖，不入库。
 
 ---
 
@@ -28,22 +41,24 @@
 
 ### 1.1 dev 登录密钥明文在仓库里（已进入 Initial commit）
 
+> **2026-11-05 已按方案 A 处置**：`env.js` 与 `env.local` 的 key 同时换成新随机值，
+> 旧值视为「已公开的历史值」不再使用；未改写 Git 历史，未 force push。
+> 复现核对：`git grep -n "wb-devlogin" HEAD` 只会命中轮换后的新值。
+
 ```bash
-git grep -n "wb-devlogin" HEAD        # 命中 miniprogram/config/env.js:83
+git grep -n "wb-devlogin" HEAD        # 命中 miniprogram/config/env.js 的 DEV_LOGIN_KEY
 ```
 
-- 事实：`const DEV_LOGIN_KEY = 'wb-devlogin-…'` 是明文真实值，与 `backend/deploy/env.local` 中的 `APP_AUTH_DEV_LOGIN_KEY` 相同。
+- 事实：`const DEV_LOGIN_KEY = 'wb-devlogin-…'` 是明文值，与 `backend/deploy/env.local` 中的 `APP_AUTH_DEV_LOGIN_KEY` 相同。
 - 影响面：仅 dev profile。`DevWechatSessionProvider` 只在 `dev`/`itest` 装配，生产 profile 不装配该 provider，
   因此**不能**用它换到生产会话。但任何人拿到仓库都能在 dev 部署上绕过这道闸门。
-- 三个选项（**需你选择，我不擅自改**）：
+- 三个选项与最终选择：
 
-| 方案 | 动作 | 代价 |
+| 方案 | 动作 | 状态 |
 |---|---|---|
-| A 只轮换（推荐） | 本地把 `env.js` 与 `env.local` 的 key 同时换成新随机值；旧值在历史中视为已公开的废弃值 | 需同步改两处，联调环境要重启 |
-| B 换成可配置 | `env.js` 默认空字符串（fail-closed），本地用时临时填、不提交 | 小程序不支持可选 `require`，仍可能误提交明文 |
-| C 改写历史 | `git filter-repo` 删除该行历史 + `push --force` | **改写所有 commit hash**，协作方需重新克隆，不可逆 |
-
-> 建议 A。真正的边界在后端：`APP_AUTH_DEV_LOGIN_ENABLED` + 手机号白名单 + 生产不装配 dev provider。
+| **A 只轮换** | 本地把 `env.js` 与 `env.local` 的 key 同时换成新随机值；旧值在历史中视为已公开的废弃值 | ✅ **已执行** |
+| B 换成可配置 | `env.js` 默认空字符串（fail-closed），本地用时临时填、不提交 | 未采用（小程序不支持可选 `require`，仍可能误提交明文） |
+| C 改写历史 | `git filter-repo` 删除该行历史 + `push --force` | 未采用（改写全部 commit hash，协作方需重克隆） |
 
 ### 1.2 已排除的敏感项（确认不会入库）
 
@@ -76,18 +91,16 @@ git status --ignored --porcelain | grep '^!!' | head -20   # 抽查被忽略项
 `project.private.config.json`、`docs/preview-qr*.png`、`docs/preview-info*.json`、
 两个 0 字节误建文件、`_V16_from_jar.sql`、`work.txt`、4 份内部复盘文档。
 
-### 2.2 206 个 `D` 的正确处置（**易踩坑**）
+### 2.2 206 个 `D` 的正确处置（**易踩坑**）→ 已执行
 
 这 206 个删除全部是 `miniprogram/assets` 图标与 `packageContent` 封面的历史清理，工作区确实已删除，
-当前代码是自洽的（`node tools/check-project.js` 图标引用 185 处全部有效）。
+当前代码是自洽的（`node tools/check-project.js` 图标引用全部有效，主包图片+音频 184.5KB）。
 
-```bash
-git add -A miniprogram        # 让删除进入暂存区，随下次提交一起提交
-```
+已随 `d444cba chore(assets): 资源网络化与包体瘦身` 一起提交（205 个 `D`，含 2 个 `.dsh-ops-update` 锁文件）。
 
 > ⚠️ **绝对不要**用 `git checkout -- miniprogram/assets` 去「恢复」它们。
 > 该目录历史上删过一批图标，checkout 会把已废弃图标全部恢复（曾导致主包 +370 KB 并裂图）。
-> 需要核对时用 `git diff --stat --diff-filter=D` 看清单，不要动文件。
+> 需要核对时用 `git diff --stat --diff-filter=D HEAD~5` 看清单，不要动文件。
 
 ### 2.3 嵌套仓库
 
@@ -111,7 +124,8 @@ ls -d */software-certificate-skill/.git 2>/dev/null
 | `docs/INDEX.md` | ✅ 本轮新增 | 文档分层索引（设计/架构/数据库/测试/部署） |
 | `.gitignore` | ✅ 已扩充 | 每条带理由注释 |
 | `.gitattributes` | ✅ 本轮新增 | 统一 LF，二进制判定 |
-| `AGENTS.md` | ⚠️ 未跟踪 | 建议入库（协作入口），已在文件清单中列为待提交 |
+| `AGENTS.md` | ✅ 已入库 | AI/协作入口：项目速览 + 目录地图 + 省 Token 操作规定 |
+| `docs/GITHUB_UPLOAD_CHECKLIST.md` | ✅ 本轮新增 | 本文；上传前检查与推送记录 |
 
 ---
 
@@ -124,7 +138,8 @@ backend/business-service/mvnw -o test
 backend/edge-gateway/.venv/Scripts/python.exe -m pytest backend/edge-gateway/tests -q
 ```
 
-当前基线（2026-11-05 实测）：门禁六项全通过、前端 14/14、后端 319/319、网关 132/132。
+当前基线（2026-11-05 提交后实测）：`check-project` 全部通过（主包图片+音频 184.5KB、无 >100KB 单图）、
+`test-fe` 14/14、`mvnw -o test` 319/319、`pytest` 132/132。
 仓库**无 CI**，以上是唯一门禁来源，PR/提交说明里请贴实际输出。
 
 ---
@@ -134,27 +149,41 @@ backend/edge-gateway/.venv/Scripts/python.exe -m pytest backend/edge-gateway/tes
 | 项 | 说明 |
 |---|---|
 | `core.autocrlf` | 本机为 `true`；新增 `.gitattributes` 后以 `eol=lf` 为准。**不要**执行 `git add --renormalize .`，会炸出全仓 diff |
-| 暂存策略 | 建议分 3 个提交：① 报告体系功能（V24~V28 + 报告代码 + 两个页面）② 文档与仓库配置 ③ 图标/封面删除。便于回溯与回滚 |
+| 暂存策略 | 已按主题拆成 5 个提交：assets / report / fix / docs / test（见 §0）。后续改动继续保持一提交一主题 |
 | 不要提交 | `.trash/`、`artifacts/`、`output/`、`env.local`、`project.private.config.json`、`backend.rar` |
 | 不要改动 | `flyway_schema_history`、已应用的 `V1~V26`/`V9000~V9009` 迁移文件 |
 | 提交信息 | `<type>: <简述>`，`type ∈ feat/fix/docs/refactor/test/chore/perf` |
 
 ---
 
-## 6. 推送路径二选一
+## 6. 推送（本地已提交，待你执行）
 
-### 路径 A · 增量提交到现有仓库（推荐，保留 3 个历史提交）
+### 6.1 当前状态
+
+本地 `main` 已领先 `origin/main` **6 个提交**，工作区 `clean`。
+**在本次整理所用的沙箱里 `git push` 不可用**：经本地代理报
+`CONNECT tunnel failed, response 502`，绕开代理直连 `github.com:443` 超时
+（同环境用 HTTP 抓取 GitHub 页面是通的，说明只是 git 出网被拦）。因此推送请在**你自己的终端**执行。
+
+### 6.2 执行命令
 
 ```bash
-git add -A
-git status --short | head -40          # 再目检一次
-git commit -m "feat: 电子检查报告体系（V27/V9010/V9011）+ 开源仓库整理"
+cd D:/asr_chaoshanhua/asr_chaoshanhua_V01/_V01/wechar
+git log --oneline origin/main..HEAD      # 应看到 6 条
+git status --short                       # 应为空
 git push origin main
 ```
 
-适用于：仓库已是你要用的那个，历史无需清洗。
+若本机也走了同一个代理，先确认 `git config --get http.proxy`；必要时临时绕开：
 
-### 路径 B · 重建干净仓库（仅当必须清除历史中的 dev key）
+```bash
+git -c http.proxy= -c https.proxy= push origin main
+```
+
+推失败排查顺序：① 凭据（`git-credential-manager` 是否已登录 GitHub）② 代理/网络
+③ 远端保护分支规则 ④ 是否存在他人新提交（必要时 `git pull --rebase`）。
+
+### 6.3 备选：重建干净仓库（**不需要**，仅当坚持清除历史里的旧 dev key）
 
 ```bash
 # ⚠️ 不可逆：会删除全部本地历史，务必先整目录备份
@@ -165,7 +194,7 @@ git remote add origin https://github.com/xiaodog22/aiyiliao.git
 git push --force origin main
 ```
 
-适用于：方案 C（改写历史）。执行前必须确认远端没有其他人的分支/PR。
+本轮已按方案 A 轮换密钥，**不建议**再走这条路。
 
 ---
 
@@ -185,8 +214,10 @@ git push --force origin main
 
 | # | 风险 | 处置建议 |
 |---|---|---|
-| 1 | dev 登录密钥在提交历史中 | 见 §1.1，等你在 A/B/C 中选定 |
-| 2 | 171 个 `M` 与 157 个 `??` 混杂了多轮会话改动，尚未按主题拆分 | 建议按 §5 分 3 个提交，不要一把梭 |
+| 1 | 旧 dev 登录密钥仍留在 Initial commit 的历史里（已被轮换、当前不可用） | 已按 §1.1 方案 A 处置；若要彻底清除需走 §6.3 重建 |
+| 2 | 本轮 6 个提交尚未推送（沙箱 git 出网被拦） | 在本人终端执行 §6.2 |
 | 3 | 仓库无 CI，门禁全靠本地 | 后续可加 `.github/workflows/verify.yml` 跑 4 条命令 |
-| 4 | `docs/preview-qr*.png`、`docs/preview-info*.json` 含 appid | 已忽略；若曾跟踪需 `git rm --cached` 后确认 |
-| 5 | 演示数据与真实机构同名风险 | 数据侧已用「（模拟）」后缀与 `DEMO-*` 编号，公开前再扫一遍 `backend/business-service/src/main/resources/db/dev/` |
+| 4 | `docs/preview-qr*.png`、`docs/preview-info*.json` 含 appid | 已忽略，未入库 |
+| 5 | 演示数据与真实机构同名风险 | 数据侧已用「（模拟）」后缀与 `DEMO-*` 编号；公开前再扫一遍 `backend/business-service/src/main/resources/db/dev/` |
+| 6 | 首个 assets 提交单独检出时 `icons.js` 仍引用已删图标（该键表清理在 `52abb51`） | 只影响 `git bisect` 到中间点；整体推送后无影响 |
+| 7 | `docs/` 只保留验收报告 `.md`，32 MB 截图未入库 | 需要复现时按报告内的文件名在本机 `docs/验收与评估_*/assets` 找 |
