@@ -10,17 +10,17 @@
 | 项 | 值 |
 |---|---|
 | 当前分支 | `main` |
-| HEAD | 本地领先 `origin/main` **6 个提交**（尚未推送；具体 hash 见 `git log --oneline -6`） |
+| HEAD | `32bbd66`，**已推送**，与 `origin/main` 一致（领先 0） |
 | remote | `https://github.com/xiaodog22/aiyiliao.git`（公开仓库，GitHub Pages: `xiaodog22.github.io/aiyiliao`） |
-| 提交历史 | 原 3 个 + 本轮 5 个（assets / report / fix / docs / test） |
+| 提交历史 | 原有 5 个（含远端 2 个 README 提交）+ 本轮 7 个 |
 | 已跟踪文件 | 975 |
 | 工作区差异 | 0（clean） |
-| `.git` 体积 | 4.6 MB |
+| `.git` 体积 | 8.2 MB（rebase 保留了旧对象，可用 `git gc` 回收） |
 | 已跟踪最大文件 | `site/index.html` 0.36 MB |
-| 待推送变更 | 635 files changed（含本文），约 +66,400 / −786 |
+| 本轮变更 | 641 files changed, +67,274 / −813（对比 `cde4ee1`） |
 | 许可证 | MIT（`Copyright (c) 2026 xiaodog22`） |
 
-**本轮提交**（由旧到新）
+**本轮提交**（由旧到新，已全部在远端）
 
 ```
 chore(assets): 资源网络化与包体瘦身
@@ -29,7 +29,12 @@ fix: 联调链路修复与云托管配置
 docs: 补齐文档体系与开源仓库配置
 test(fe): 补附件上传与 AI 分诊用例，附图片压缩脚本与官网优化
 docs: 上传检查清单更新为执行后状态
+fix(tools): 禁址扫描兼容 CRLF，避免注释里的示例地址被误报
 ```
+
+> 推送时远端已多出 `1fb6fb6`（标题楚大夫→大夫）与 `86b641c`（README 补 Pages 地址），
+> 两个提交都只改 `README.md`。已 rebase 到 `86b641c` 之上；冲突按「保留本地 README」解决
+> （本地版是远端版的超集，多出「包体基线」「性能测试」两节）。
 
 **结论**：仓库体积健康，无 GitHub 100 MB 单文件与 1 GB 仓库限制风险。
 `backend.rar`(463 MB)、`docs/patches/workspace-full.patch`(17.9 MB)、`docs/验收与评估_*/assets`(32 MB)、
@@ -156,32 +161,51 @@ backend/edge-gateway/.venv/Scripts/python.exe -m pytest backend/edge-gateway/tes
 
 ---
 
-## 6. 推送（本地已提交，待你执行）
+## 6. 推送记录（已完成）
 
-### 6.1 当前状态
+### 6.1 结果
 
-本地 `main` 已领先 `origin/main` **6 个提交**，工作区 `clean`。
-**在本次整理所用的沙箱里 `git push` 不可用**：经本地代理报
-`CONNECT tunnel failed, response 502`，绕开代理直连 `github.com:443` 超时
-（同环境用 HTTP 抓取 GitHub 页面是通的，说明只是 git 出网被拦）。因此推送请在**你自己的终端**执行。
-
-### 6.2 执行命令
-
-```bash
-cd D:/asr_chaoshanhua/asr_chaoshanhua_V01/_V01/wechar
-git log --oneline origin/main..HEAD      # 应看到 6 条
-git status --short                       # 应为空
-git push origin main
+```
+86b641c..32bbd66  main -> main      # 2026-11-05 19:5x
 ```
 
-若本机也走了同一个代理，先确认 `git config --get http.proxy`；必要时临时绕开：
+`origin/main` 已等于本地 HEAD `32bbd66`，工作区 `clean`。
+
+### 6.2 过程中遇到的两件事（供下次参考）
+
+**① 远端领先 2 个提交 → 先 rebase**
 
 ```bash
-git -c http.proxy= -c https.proxy= push origin main
+git fetch origin
+git log --oneline --graph -8 origin/main     # 会看到 1fb6fb6 / 86b641c
+git pull --rebase origin main
 ```
 
-推失败排查顺序：① 凭据（`git-credential-manager` 是否已登录 GitHub）② 代理/网络
-③ 远端保护分支规则 ④ 是否存在他人新提交（必要时 `git pull --rebase`）。
+冲突只在 `README.md`：远端 `86b641c` 用网页编辑器整段贴回旧 README（+140/−137），
+与本地重写的 README 全文件冲突。解决方式是**保留本地版**：
+
+```bash
+git checkout --theirs README.md   # ⚠️ rebase 期间 --theirs 才是"你自己的提交"
+git add README.md
+git rebase --continue
+```
+
+> rebase 与 merge 的 ours/theirs 语义相反，这是最容易搞错的一步。
+> 判定依据：`diff --strip-trailing-cr <(git show 86b641c:README.md) <(git show 8884675:README.md)`
+> 显示本地版是超集（多「包体基线」「性能测试」两节）。
+
+**② 凭据助手路径失效 → 已修**
+
+`~/.gitconfig` 里 `credential.helper` 指向 PortableGit `versions/1.2.0/.../git-credential-manager.exe`，
+而本机已升级到 `1.3.0`，每次 push 都会打印
+`git-credential-manager.exe: No such file or directory`（认证其实成功，报错发生在 `store` 阶段）。
+已改为 `1.3.0` 路径，`git credential fill` 实测返回 `username=xiaodog22` 且无报错。
+
+**③ 门禁在 rebase 后误报 → 已修**
+
+`core.autocrlf=true` 检出会给行尾带回 `\r`，`tools/check-project.js` 的「去 `//` 注释」
+正则以 `.*$` 结尾匹配不到 `\r`，把 `env.js` 注释里的示例地址判成违规。
+已在读取后归一 `\r\n → \n`（`fix(tools)` 提交），实测注释不误报、真实硬编码仍能命中。
 
 ### 6.3 备选：重建干净仓库（**不需要**，仅当坚持清除历史里的旧 dev key）
 
@@ -215,9 +239,10 @@ git push --force origin main
 | # | 风险 | 处置建议 |
 |---|---|---|
 | 1 | 旧 dev 登录密钥仍留在 Initial commit 的历史里（已被轮换、当前不可用） | 已按 §1.1 方案 A 处置；若要彻底清除需走 §6.3 重建 |
-| 2 | 本轮 6 个提交尚未推送（沙箱 git 出网被拦） | 在本人终端执行 §6.2 |
+| 2 | 已推送，但**尚未做真机视觉复核**（报告两页） | 用微信开发者工具打开 `pages/profile/reports`、`report-detail` 逐项对照 |
 | 3 | 仓库无 CI，门禁全靠本地 | 后续可加 `.github/workflows/verify.yml` 跑 4 条命令 |
 | 4 | `docs/preview-qr*.png`、`docs/preview-info*.json` 含 appid | 已忽略，未入库 |
 | 5 | 演示数据与真实机构同名风险 | 数据侧已用「（模拟）」后缀与 `DEMO-*` 编号；公开前再扫一遍 `backend/business-service/src/main/resources/db/dev/` |
-| 6 | 首个 assets 提交单独检出时 `icons.js` 仍引用已删图标（该键表清理在 `52abb51`） | 只影响 `git bisect` 到中间点；整体推送后无影响 |
+| 6 | 首个 assets 提交单独检出时 `icons.js` 仍引用已删图标（该键表清理在 `fix` 提交） | 只影响 `git bisect` 到中间点；整体推送后无影响 |
 | 7 | `docs/` 只保留验收报告 `.md`，32 MB 截图未入库 | 需要复现时按报告内的文件名在本机 `docs/验收与评估_*/assets` 找 |
+| 8 | `.git` 8.2 MB，rebase 留有旧对象 | 需要瘦身时 `git gc --prune=now`（不影响远端历史） |
