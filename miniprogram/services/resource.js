@@ -114,11 +114,29 @@ function fallbackFor(key, builtinFallback) {
   return (item && item.fallbackKey) || builtinFallback || ''
 }
 
+/**
+ * 静态资源端点**直拼**（不查清单）——视频专用（F2 Phase B，2026-11-05）。
+ *
+ * 为什么视频不走清单：清单契约自 V15/V17 的口径就是**只含图片 mime**
+ * （ResourceAssetRepository 的 SQL 过滤），把 mp4 塞进清单要动契约/服务/测试三处；
+ * 而 `GET /api/v1/resources/{key}` 本就**匿名可读**、mime 白名单已含 video/mp4
+ * （ResourceAssetService），且端点对视频给 Cache-Control 1 天 + ETag(sha256) 304 ——
+ * 直拼即可满足播放，改动只在前端。
+ *
+ * 无 `?v=` 内容指纹（sha 只有清单里有）：靠端点 ETag + 1 天缓存兜底；换视频文件后
+ * 最多 1 天生效，需立即生效时**换 key**（同步改 knowledge-kb 的 videoKey 并发版）。
+ */
+function staticResourceUrl(key) {
+  if (!key) return ''
+  return url(withPath(API.RESOURCE_ITEM, { key })) || ''
+}
+
 module.exports = {
   readCachedManifest,
   saveManifest,
   refreshManifest,
   resolveResource,
   resourceUrl,
-  fallbackFor
+  fallbackFor,
+  staticResourceUrl
 }

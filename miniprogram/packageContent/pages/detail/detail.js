@@ -7,17 +7,24 @@
  *
  * ⚠️ navigationStyle = custom：导航栏自绘（设计稿 18 右侧是「收藏 + 分享」，原生导航栏放不进去），
  *   因此这里要算 statusBarHeight 并把 navH（状态栏 + 44pt）内联给页面根节点做 padding-top。
- * ⚠️ 视频源是**分包内的本地 mp4**（/packageContent/videos/*.mp4），不依赖外网 CDN；
- *   播放失败时降级为文字提示，不留白屏。
+ * ⚠️ 视频基准源是**资源端点直拼**（F2 Phase B · 2026-11-05，包内 mp4 已出包）：
+ *   baseVideo = {gateway}/api/v1/resources/{videoKey}（匿名可读、视频 1 天缓存 + ETag）；
+ *   article 签名链（V19）命中时覆盖基准源，失败/404 回落基准源；
+ *   基准源也播不动时降级为文字提示，不留白屏（不依赖外网 CDN、也不依赖包内文件）。
+ * ⚠️ 封面/hero 已网络化（F2 · 2026-11-05，为过「图片音频 ≤200K」质量项）：包内不再存
+ *   封面文件，poster/cover/hero 一律经 services/resource.js 的 resourceUrl(清单key, '') 解析；
+ *   清单未就绪 → ''，模板既有 wx:if 隐藏封面区，不裂图。
  * ⚠️ 点赞 / 收藏**没有后端接口**，走本地 Storage（按 id 存两个数组）——不伪造服务端计数。
  */
 const app = getApp()
 const KB = require('../../../utils/knowledge-kb.js')
 const icons = require('../../../utils/icons.js')
-// 远端视频源：服务端详情下发签名 videoUrl（V19）；拉不到就继续用包内 mp4
+// 远端视频源（可选增强）：服务端详情下发签名 videoUrl（V19）；拉不到就用资源端点基准源
 const contentService = require('../../services/content.js')
 // 复用现有解析函数（不新造 resolveRemote）：站内相对路径拼 ENV.gateway，空值返回 ''
 const userService = require('../../../services/user.js')
+// 封面/hero 解析（F2 网络化）：KB 只存资源清单 key
+const resource = require('../../../services/resource.js')
 
 const STAR_KEY = 'kb_star_ids'   // 收藏的科普 id 数组
 const LIKE_KEY = 'kb_like_ids'   // 点赞的科普 id 数组
@@ -37,10 +44,20 @@ Page({
     // 远端视频状态：videoUrl 为服务端原始签名路径；videoSrc 为解析后的可播地址
     videoUrl: '',
     videoRetried: false,
-    localVideo: '',
-    localCover: '',
+    baseVideo: '',
+    fallbackCover: '',
     disclaimer: KB.DISCLAIMER,
     icons
+  },
+
+  /**
+   * 封面/hero 解析（F2 网络化）：KB 存资源清单 key，这里换成远端地址。
+   * preferHero=true 优先 heroKey（详情通栏大图），未配/未就绪回落 cover。
+   * 清单未就绪（首启/离线）→ ''，由页面 onShow 与模板 wx:if 兜底。
+   */
+  _coverUrl(it, preferHero) {
+    const key = (preferHero && it.heroKey) ? it.heroKey : it.coverKey
+    return key ? resource.resourceUrl(key, '') : ''
   },
 
   onLoad(q) {
@@ -61,13 +78,14 @@ Page({
       .map((x) => ({
         id: x.id,
         title: x.title,
-        cover: x.cover || '',
+        cover: this._coverUrl(x),
         iconPath: icons[x.icon] || icons.info
       }))
 
-    // 包内兜底源：远端拿不到（或播放失败）时回落，保证任何时刻都有可播地址
-    const localVideo = it.video || ''
-    const localCover = it.cover || ''
+    // 视频基准源（F2 Phase B）：包内 mp4 已出包，直拼资源端点；签名链失败/404 时的回落源
+    const baseVideo = resource.staticResourceUrl(it.videoKey)
+    // 封面：包内文件已删（F2 网络化），这里就是清单远端地址，未就绪则 ''
+    const fallbackCover = this._coverUrl(it)
 
     this.setData({
       theme,
@@ -80,12 +98,15 @@ Page({
         metaLine: isVideo
           ? ('视频时长 ' + this._durText(it.durationSec))
           : ((it.source || '院内宣传科') + ' · 约' + it.readMin + '分钟阅读 · ' + it.publishedAt),
-        // 首屏先给包内源（秒开）；_fetchRemoteVideo 成功后覆盖成远端
-        videoSrc: localVideo,
-        posterSrc: localCover
+        // 首屏先给基准源（资源端点，无需等 article 接口）；_fetchRemoteVideo 命中后覆盖成签名链
+        videoSrc: baseVideo,
+        // 封面三件套（F2 网络化）：poster=播放器封面、cover=相关卡/图文兜底、hero=通栏大图
+        posterSrc: fallbackCover,
+        cover: this._coverUrl(it),
+        hero: this._coverUrl(it, true)
       }),
-      localVideo,
-      localCover,
+      baseVideo,
+      fallbackCover,
       // 视频用 tips 做「观看提示」；图文的 keyPoints 与 sections 内容重复，不再单独展示
       tipList: isVideo ? (it.tips || []) : [],
       related,
@@ -95,13 +116,24 @@ Page({
     })
 
     this._syncFlags()
-    // 异步拉服务端详情：有 videoUrl 就切远端；404/网络错误静默保持本地（不阻断播放）
+    // 异步拉服务端详情：有 videoUrl 就覆盖基准源；404/网络错误静默保持基准源（不阻断播放）
     if (isVideo) this._fetchRemoteVideo(it.id, false)
   },
 
   /** 从其他页面返回时收藏态可能已变（如后续在列表页取消收藏），每次显示都同步一次 */
   onShow() {
     this._syncFlags()
+    // 封面走清单（app.js 异步刷新）：onLoad 时没解析出来（首启/离线）→ 回到本页补一次；
+    // 已有值不覆盖（服务端签名 coverUrl 可能已接管 posterSrc）。
+    const it = this.data.item
+    if (it && it.coverKey && !it.posterSrc) {
+      this.setData({
+        'item.posterSrc': this._coverUrl(it),
+        'item.cover': this._coverUrl(it),
+        'item.hero': this._coverUrl(it, true),
+        fallbackCover: this._coverUrl(it)
+      })
+    }
   },
 
   /** 时长文案：设计稿写「5分30秒」，故 >60s 走分秒，否则纯秒 */
@@ -182,10 +214,10 @@ Page({
     }
   },
 
-  // ==================== 视频远端源 ====================
+  // ==================== 视频远端源（签名链，覆盖基准源）====================
 
   /**
-   * 拉服务端详情并切换远端视频源。
+   * 拉服务端详情，命中签名 videoUrl 则覆盖资源端点基准源。
    * @param {string} id 文章 id（本地 KB 与服务端共用）
    * @param {boolean} isRetry 是否由 onVideoError 触发的重试
    */
@@ -193,29 +225,29 @@ Page({
     contentService.getArticle(id)
       .then((a) => {
         const raw = a && a.videoUrl
-        if (!raw) return                        // 服务端未配视频 → 保持本地
+        if (!raw) return                        // 服务端未配视频 → 保持基准源（资源端点）
         const src = userService.resolveAttachmentUrl(raw)
-        if (!src) return                        // 解析不出绝对地址（空/异常）→ 保持本地
-        // 重试拿到的还是**同一个原始 URL**（服务端没换新：expires/sig 都相同）→ 再试也没意义，回退包内。
+        if (!src) return                        // 解析不出绝对地址（空/异常）→ 保持基准源
+        // 重试拿到的还是**同一个原始 URL**（服务端没换新：expires/sig 都相同）→ 再试也没意义，回落基准源。
         // ⚠️ 必须拿 raw 比 raw：src 是拼过网关的绝对地址，与 this.data.videoUrl（原始相对路径）
         //    永远不相等，用 src 比会导致这条回退分支从不生效（单测抓到过）。
         if (isRetry && raw === this.data.videoUrl) {
-          this._fallbackLocal()
+          this._fallbackBase()
           return
         }
         this.setData({
           videoUrl: raw,
           'item.videoSrc': src,
-          'item.posterSrc': this._posterOf(a) || this.data.localCover,
+          'item.posterSrc': this._posterOf(a) || this.data.fallbackCover,
           videoErr: false
         })
       })
-      .catch(() => {                            // 404/网络错误：不打断本地播放
-        if (isRetry) this._fallbackLocal()
+      .catch(() => {                            // 404/网络错误：不打断基准源播放
+        if (isRetry) this._fallbackBase()
       })
   },
 
-  /** 封面同样是"远端优先、本地兜底"：后端给签名 coverUrl 才用，否则保留包内封面 */
+  /** 封面同样是"远端优先"：后端给签名 coverUrl 就用，否则保留清单解析出的封面 */
   _posterOf(a) {
     const raw = a && a.coverUrl
     return raw ? userService.resolveAttachmentUrl(raw) : ''
@@ -223,9 +255,9 @@ Page({
 
   /**
    * 播放失败（binderror）处理，**最多重试一次**：
-   *   ① 首次失败且有远端 URL：置 videoRetried 后重新拉详情换新 URL（处理签名过期 / 拖到一半 403）；
-   *   ② 重试拿到的 URL 与旧相同、或重试仍失败 → 回退包内 mp4；
-   *   ③ 已是包内源仍失败 → 只显示文案，**不再改 src**（否则会反复触发 error 形成死循环）。
+   *   ① 首次失败且当前是签名链 URL：置 videoRetried 后重新拉详情换新 URL（处理签名过期 / 拖到一半 403）；
+   *   ② 重试拿到的 URL 与旧相同、或重试仍失败 → 回落资源端点基准源；
+   *   ③ 已是基准源仍失败 → 只显示文案，**不再改 src**（否则会反复触发 error 形成死循环）。
    */
   onVideoError() {
     if (!this.data.videoRetried && this.data.videoUrl) {
@@ -233,17 +265,17 @@ Page({
       this._fetchRemoteVideo(this.data.item.id, true)
       return
     }
-    this._fallbackLocal()
+    this._fallbackBase()
   },
 
-  _fallbackLocal() {
-    const local = this.data.localVideo || ''
+  _fallbackBase() {
+    const base = this.data.baseVideo || ''
     const cur = (this.data.item && this.data.item.videoSrc) || ''
-    if (!local || cur === local) {
-      this.setData({ videoErr: true })          // 本地也播不了：给文案，不再换源
+    if (!base || cur === base) {
+      this.setData({ videoErr: true })          // 基准源也播不了：给文案，不再换源
       return
     }
-    this.setData({ 'item.videoSrc': local, 'item.posterSrc': this.data.localCover || '' })
+    this.setData({ 'item.videoSrc': base, 'item.posterSrc': this.data.fallbackCover || '' })
   },
 
   /** 相关推荐：用 redirectTo 就地替换，避免详情页在页面栈里越堆越深 */

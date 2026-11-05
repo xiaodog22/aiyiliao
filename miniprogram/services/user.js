@@ -152,7 +152,39 @@ function listHealthRecords() {
   return get(API.HEALTH_RECORDS).then(asList)
 }
 
+/**
+ * V27 电子检查报告列表（GET /api/v1/reports → ReportSummaryData[]）。
+ * 查询参数：reportType / status / familyMemberId / from / to（yyyy-MM-dd）/ limit。
+ * ⚠️ 不使用 withFallback 演示兜底：报告属于真实业务数据，后端不可用必须显示错误态，
+ *    不得伪造报告编号、结论或检查数值（项目红线）。
+ */
+function listReports(params) {
+  return get(API.REPORT_LIST, params || {}).then(asList)
+}
+
+/** V27 电子检查报告详情（GET /api/v1/reports/{recordId} → ReportDetailData）。 */
+function getReport(recordId) {
+  if (!recordId) {
+    return Promise.reject(Object.assign(new Error('报告编号为空'), { code: 'VALIDATION_FAILED' }))
+  }
+  return get(withPath(API.REPORT_DETAIL, { recordId: recordId }))
+}
+
 // ==================== 健康档案检查资料附件（V9） ====================
+
+/**
+ * 路径参数守卫：recordId 为空时不要拼 URL。
+ * 空 id 会拼出 `/api/v1/health-records//attachments`（2026-11-04 真实 404），
+ * 后端只能回一句笼统的"路径不存在"，页面无从判断是数据问题还是逻辑问题。
+ * 返回 rejected Promise（调用方统一走 .catch → errText），错误码与后端校验失败同义。
+ */
+function requireRecordId(recordId) {
+  const id = String(recordId || '').trim()
+  if (id) return null
+  const err = new Error('缺少健康档案编号，请返回列表重新进入')
+  err.code = 'VALIDATION_FAILED'
+  return Promise.reject(err)
+}
 
 /**
  * 上传检查资料并挂到既有档案（POST /api/v1/health-records/{recordId}/attachments，multipart file）
@@ -161,8 +193,24 @@ function listHealthRecords() {
  * @returns {Promise<AttachmentData>} { objectKey, url（短期签名）, fileName, mime, size, sha256, createdAt }
  */
 function uploadAttachment(recordId, filePath) {
-  const spec = withPath(API.HR_ATTACHMENTS, { recordId: String(recordId || '') })
+  const bad = requireRecordId(recordId)
+  if (bad) return bad
+  const spec = withPath(API.HR_ATTACHMENTS, { recordId: String(recordId) })
   return req.uploadFile(spec, filePath, 'file', {}, {
+    idempotencyKey: req.newIdempotencyKey(),
+    timeout: 60000
+  })
+}
+
+/**
+ * 独立上传（POST /api/v1/attachments）：**没有既有档案**的场景（问诊会话发图/发文件）
+ * 必须走这个端点。此前误用 uploadAttachment(null, path) → URL 变成
+ * `/api/v1/health-records//attachments`（recordId 为空）→ 后端 404，图片发不出去。
+ * @param {string} filePath 本地临时路径
+ * @returns {Promise<AttachmentData>} 同 uploadAttachment（含 objectKey 与短期签名 url）
+ */
+function uploadStandaloneAttachment(filePath) {
+  return req.uploadFile(API.ATTACHMENT_UPLOAD, filePath, 'file', {}, {
     idempotencyKey: req.newIdempotencyKey(),
     timeout: 60000
   })
@@ -170,14 +218,18 @@ function uploadAttachment(recordId, filePath) {
 
 /** 附件列表（GET .../attachments → AttachmentData[]；url 为短期签名，过期后重新拉取） */
 function listAttachments(recordId) {
-  const spec = withPath(API.HR_ATTACHMENTS, { recordId: String(recordId || '') })
+  const bad = requireRecordId(recordId)
+  if (bad) return bad
+  const spec = withPath(API.HR_ATTACHMENTS, { recordId: String(recordId) })
   return get(spec).then(asList)
 }
 
 /** 删除附件（DELETE .../attachments/{attachmentId}；页面负责二次确认） */
 function deleteAttachment(recordId, attachmentId) {
+  const bad = requireRecordId(recordId)
+  if (bad) return bad
   const spec = withPath(API.HR_ATTACHMENT_BY_ID, {
-    recordId: String(recordId || ''),
+    recordId: String(recordId),
     attachmentId: String(attachmentId || '')
   })
   return req.del(spec)
@@ -361,10 +413,10 @@ function resolveAvatar(avatarUrl) {
 module.exports = {
   getUser, setUser, restore, logout,
   login, loginByWxCode, listMyAppointments, submitAppointment, cancelAppointment,
-  getMe, listHealthRecords, listFamilyMembers, createFamilyMember, removeFamilyMember, listMyConsultations, getConsultation, createConsultation, listConsultationMessages, sendConsultationMessage,
+  getMe, listHealthRecords, listReports, getReport, listFamilyMembers, createFamilyMember, removeFamilyMember, listMyConsultations, getConsultation, createConsultation, listConsultationMessages, sendConsultationMessage,
   listCatalogDoctors, listDepartments, listMessages, unreadCount, markMessageRead,
   interpretRecord,
-  uploadAttachment, listAttachments, deleteAttachment, resolveAttachmentUrl,
+  uploadAttachment, uploadStandaloneAttachment, listAttachments, deleteAttachment, resolveAttachmentUrl,
   getExtendedProfile, updateExtendedProfile, bindIdentity, bindInsurance, updateAccount, uploadAvatar, resolveAvatar,
   // 幂等键工厂：页面需要"跨重试复用同一键"时自行持有（见 appointment.onSubmit）
   newIdempotencyKey: req.newIdempotencyKey

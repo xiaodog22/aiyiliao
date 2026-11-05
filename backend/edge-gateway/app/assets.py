@@ -6,8 +6,8 @@
   （ai/business 均不直接对外）。
 - 鉴权=公开（`<image>`/`<video>` 元素无法携带 Authorization 头）；**只读**、
   **白名单扩展名**（png/jpg/jpeg/webp/mp4，2026-10-17 起含 mp4：科普提示视频 60KB 级）、
-  **文件名白名单**（小写字母数字 . _ -，禁斜杠与 `..`）、
-  目录穿越双保险（resolve 后父目录必须等于根）、单文件 ≤4MiB。
+  **文件名白名单**（小写字母数字 . _ -，允许 `icons/x.png` 形式的子目录，禁 `..` 与绝对路径）、
+  目录穿越双保险（resolve 后必须仍在根目录内）、单文件 ≤4MiB。
 - 响应头：`ETag`（sha256 前 32 位）→ 支持 `If-None-Match` 304 复用；
   `Cache-Control: public, max-age=86400`；`X-Resource-Sha256` / `X-Resource-Size`
   供客户端下载后校验（对齐契约 sha256 字段口径）。
@@ -33,8 +33,12 @@ ALLOWED_EXT: dict[str, str] = {
     ".mp4": "video/mp4",
 }
 
-# 文件名白名单：小写字母数字开头，只含 [a-z0-9._-]，≤80 字符；不含斜杠。
-_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,79}$")
+# 文件名白名单：允许 `icons/x.png` 形式的子目录（2026-11-04 校正）。
+# 原实现只服务**根目录单层**，而 deploy/resources 下实际已有 icons/ content/ img/ nav/ 四个子目录，
+# 这些素材走网关通道一律 404（与目录 README 的「13 张根目录图」旧假设一起失效）。
+# 每段仍限 [a-z0-9._-] 且必须以字母数字开头：禁空段、禁 `..`、禁绝对路径、禁反斜杠。
+_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$")
+MAX_NAME_LEN = 200
 
 # 单文件上限：公开素材只放图片类小文件；超限视为配置错误（404，不敞开流式）。
 MAX_BYTES = 4 * 1024 * 1024
@@ -42,7 +46,7 @@ MAX_BYTES = 4 * 1024 * 1024
 
 def try_serve(root: Path, filename: str, if_none_match: Optional[str]) -> Optional[Response]:
     """命中白名单且文件存在 → 返回文件响应（含缓存/校验头）；否则 None（调用方转 404）。"""
-    if not _NAME_RE.match(filename) or ".." in filename:
+    if len(filename) > MAX_NAME_LEN or ".." in filename or not _NAME_RE.match(filename):
         return None
 
     media_type = ALLOWED_EXT.get(Path(filename).suffix.lower())
@@ -51,8 +55,9 @@ def try_serve(root: Path, filename: str, if_none_match: Optional[str]) -> Option
 
     root = root.resolve()
     candidate = (root / filename).resolve()
-    # 目录穿越双保险：解析后的父目录必须仍是素材根（符号链接/组合穿越一律拒绝）。
-    if candidate.parent != root or not candidate.is_file():
+    # 目录穿越双保险：解析后必须仍在素材根**内**（符号链接/组合穿越一律拒绝）。
+    # 用 is_relative_to 而非 parent==root：后者会把 icons/ content/ img/ nav/ 全部挡掉。
+    if not candidate.is_relative_to(root) or not candidate.is_file():
         return None
 
     try:

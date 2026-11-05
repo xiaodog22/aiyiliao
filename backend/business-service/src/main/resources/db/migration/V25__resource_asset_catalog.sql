@@ -1,0 +1,114 @@
+-- =====================================================================
+-- V25__resource_asset_catalog.sql —— 资源登记（2026-11-04 由 tools/resource-import.py 生成）
+--
+-- **不要手改**：改分类规则请改脚本再重跑。
+-- 只登记元数据 + 相对路径，二进制留在文件系统（不写 BLOB）。
+-- delivery：local = 仅本地兜底（清单不下发 url）/ remote = 远端优先。
+-- 本次：新增 0 条、内容变更 104 条。
+-- =====================================================================
+
+-- 内容变更：源文件已替换，把 size/sha256 拉正（否则端点 ETag 与文件不符、对账会红）
+UPDATE resource_asset SET file_size = 2344, sha256 = '43190ee1490058f4875f529457776b5c950d1b5f06ac792a1f816c7e97c79360', status = 1 WHERE resource_key = 'icons.home';
+UPDATE resource_asset SET file_size = 1217, sha256 = '6b705493c410b36d012e8c7cc9ae0f0e521f0223a62e64af2e2efa9b0fa69b10', status = 1 WHERE resource_key = 'icons.homeGray';
+UPDATE resource_asset SET file_size = 1684, sha256 = '4c5ac096e7144001f0aee5d3515ca2e0e8d4bfdfec09cee75fb68c3805f00e1f', status = 1 WHERE resource_key = 'icons.chat';
+UPDATE resource_asset SET file_size = 1684, sha256 = 'dc6291fe58243e5bb84e1648b929fe739f80114995f2d5d61a159eb5a9b70058', status = 1 WHERE resource_key = 'icons.chatGray';
+UPDATE resource_asset SET file_size = 2973, sha256 = 'ea090a8bc02afb78168f22fcaab717220390c7ec58460877ca30dca5bbd8b7f4', status = 1 WHERE resource_key = 'icons.chatWhite';
+UPDATE resource_asset SET file_size = 1750, sha256 = '8a522b4d2d6ef6631e591cdce22fde82f582245e3586427af3f865e1fba6d9e5', status = 1 WHERE resource_key = 'icons.leaf';
+UPDATE resource_asset SET file_size = 3260, sha256 = '0e914816c7d255978b93324974c376e9be2c3536c4000956800773a9fc21eb6c', status = 1 WHERE resource_key = 'icons.leafWhite';
+UPDATE resource_asset SET file_size = 1354, sha256 = '2c3e932b47cca1c983d386c6c8593ab9a6c89960b91cd7193db573f9bd36d37f', status = 1 WHERE resource_key = 'icons.user';
+UPDATE resource_asset SET file_size = 1353, sha256 = '19084fda9fce3e061baf488997a74a03b441fc77abf1bf9b3a787e85ed3f1d46', status = 1 WHERE resource_key = 'icons.userGray';
+UPDATE resource_asset SET file_size = 1387, sha256 = 'ea2ebd6467879ef1fc073e7898d2f9a39cc16abdb18d540f9ed80dfc4f79b463', status = 1 WHERE resource_key = 'icons.stethoscope';
+UPDATE resource_asset SET file_size = 2093, sha256 = 'ac3505ec08a36b19e2dc7c44554dec1c9f26b654366eba24c1df7c8c47ff7087', status = 1 WHERE resource_key = 'icons.stethoscopeWhite';
+UPDATE resource_asset SET file_size = 1442, sha256 = '69091fda99aa3df566244ee8fd8ca721779b8e217f0606a14fb1e35daa998432', status = 1 WHERE resource_key = 'icons.heart';
+UPDATE resource_asset SET file_size = 2128, sha256 = '2affa3b01e346b04d74fb37607ed95633e75b7806da39da1da19fec667ac5e6a', status = 1 WHERE resource_key = 'icons.heartWhite';
+UPDATE resource_asset SET file_size = 1655, sha256 = 'bff8936b0cad4746a276f8db616ba4466d67505deca96279a31ecebd8ca70c67', status = 1 WHERE resource_key = 'icons.hospital';
+UPDATE resource_asset SET file_size = 1134, sha256 = 'c311916e8f556cba1984633aae48f3013c1f8b0db7ca1ebc3ddb9e32dd5c0125', status = 1 WHERE resource_key = 'icons.hospitalWhite';
+UPDATE resource_asset SET file_size = 1244, sha256 = '88c4ba588d39b9680b3077dc78a89045a69fcccb4a32a945a5b4d63e964e550d', status = 1 WHERE resource_key = 'icons.activity';
+UPDATE resource_asset SET file_size = 2638, sha256 = '2b9851c0e74ddec41c453a8baf2d33b06397b6901430b3fc428a242294cba9d7', status = 1 WHERE resource_key = 'icons.pill';
+UPDATE resource_asset SET file_size = 952, sha256 = 'f3ed485fb3d7a3f7052258203548c800c65779d6bc0b7a7a53b6424c4de5add9', status = 1 WHERE resource_key = 'icons.calendar';
+UPDATE resource_asset SET file_size = 1001, sha256 = '5a1e86ae9d5a6c7b663fca650a6772798b79f107aaa55a0fc92db52762b225df', status = 1 WHERE resource_key = 'icons.calendarGray';
+UPDATE resource_asset SET file_size = 1214, sha256 = '01da56752ac8e02ca85c54a78e5a26a8cdae0e08aa32da8ae4120fc64e54940d', status = 1 WHERE resource_key = 'icons.tv';
+UPDATE resource_asset SET file_size = 898, sha256 = 'f1f609c63cf6bb774bc9aa7f34c2194c4ea500ece6675aaa8ae3d1c9fb2f8104', status = 1 WHERE resource_key = 'icons.monitor';
+UPDATE resource_asset SET file_size = 1657, sha256 = '1ef2b236c5d2c5aa49653e32bdd95572c87bbc9ab8a5b7629119b4653623c1b5', status = 1 WHERE resource_key = 'icons.video';
+UPDATE resource_asset SET file_size = 1170, sha256 = '220170b36e46ef0f852743be7a833f8b190dc091f596d4fc13b0858dc899ef1f', status = 1 WHERE resource_key = 'icons.videoWhite';
+UPDATE resource_asset SET file_size = 1168, sha256 = 'f0fa47dd8eff068458807aece133d186f9394a4710f89f226450fbc5c177d171', status = 1 WHERE resource_key = 'icons.archive';
+UPDATE resource_asset SET file_size = 1986, sha256 = '1a0452bd4b543eab11b9a1e7085a9850e088c84ca09532c457025b15f931224b', status = 1 WHERE resource_key = 'icons.fileText';
+UPDATE resource_asset SET file_size = 1309, sha256 = '4b87200b3fcf4075ddf1925de9a53eb3c985220fb241f09cb706f40ef0e3bd47', status = 1 WHERE resource_key = 'icons.fileTextWhite';
+UPDATE resource_asset SET file_size = 1676, sha256 = 'b457823fc96d0a19b7746104cc7532734cc14be4b4f32f55ec4f56abad7e20ab', status = 1 WHERE resource_key = 'icons.users';
+UPDATE resource_asset SET file_size = 1676, sha256 = '151a7190a839370e1f6cd5f220cf206fbbf8bc661146a369e750dc1856224f80', status = 1 WHERE resource_key = 'icons.usersGray';
+UPDATE resource_asset SET file_size = 836, sha256 = '205120efaf420552590308824be168025ecd8198b06faec3715caa7b6fc8b2c4', status = 1 WHERE resource_key = 'icons.bed';
+UPDATE resource_asset SET file_size = 2110, sha256 = '92d90a791533eb2291e82e98ece68c897128d0262b16e38dabd4ef9757144347', status = 1 WHERE resource_key = 'icons.settings';
+UPDATE resource_asset SET file_size = 1729, sha256 = 'e6a94b87d50930aaae6c43a0647ad9198dc5d4d2caf557adbc750b993117c2c0', status = 1 WHERE resource_key = 'icons.logout';
+UPDATE resource_asset SET file_size = 1513, sha256 = '3dfb2fe7183043afbd9dbbb8d641bee5706f0ee20a6efe77a2373e493788f070', status = 1 WHERE resource_key = 'icons.info';
+UPDATE resource_asset SET file_size = 1357, sha256 = 'dffb49e132af0ed0d21b9350f08e487ea53877132ac55049e733471741ff99b5', status = 1 WHERE resource_key = 'icons.shield';
+UPDATE resource_asset SET file_size = 1494, sha256 = '64344422e058fcb4800aaa3a08866e0d405556f8f8255dff3fd26aa8ebc44085', status = 1 WHERE resource_key = 'icons.refresh';
+UPDATE resource_asset SET file_size = 1494, sha256 = '35c3f5364e021b5fbafd537830f467080aae8f75d8521933efad17e118a45e4e', status = 1 WHERE resource_key = 'icons.refreshGray';
+UPDATE resource_asset SET file_size = 778, sha256 = 'ef67c0b8d366a68e7bd7f522f95947c017543bce77a34d95043613405bab3a8c', status = 1 WHERE resource_key = 'icons.plus';
+UPDATE resource_asset SET file_size = 780, sha256 = 'b1950af4551f1118c1326a1723e8d1c2ae7e394c5b04ab1a3e52c55414df2d8d', status = 1 WHERE resource_key = 'icons.plusGray';
+UPDATE resource_asset SET file_size = 1393, sha256 = '4fd224c50a8bd8624cf5171772cd4cc30af66295cf989ba45659cefca2ee6978', status = 1 WHERE resource_key = 'icons.search';
+UPDATE resource_asset SET file_size = 1392, sha256 = '7b414ac65f86053211690ca34be6bcb82217b83684acfaf4bd39be8f6b9fe3f3', status = 1 WHERE resource_key = 'icons.searchGray';
+UPDATE resource_asset SET file_size = 1844, sha256 = 'c6202378168c112f5599d2b3dc9c81bc0fc9d47545c8d4f1f5585b49ad5a6615', status = 1 WHERE resource_key = 'icons.trash';
+UPDATE resource_asset SET file_size = 1218, sha256 = '00f94a15a862b521f892126d898dbecab3de7767fa15bea86d2578b5efe23504', status = 1 WHERE resource_key = 'icons.trashWhite';
+UPDATE resource_asset SET file_size = 834, sha256 = '472cde905d3efaee299a87670e06795542f45530ef44e7c278f661729ab2e816', status = 1 WHERE resource_key = 'icons.check';
+UPDATE resource_asset SET file_size = 1597, sha256 = 'b67819c7bd230f48ff3e161c176fe466f0a8bc826a72cf58d4cd3ae0a75b84f6', status = 1 WHERE resource_key = 'icons.checkCircle';
+UPDATE resource_asset SET file_size = 1482, sha256 = '72570bc92798cdcde7bc54376bfa6c2f4a680886b02ba59980285e70822c08b5', status = 1 WHERE resource_key = 'icons.alert';
+UPDATE resource_asset SET file_size = 1483, sha256 = 'e5a4298bf3b4626f24d6bc63f198568f941e43952af9e6c33ae687d276c7d30b', status = 1 WHERE resource_key = 'icons.alertGray';
+UPDATE resource_asset SET file_size = 1962, sha256 = '57617f5ffe022ec04e315e886b74660abd7b6a0d7883dd61a219c75fe7642985', status = 1 WHERE resource_key = 'icons.alertWhite';
+UPDATE resource_asset SET file_size = 748, sha256 = '0434a0479cf915f25dd71a654b04106ab33bb045882f3079d81aab31c5a4a439', status = 1 WHERE resource_key = 'icons.chevronRight';
+UPDATE resource_asset SET file_size = 720, sha256 = '1a135ab3a414eda0bb30ea17e3d25c226c615494f5608ec2164019105511e5a0', status = 1 WHERE resource_key = 'icons.chevronRightGray';
+UPDATE resource_asset SET file_size = 738, sha256 = '7526327423a7df77298e510b7587e3d823aeea0523f548c6fdaae1ada582c9ad', status = 1 WHERE resource_key = 'icons.chevronLeft';
+UPDATE resource_asset SET file_size = 1554, sha256 = '52fc1f859aa0699af06f2b37e01078cea571df8629b41398b5ff49681d8c3b66', status = 1 WHERE resource_key = 'icons.mic';
+UPDATE resource_asset SET file_size = 1554, sha256 = '2f24a9bc919ad65a7c3ea373468fa64180556bf060ab4f9e544cfa0714f47049', status = 1 WHERE resource_key = 'icons.micGray';
+UPDATE resource_asset SET file_size = 2507, sha256 = '6aab0462645f40e9eb0e8ec05a37130c6e6c95ab96bcdae813d134c8fb21c866', status = 1 WHERE resource_key = 'icons.micWhite';
+UPDATE resource_asset SET file_size = 1414, sha256 = 'f2b09dff45079c4525fef368f70213464825af0b75b004183d731ceb0e413054', status = 1 WHERE resource_key = 'icons.send';
+UPDATE resource_asset SET file_size = 1827, sha256 = '07b81c7a9207a90486049f1b5836e93b8671216c552b0aa0cacbbfce5bde9f50', status = 1 WHERE resource_key = 'icons.sendWhite';
+UPDATE resource_asset SET file_size = 1987, sha256 = '1f4265618a2c75801264791f4af9b3469cffd8b902e0bafb48652c9cc3257e3b', status = 1 WHERE resource_key = 'icons.share';
+UPDATE resource_asset SET file_size = 2091, sha256 = '5f8c88b943673664358ef9f9553de9df92aedf30a5499907ab7a65b08f07e8f8', status = 1 WHERE resource_key = 'icons.shareGray';
+UPDATE resource_asset SET file_size = 1226, sha256 = '33bf924f1ca67d049a000d54c3bca251d49f70b2f9db862e1cc4cb00ed0d125b', status = 1 WHERE resource_key = 'icons.volume';
+UPDATE resource_asset SET file_size = 1281, sha256 = 'ceebc60456cd40557e84d189d0c5749bb407c0632e8eb9aa8ef4b1bdb88ad75c', status = 1 WHERE resource_key = 'icons.soundWave';
+UPDATE resource_asset SET file_size = 1281, sha256 = '9e72333762591ebe982f23a72999ef166d8fb0e5a37ffc8794aa9739ad4e806a', status = 1 WHERE resource_key = 'icons.soundWaveGray';
+UPDATE resource_asset SET file_size = 1563, sha256 = 'e792c667f5173d2079f62db9c965e258a79690ece0221f4cf50af71d2a9ebd23', status = 1 WHERE resource_key = 'icons.clock';
+UPDATE resource_asset SET file_size = 1763, sha256 = '446f2f221b997101d06df1ef1ee77bb5399887df506117637cfa2177e44278bf', status = 1 WHERE resource_key = 'icons.mapPin';
+UPDATE resource_asset SET file_size = 1763, sha256 = '2e2c52659ba91465eb7a0051387b9cbd0a6418b25585530e82aab114d2e89699', status = 1 WHERE resource_key = 'icons.mapPinGray';
+UPDATE resource_asset SET file_size = 1875, sha256 = '0385833f403f894960a675d7345ae67faf499052d8eb42f41ee01b83275067b3', status = 1 WHERE resource_key = 'icons.phone';
+UPDATE resource_asset SET file_size = 3339, sha256 = '2b2c30b14b2ea3aee5700f7e08c04167acdb1add6e98af9ce94837ea0a04b017', status = 1 WHERE resource_key = 'icons.phoneWhite';
+UPDATE resource_asset SET file_size = 1499, sha256 = '5e2c6ab1a1c6f5baee197b8a6be058d9a51abc93352ad5a2ba2d1a8540803c96', status = 1 WHERE resource_key = 'icons.star';
+UPDATE resource_asset SET file_size = 1499, sha256 = 'cbf00d902927d7adf5a807641437f933bfe8b0e188e0dc15bc68e1f0f4eaa6a0', status = 1 WHERE resource_key = 'icons.starGray';
+UPDATE resource_asset SET file_size = 1571, sha256 = '1e42f0558de35ecf0f188d69bca266057e2b74a09047f95965178a716bc9c209', status = 1 WHERE resource_key = 'icons.moon';
+UPDATE resource_asset SET file_size = 1915, sha256 = '00b84289ea21eb52e2fe92fd2d16c5fb1b884f715f60ee9551c227c148e37653', status = 1 WHERE resource_key = 'icons.bowl';
+UPDATE resource_asset SET file_size = 947, sha256 = 'dac949a8d192f6b38f835751a91c9d7893910ff24254457bd27b978cf13ee627', status = 1 WHERE resource_key = 'icons.arrowUpRight';
+UPDATE resource_asset SET file_size = 1530, sha256 = '24a21bd4b39726ac27a7a334145dc08b12e5085fbd8daff03ce2a70b47054613', status = 1 WHERE resource_key = 'icons.bell';
+UPDATE resource_asset SET file_size = 1530, sha256 = '44accfbbc1472e98d51baef89d962145a01e91b47a1aed95a714fb7dc45c0339', status = 1 WHERE resource_key = 'icons.bellGray';
+UPDATE resource_asset SET file_size = 1268, sha256 = '1546cc519aeae497e839eeb36e936d7022dfd6876bc41ef63c50bd9ceff7fcda', status = 1 WHERE resource_key = 'icons.bookOpen';
+UPDATE resource_asset SET file_size = 1318, sha256 = '013acb38bfbcd6a592b4a22ef433bb65c134bac5b738a9e7e8a9429d20cd36b8', status = 1 WHERE resource_key = 'icons.broom';
+UPDATE resource_asset SET file_size = 1946, sha256 = '1da67cfd0a96b349d777cc192c4c9a72edf8ff916fabc4749f8a84aa33eebc6a', status = 1 WHERE resource_key = 'icons.clipboardList';
+UPDATE resource_asset SET file_size = 2073, sha256 = '8abbbfba8392dae18f69e982fb2acef5f5e8fc721965e3ae7ed2841cea75af71', status = 1 WHERE resource_key = 'icons.clipboardListGray';
+UPDATE resource_asset SET file_size = 1713, sha256 = 'c3ca66ae408a3e72831b405012a9f058ffb80f841c114799f8d91e80eeb74121', status = 1 WHERE resource_key = 'icons.contrast';
+UPDATE resource_asset SET file_size = 1340, sha256 = 'f645add6c1040ea007d946a3f7aee5ddc23621aee69b0f0592b8c4109fe49917', status = 1 WHERE resource_key = 'icons.eye';
+UPDATE resource_asset SET file_size = 1340, sha256 = '37ee41bf4f5a9d40f89e5c0321b0b99d57ab7dfe674188c71b787ebc2158ab1f', status = 1 WHERE resource_key = 'icons.eyeGray';
+UPDATE resource_asset SET file_size = 1284, sha256 = 'bbb188f240ca1d4f9c22bf04c54596a484b47d8768d39bd225daa878e0dcf93f', status = 1 WHERE resource_key = 'icons.fileLock';
+UPDATE resource_asset SET file_size = 1347, sha256 = 'e7e9eec3d90abb6aee7c6e6d62eef37ec148e711c9ca238f304f29c1d619f243', status = 1 WHERE resource_key = 'icons.flask';
+UPDATE resource_asset SET file_size = 1764, sha256 = '98657d5e7d725e86d6593507cc49e5186ba760eec96cf027fbfbf486f8ed3dd4', status = 1 WHERE resource_key = 'icons.globe';
+UPDATE resource_asset SET file_size = 1797, sha256 = '2efe1d32b04ad051ac36287d047b8b4ff9707557230f96e72fda848247103da0', status = 1 WHERE resource_key = 'icons.heartbeat';
+UPDATE resource_asset SET file_size = 866, sha256 = '4ef6cfdb0b10d685d9921e011260af99f35af42200342ff11f4527945f128ce1', status = 1 WHERE resource_key = 'icons.layoutGrid';
+UPDATE resource_asset SET file_size = 839, sha256 = '2575abcc7a4221fec5964e09bbc97b06327b0b7e7a535ead148910571121b8f4', status = 1 WHERE resource_key = 'icons.layoutGridGray';
+UPDATE resource_asset SET file_size = 1827, sha256 = '6b738e5ff3f8f7b3561407924e1a6fe01301483da10cb577c880624b50946585', status = 1 WHERE resource_key = 'icons.lock';
+UPDATE resource_asset SET file_size = 1535, sha256 = '86e617305ab899c1ddae7de5fcf9d4717c6d1ae67f994a408cee48093a61c514', status = 1 WHERE resource_key = 'icons.megaphone';
+UPDATE resource_asset SET file_size = 1732, sha256 = 'd4c5555102c966fe930c4dcdf805b5934e83f4248fa57fc6e2c44119ed2adda0', status = 1 WHERE resource_key = 'icons.personStanding';
+UPDATE resource_asset SET file_size = 1371, sha256 = 'a02160225d522a796894ca2e375edbcda072b0e4b105bae4cb838d32b52facc5', status = 1 WHERE resource_key = 'icons.projector';
+UPDATE resource_asset SET file_size = 1519, sha256 = 'cfead2a825e7f68812223772726c3b0d79c348df843a29f340e9565681a714c3', status = 1 WHERE resource_key = 'icons.sparkles';
+UPDATE resource_asset SET file_size = 785, sha256 = '0e6db9c49a1f2553c30e49b7e65a15666c468e39b909a04804e68e6293006add', status = 1 WHERE resource_key = 'icons.stop';
+UPDATE resource_asset SET file_size = 1318, sha256 = '9294a2df76dc68d467296f1b1e5666797020d3c435bf4a9e64681338a23c20ff', status = 1 WHERE resource_key = 'icons.textSize';
+UPDATE resource_asset SET file_size = 1480, sha256 = 'fe9042a0d339e0bee723b46d40e572a53d38590528bcc4aa5789c449ca39b95e', status = 1 WHERE resource_key = 'icons.thumbDown';
+UPDATE resource_asset SET file_size = 1470, sha256 = 'f94fa085d2403b05d07dcd50b733f66934533d13dff00c0fc31efb0319e9168c', status = 1 WHERE resource_key = 'icons.thumbUp';
+UPDATE resource_asset SET file_size = 1470, sha256 = 'e7257c59a0425279e08d06b5d8b73a07c1d0317a091a810ad3440ff324a0ae93', status = 1 WHERE resource_key = 'icons.thumbUpGray';
+UPDATE resource_asset SET file_size = 2045, sha256 = '82534c21b42a5cd07c003bd515502f5500054812d89c3552ca07566c1170d4d4', status = 1 WHERE resource_key = 'icons.volumeOff';
+UPDATE resource_asset SET file_size = 1511, sha256 = 'c4df3abac4ee3440100149ccaf16400ba7dfb0b0a91c5054601021f61cfff2a4', status = 1 WHERE resource_key = 'icons.wrench';
+UPDATE resource_asset SET file_size = 1380, sha256 = '0db96e9f8efa165f4076ac073248e1e1521a6d7774068224b3ed9d8fb3c219bd', status = 1 WHERE resource_key = 'icons.zap';
+UPDATE resource_asset SET file_size = 2810, sha256 = '2f3f38944ebf418711d4024a95b338e94af0913818b948d7a73cb097ad41ba75', status = 1 WHERE resource_key = 'icons.checkCircleGreen';
+UPDATE resource_asset SET file_size = 2782, sha256 = '610826af16a346d1b63ea9067ed70569d0899f82aeefde3d84d3120f32e58367', status = 1 WHERE resource_key = 'icons.moonPurple';
+UPDATE resource_asset SET file_size = 1338, sha256 = '56dbf26273411c824c17b3be19b9b6fcb32794a6bccfc9199a1f02a72d075ec3', status = 1 WHERE resource_key = 'icons.bowlMint';
+UPDATE resource_asset SET file_size = 2973, sha256 = 'e51d00bfe47d2303a95ba1ddb102d7d911d62506e82d1f9f2df5d7815b126f98', status = 1 WHERE resource_key = 'icons.chatMint';
+UPDATE resource_asset SET file_size = 1962, sha256 = '4c70dc2e59acd64751ebbf9b48d34e0c34acd102e373338cab657a6e181ca083', status = 1 WHERE resource_key = 'icons.alertAmber';
+UPDATE resource_asset SET file_size = 23056, sha256 = 'a4975710ba75cbd802477abcc9f1ab4daedc23b981a24a14c271989bd8467460', status = 1 WHERE resource_key = 'home.banner-hospital';
+UPDATE resource_asset SET file_size = 2943, sha256 = 'b56dfea4661ad9470fb9cbdc1bda8f770b159ae9cc5628117e46f1825556565f', status = 1 WHERE resource_key = 'home.kb-cover-person-leaf';

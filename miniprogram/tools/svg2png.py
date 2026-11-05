@@ -7,7 +7,7 @@ svg2png.py —— 轻量 SVG → PNG 渲染器（本项目图标专用）
 支持属性：fill=none（本项目图标均为描边）、stroke、stroke-width、stroke-linecap、stroke-linejoin
 做法：4x 超采样绘制后 LANCZOS 缩小，实现抗锯齿。
 
-用法：python tools/svg2png.py            # 渲染 assets/icons/*.svg 全部
+用法：python tools/svg2png.py            # 渲染 tools/_assets_src/icons/*.svg 全部
 """
 import os
 import re
@@ -17,7 +17,11 @@ import xml.etree.ElementTree as ET
 from PIL import Image, ImageDraw, ImageChops, ImageFilter
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-SRC_DIR = os.path.join(ROOT, 'assets', 'icons')
+SRC_DIR = os.path.join(ROOT, 'assets', 'icons')           # PNG 输出目录（发布树内）
+# 2026-11-05：SVG 是**构建源**而非发布资源，已从 assets/icons/ 移出（69 个）——
+# packOptions 虽按 .svg 后缀忽略上传，但构建中间产物不应留在发布源码树里，
+# 开发者工具「代码质量」的静态扫描对包内资源口径会随版本变化，移出后两种口径都不再计数。
+SVG_SRC_DIR = os.path.join(ROOT, 'tools', '_assets_src', 'icons')
 SS = 4  # 超采样倍数
 
 # ---------- path 解析 ----------
@@ -301,7 +305,7 @@ COLORS = {
 #
 # 用法：
 #   python tools/svg2png.py --assets      # 只跑素材压缩（不碰图标）
-#   python tools/svg2png.py               # 原有行为：渲染 assets/icons/*.svg
+#   python tools/svg2png.py               # 原有行为：渲染 tools/_assets_src/icons/*.svg
 #   ⚠️ 无参数运行会重渲全部图标，icons.js 是人工维护表 —— 日常不要跑默认分支。
 #
 # 三种处理方式：
@@ -535,7 +539,7 @@ if __name__ == '__main__':
     import sys
     if '--assets' in sys.argv[1:]:
         sys.exit(run_asset_pipeline())
-    svgs = sorted(glob.glob(os.path.join(SRC_DIR, '*.svg')))
+    svgs = sorted(glob.glob(os.path.join(SVG_SRC_DIR, '*.svg')))
     total = 0
     for svg_path in svgs:
         name = os.path.splitext(os.path.basename(svg_path))[0]

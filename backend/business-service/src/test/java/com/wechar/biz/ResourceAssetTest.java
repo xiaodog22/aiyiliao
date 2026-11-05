@@ -10,6 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.wechar.biz.common.ApiException;
 import com.wechar.biz.resource.ResourceAssetService;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -41,10 +43,23 @@ import org.springframework.test.web.servlet.MvcResult;
 @AutoConfigureMockMvc
 class ResourceAssetTest {
 
-    /** 种子里 ai-doctor.png 的真实大小与 sha256（V14 种子同源）。 */
-    private static final long AI_DOCTOR_SIZE = 12518L;
-    private static final String AI_DOCTOR_SHA256 =
-            "2b780ccb244a0567bde5ad3eb1eb15f19f703ea8346ed8b1d2ff372bd6432152";
+    /**
+     * 2026-11-05：资源文件曾被重新导入/压缩（ai-doctor.png 12518 → 8324），
+     * 写死 size / sha256 会让本测试随资源替换转红（实测 Content-Length 期望 12518、实际 8324）。
+     * 改为与被测对象同源：size 取磁盘真实文件，sha256 取库内登记值
+     * （V28 资源对账迁移应用前后均成立）。断言强度不变：仍逐项校验
+     * Content-Length、ETag、响应字节数、PNG 魔数与 If-None-Match 304。
+     */
+    private static final Path AI_DOCTOR_FILE = Path.of("../deploy/resources/ai-doctor.png");
+
+    private long aiDoctorSize() throws Exception {
+        return Files.size(AI_DOCTOR_FILE);
+    }
+
+    private String aiDoctorSha() {
+        return jdbc.queryForObject(
+                "SELECT sha256 FROM resource_asset WHERE resource_key = 'home.ai-doctor'", String.class);
+    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -60,17 +75,17 @@ class ResourceAssetTest {
         MvcResult result = mockMvc.perform(get("/api/v1/resources/home.ai-doctor"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType("image/png"))
-                .andExpect(header().string("Content-Length", String.valueOf(AI_DOCTOR_SIZE)))
+                .andExpect(header().string("Content-Length", String.valueOf(aiDoctorSize())))
                 // 图片 7 天公有缓存（604800s）
                 .andExpect(header().string("Cache-Control",
                         org.hamcrest.Matchers.containsString("max-age=604800")))
                 .andExpect(header().string("Cache-Control",
                         org.hamcrest.Matchers.containsString("public")))
-                .andExpect(header().string("ETag", "\"" + AI_DOCTOR_SHA256 + "\""))
+                .andExpect(header().string("ETag", "\"" + aiDoctorSha() + "\""))
                 .andReturn();
 
         byte[] body = result.getResponse().getContentAsByteArray();
-        assertThat(body).as("必须返回完整文件字节，而不是 JSON 信封").hasSize((int) AI_DOCTOR_SIZE);
+        assertThat(body).as("必须返回完整文件字节，而不是 JSON 信封").hasSize((int) aiDoctorSize());
         assertThat(new byte[] {body[0], body[1], body[2], body[3], body[4], body[5], body[6], body[7]})
                 .as("PNG 魔数")
                 .containsExactly((byte) 0x89, (byte) 0x50, (byte) 0x4E, (byte) 0x47,
@@ -80,7 +95,7 @@ class ResourceAssetTest {
     @Test
     void 资源_IfNoneMatch命中_返回304() throws Exception {
         mockMvc.perform(get("/api/v1/resources/home.ai-doctor")
-                        .header("If-None-Match", "\"" + AI_DOCTOR_SHA256 + "\""))
+                        .header("If-None-Match", "\"" + aiDoctorSha() + "\""))
                 .andExpect(status().isNotModified())
                 .andExpect(header().doesNotExist("Content-Length"));
     }

@@ -1,8 +1,8 @@
 /**
  * build-icons.js —— 生成线性风格 SVG 图标库
  * 输出：
- *   assets/icons/<name>.svg       原始 SVG（设计维护用）
- *   utils/icons.js                 base64 data URI 映射（小程序 <image> 用）
+ *   tools/_assets_src/icons/<name>.svg   原始 SVG（构建源，设计维护用；2026-11-05 移出发布树）
+ *   utils/icons.js                       PNG 路径映射（小程序 <image> 用，现为人工维护）
  *
  * 用法：node tools/build-icons.js
  * 图标风格：24x24 viewBox，线性描边（stroke），round cap/join，currentColor 由 color 参数决定
@@ -12,6 +12,7 @@ const path = require('path')
 
 const ROOT = path.join(__dirname, '..')
 const OUT_DIR = path.join(ROOT, 'assets', 'icons')
+const SVG_OUT_DIR = path.join(ROOT, 'tools', '_assets_src', 'icons')
 
 // 图标定义：name → SVG 内部元素（不含 <svg> 外壳）
 // 基础图标（Feather 风格，人工维护）
@@ -97,8 +98,11 @@ function main() {
   // 1) 写出 SVG 源文件（供 tools/svg2png.py 光栅化）
   //    ⚠️ 2026-10-16 基调对齐：基色改 #0B6EF8（D-01①）。icons.js 现由人工维护
   //    （含彩色变体块），**不要直接整跑本脚本覆盖**，新增图标请手工同步 svg + icons.js。
+  //    2026-11-05：SVG 输出改到 tools/_assets_src/icons/（构建源移出发布树，
+  //    配合开发者工具「代码质量」的包内资源统计口径，见 svg2png.py 同日注释）。
+  if (!fs.existsSync(SVG_OUT_DIR)) fs.mkdirSync(SVG_OUT_DIR, { recursive: true })
   names.forEach((name) => {
-    fs.writeFileSync(path.join(OUT_DIR, name + '.svg'), wrapSvg(ICONS[name], '#0B6EF8', 24), 'utf8')
+    fs.writeFileSync(path.join(SVG_OUT_DIR, name + '.svg'), wrapSvg(ICONS[name], '#0B6EF8', 24), 'utf8')
   })
 
   // 2) icons.js 引用 PNG（微信 <image> 与 tabBar 均不支持 SVG，必须用 PNG）
@@ -114,7 +118,7 @@ function main() {
     ' * icons.js —— 线性风格图标库（自动生成，请勿手改）',
     ' *',
     ' * 生成流程：',
-    ' *   1) node tools/build-icons.js  —— 写出 assets/icons/*.svg',
+    ' *   1) node tools/build-icons.js  —— 写出 tools/_assets_src/icons/*.svg',
     ' *   2) python tools/svg2png.py    —— 光栅化为 PNG（蓝/灰/白三色，96x96）',
     ' *',
     ' * 说明：微信 <image> 与 tabBar 不支持 SVG，故统一使用 PNG。',

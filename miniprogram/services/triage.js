@@ -14,18 +14,18 @@
  *  - 导诊记录仅存本机 storage（含一键清除），不上传到任何第三方；
  *  - 质量统计只存**计数**（总量/急诊数/AI 是否与规则一致），不存原始症状文本。
  */
-const req = require('./request.js')
-const API = req.API
 const engine = require('../utils/triage-engine.js')
+const ai = require('./ai.js')
+const userService = require('./user.js')
 
 const HISTORY_KEY = 'wb_triage_history'
 const QUALITY_KEY = 'wb_triage_quality'
 const NOTICE_KEY = 'wb_triage_notice_v1'
 const MAX_HISTORY = 20
-const MAX_TEXT_FOR_API = 200
 
-const EMERGENCY_TIMEOUT = 15000
-const RECOMMEND_TIMEOUT = 45000
+// AI 分诊任务：模型在 CPU 上跑，首次要等权重加载，给足 3 分钟；轮询 1.5s 一次（与问诊页同口径）
+const AI_TRIAGE_TIMEOUT = 180000
+const AI_TRIAGE_INTERVAL = 1500
 
 // 隐私告知（首次进入导诊页展示，用户确认后才继续）
 const PRIVACY_NOTICE = '为提高分诊准确性，您描述的症状文字会发送到院内导诊服务进行分析；'
@@ -62,52 +62,50 @@ function markNoticeSeen() {
   try { wx.setStorageSync(NOTICE_KEY, 1) } catch (e) {}
 }
 
-// ==================== 后端调用（可失败，失败即降级）====================
-/** 急诊判定：POST /api/v1/consultation/emergency/check?text= */
-function checkEmergency(text) {
-  const t = String(text || '').slice(0, MAX_TEXT_FOR_API)
-  const spec = {
-    base: 'python',
-    path: API.TRIAGE_EMERGENCY.path + '?text=' + encodeURIComponent(t)
-  }
-  return req.post(spec, null, { timeout: EMERGENCY_TIMEOUT })
-    .then((d) => {
-      // 实测契约（2026-09-12 经网关验证）：
-      // { risk_level, risk_score, matched_keywords, is_emergency, emergency_message, suggestion, safe }
-      const x = d || {}
-      const flag = !!(x.is_emergency || x.emergency || x.isEmergency)
-        || x.risk_level === 'high' || x.level === 'high' || x.risk === 'high'
-      return {
-        is_emergency: flag,
-        level: x.risk_level || x.level || x.risk || '',
-        text: x.emergency_message || x.suggestion || x.text || x.advice || ''
-      }
+// ==================== 后端 AI（任务链，可失败，失败即降级）====================
+/**
+ * 院内 AI 分诊任务链（2026-11-04 接入）。
+ *
+ * 为什么换实现：此前 `recommendDepartment` 打 `POST /api/v1/case/recommend-department`、
+ * `checkEmergency` 打 `/api/v1/consultation/emergency/check` —— 这两个是 Phase 1 FastAPI
+ * 的老路由。现网网关把 /api 下的全部请求代理到 business（java），ai-service 也没有这两条路由，
+ * 于是每轮稳定 404：页面看起来"没接 AI"，实际是**一直在请求一个不存在的接口**，
+ * 还白等两次超时。正解走契约的任务链：
+ *   ① 建会话（首轮）/ 追加消息（后续）—— 会话承载症状文本，服务端据此聚合；
+ *   ② POST /api/v1/consultations/{id}/triage 建 TRIAGE 任务（立刻返回，不同步等模型）；
+ *   ③ 轮询 GET /api/v1/ai/tasks/{taskId} 到终态，取 result.recommendedDepartments[]。
+ *
+ * @param {string} text 本轮用户输入
+ * @param {{consultationId?:string}} [state] 页面持有的会话 id（一轮会话只建一次）
+ * @returns {Promise<{consultationId:string, task:Object}>}
+ */
+function aiTriage(text, state) {
+  const s = state || {}
+  const cid = String(s.consultationId || '')
+  const content = String(text || '')
+  const p = cid
+    ? userService.sendConsultationMessage(cid, { content: content })
+    : userService.createConsultation({ initialMessage: content })
+  return p.then((res) => {
+    const created = res && res.consultation
+    const id = (created && created.id) || cid
+    if (!id) throw { code: 'NO_CONSULTATION', message: '未能创建分诊会话' }
+    // ⚠️ 必须走 large 档（qwen2.5:7b）：0.5b 实测会把「嗓子疼」判成消化内科（2026-10-24 记录），
+    //    而导诊结论会直接决定患者挂哪个科的号 —— 准确率优先于速度。
+    //    CPU 上约 30~60s，业务侧 TRIAGE 预算 180s，前端 thinking 态承接，不会超时。
+    return ai.requestConsultationTriage(id, { requestedProfile: 'large-upgrade' }).then((task) => {
+      if (!task || !task.taskId) throw { code: 'NO_TASK', message: '服务端没有返回分诊任务' }
+      return ai.waitTask(task.taskId, { interval: AI_TRIAGE_INTERVAL, timeout: AI_TRIAGE_TIMEOUT })
+        .then((t) => ({ consultationId: id, task: t }))
     })
-    .catch((err) => {
-      console.warn('[triage] 急诊判定不可用，使用本地红旗规则：' + (err && err.code))
-      return null
-    })
-}
-
-/** 科室推荐：POST /api/v1/case/recommend-department { text } */
-function recommendDepartment(text) {
-  return req.post(API.TRIAGE_RECOMMEND, { text: String(text || '').slice(0, 500) }, { timeout: RECOMMEND_TIMEOUT })
-    .then((d) => {
-      const x = d || {}
-      const clinic = x.clinic || x.department || x.dept || x.deptName || ''
-      return clinic ? { clinic: clinic, reason: x.reason || x.advice || '' } : null
-    })
-    .catch((err) => {
-      console.warn('[triage] 科室推荐不可用，使用本地匹配：' + (err && err.code))
-      return null
-    })
+  })
 }
 
 // ==================== 主流程 ====================
 /**
- * 一次分诊分析（本地优先 + 后端增强）
+ * 一次分诊分析（本地优先 + 后端 AI 任务链增强）
  * @param {string} text 本次输入
- * @param {Object} ctx { history:[], asked:[], rounds:number, useRemote:boolean }
+ * @param {Object} ctx { history:[], asked:[], rounds:number, useRemote:boolean, consultationId?:string }
  * @returns {Promise<Object>} 结构化结果（结构见 triage-engine.analyze）
  */
 function analyze(text, ctx) {
@@ -130,23 +128,33 @@ function analyze(text, ctx) {
     _countQuality(local, null)
     return Promise.resolve(local)
   }
-  // ④ 需要 AI 增强：并发两个接口，各自失败各自降级
-  const merged = o.history ? o.history.concat([text]).join('。') : text
-  return Promise.all([checkEmergency(merged), recommendDepartment(merged)])
-    .then(([em, rec]) => {
+  // ④ 走院内 AI 任务链（会话尽量复用：一轮导诊只建一个会话，后续轮次追加消息）
+  return aiTriage(text, { consultationId: o.consultationId })
+    .then(({ consultationId, task }) => {
+      const parsed = task && task.status === 'SUCCEEDED' ? ai.parseTriage(task) : null
+      const top = parsed && parsed.departments[0]
       const result = engine.mergeRemote(local, {
-        clinic: rec ? rec.clinic : '',
-        reason: rec ? rec.reason : '',
-        emergency: em || undefined
+        clinic: top ? top.name : '',
+        reason: top ? top.reason : ''
       })
-      result.aiUsed = !!(rec || em)
-      result.aiFallback = !rec
-      _countQuality(result, rec)
+      // 会话 id 回传给页面：下一轮继续往同一会话追加，AI 才能看到完整病史
+      result.consultationId = consultationId
+      result.aiUsed = !!top
+      result.aiFallback = !top
+      result.aiDepartments = parsed ? parsed.departments : []
+      result.aiTaskId = (task && task.taskId) || ''
+      if (task && task.status !== 'SUCCEEDED') {
+        const e = (task && task.error) || {}
+        result.aiError = { code: e.code || (task && task.status) || 'AI_TASK_FAILED', message: e.message || '' }
+      }
+      _countQuality(result, top ? { clinic: top.name } : null)
       return result
     })
-    .catch(() => {
-      // 兜底：任何意外都用本地结果，绝不让导诊中断
+    .catch((err) => {
+      // 兜底：任何意外都用本地结果，绝不让导诊中断（但**必须**标记降级，页面要如实告知）
+      console.warn('[triage] AI 分诊不可用，回落本地规则：' + ((err && (err.code || err.message)) || ''))
       local.aiFallback = true
+      local.aiError = { code: (err && err.code) || 'AI_UNAVAILABLE', message: (err && err.message) || '' }
       _countQuality(local, null)
       return local
     })
@@ -211,7 +219,7 @@ function clearAll() {
 module.exports = {
   analyze, parse,
   toReport: engine.toReport,
-  checkEmergency, recommendDepartment,
+  aiTriage,    // 单步任务链（页面/测试需要直接驱动时用）
   answerNav,   // 路线询问应答词判定（问诊页/导诊页共用一份）
   saveSession, listSessions, clearSessions, clearAll, quality,
   hasSeenNotice, markNoticeSeen,

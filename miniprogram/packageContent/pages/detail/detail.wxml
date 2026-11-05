@@ -30,7 +30,7 @@
     <!-- ② 视频：通栏黑底播放器（设计稿 19：播放器贴边、黑底 letterbox） -->
     <block wx:if="{{item.type === 'video'}}">
       <view class="dp-video-wrap">
-        <!-- src/poster 由 detail.js 解析：远端签名 URL 优先，失败回退分包内 mp4 -->
+        <!-- src/poster 由 detail.js 解析：签名 URL（V19）优先，失败回落资源端点基准源 -->
         <video class="dp-video" src="{{item.videoSrc}}" poster="{{item.posterSrc}}"
                object-fit="contain" show-center-play-btn="{{true}}"
                enable-play-gesture="{{true}}" show-fullscreen-btn="{{true}}"

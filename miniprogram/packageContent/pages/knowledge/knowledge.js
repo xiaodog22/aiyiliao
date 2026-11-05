@@ -7,6 +7,8 @@
 const app = getApp()
 const KB = require('../../../utils/knowledge-kb.js')
 const icons = require('../../../utils/icons.js')
+// 封面已网络化（F2 · 2026-11-05）：KB 只存资源清单 key，展示时解析成远端 URL
+const resource = require('../../../services/resource.js')
 
 Page({
   data: {
@@ -27,12 +29,28 @@ Page({
   },
 
   onLoad() {
-    // 预转好展示字段：图标路径（模板里不做逻辑，保持 WXML 干净）
-    this._all = KB.FEED.map((it) => Object.assign({}, it, {
-      iconPath: icons[it.icon] || icons.info
-    }))
+    this._buildAll()
     this.setData({ theme: app.globalData.theme || 'standard' })
     this._apply()
+  },
+
+  /** 清单由 app.js 冷启动异步刷新，首启进入本页时可能还没到 → 回到本页再补一次（与 home._applyRemoteAssets 同思路） */
+  onShow() {
+    if (!this._all) return
+    this._buildAll()
+    this._apply()
+  },
+
+  /**
+   * 预转好展示字段：图标路径 + 解析后的封面 URL（模板里不做逻辑，保持 WXML 干净）。
+   * 封面走 resourceUrl(key, '')：清单已就绪 → 远端地址；未就绪（首启/离线）→ ''，
+   * 模板 `wx:if="{{item.cover}}"` 自动隐藏封面区，不会裂图。
+   */
+  _buildAll() {
+    this._all = KB.FEED.map((it) => Object.assign({}, it, {
+      iconPath: icons[it.icon] || icons.info,
+      cover: it.coverKey ? resource.resourceUrl(it.coverKey, '') : ''
+    }))
   },
 
   /** 分类 × 类型 × 关键词三重筛选（本地过滤，条数少无需分页；标题/摘要/分类命中即保留） */
