@@ -302,7 +302,7 @@ for (const [p, e] of uniq) {
 
 1. **编码**：所有被编辑文件保持 UTF-8（无 BOM）；不要给 `.js`/`.md` 引入 BOM。
 2. **编辑纪律**：同一文件多处修改**串行**执行（防并发 Edit 竞态丢失）；用精确 Edit，不用 sed/脚本批量替换。
-3. **工具链**：若 PATH 无 node，用 `C:\Users\Administrator\.workbuddy\binaries\node\versions\22.22.2-3\node.exe`；契约工具依赖 Python+PyYAML（本机 `D:\anaconda3.0\python.exe` 可用）。
+3. **工具链**：若 PATH 无 node，用 `<home>\.workbuddy\binaries\node\versions\22.22.2-3\node.exe`；契约工具依赖 Python+PyYAML（本机 `D:\anaconda3.0\python.exe` 可用）。
 4. **不改历史**：所有"修复后"结论以新证据+回执记录，不得回改既有验收单/日志。
 5. **范围锁定**：只做 F1/F2/F3 定义的动作；发现新问题→记录到回执"遗留观察"，不顺手修。
 

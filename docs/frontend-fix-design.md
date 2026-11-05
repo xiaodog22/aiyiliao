@@ -444,7 +444,7 @@ node tools/check-project.js      # 期望全通过
 # TOTAL 2212496 / main 1552292 / packageContent 592941 / packageNav 67263
 
 "D:/OpenWeChar/微信web开发者工具/cli.bat" preview \
-  --project "D:/asr_chaoshanhua/asr_chaoshanhua_V01/_V01/wechar/miniprogram" \
+  --project "<repo>/miniprogram" \
   --qr-output "<tmp>/preview-after.png" --info-output "<tmp>/preview-after.json"
 # 期望：√ preview，main 下降，total 同比下降
 

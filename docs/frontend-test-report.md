@@ -10,7 +10,7 @@
 | 项 | 内容 |
 | --- | --- |
 | 项目 | 医疗健康 AI 微信小程序（楚大夫 / 患者端助手「小安」） |
-| 仓库路径 | `D:\asr_chaoshanhua\asr_chaoshanhua_V01\_V01\wechar` |
+| 仓库路径 | `<repo>` |
 | 前端根目录 | `miniprogram/`（微信开发者工具项目根） |
 | 分支 | `master`（工作区 411 项未提交改动，本轮未提交任何改动） |
 | 技术栈 | **原生微信小程序**：WXML + WXSS + JS（无 Vue/React/UniApp/Taro/H5，无 WebView） |
@@ -387,7 +387,7 @@
 
 | 项 | 值 |
 | --- | --- |
-| Node.js | `v22.22.2`（`C:\Users\Administrator\.workbuddy\binaries\node\versions\22.22.2-6\node.exe`） |
+| Node.js | `v22.22.2`（`<home>\.workbuddy\binaries\node\versions\22.22.2-6\node.exe`） |
 | 微信开发者工具 CLI | `D:\OpenWeChar\微信web开发者工具\cli.bat`（文件时间 2026-01-29） |
 | AppID | `wxc54919753ce946b6`（`project.config.json:23`） |
 | 编译设置 | `es6: true`、`postcss: true`、`minified: true`、`minifyWXML: true` |
@@ -424,7 +424,7 @@ node <tmp>/preview6.js --measure
 
 ```bash
 "D:/OpenWeChar/微信web开发者工具/cli.bat" preview \
-  --project "D:/asr_chaoshanhua/asr_chaoshanhua_V01/_V01/wechar/miniprogram" \
+  --project "<repo>/miniprogram" \
   --qr-output "<tmp>/preview.png" \
   --info-output "<tmp>/preview-info.json"
 

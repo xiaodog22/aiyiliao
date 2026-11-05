@@ -9,8 +9,14 @@ import os
 import subprocess
 import sys
 
-GW = r"D:\asr_chaoshanhua\asr_chaoshanhua_V01\_V01\wechar\backend\edge-gateway"
-PY = r"D:\asr_chaoshanhua\asr_chaoshanhua_V01\_V01\wechar\backend\ai-service\.venv\Scripts\python.exe"
+# 路径从本文件位置推导，不写死本机绝对路径（换机/换目录直接可用）。
+# backend/deploy/scripts/ -> deploy -> backend
+HERE = os.path.dirname(os.path.abspath(__file__))
+BACKEND = os.path.dirname(os.path.dirname(HERE))
+GW = os.path.join(BACKEND, "edge-gateway")
+PY = os.environ.get("PYTHON_EXE") or os.path.join(
+    BACKEND, "ai-service", ".venv", "Scripts", "python.exe"
+)
 
 DETACHED = 0x00000008 | 0x00000200 | 0x01000000  # DETACHED_PROCESS | NEW_PG | BREAKAWAY
 CREATE_NO_WINDOW = 0x08000000

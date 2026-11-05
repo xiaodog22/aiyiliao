@@ -75,5 +75,5 @@
 <!-- software-certificate-skill:start -->
 ## Software Certificate Skill
 
-When a task involves 软件著作权、软著材料、操作手册、源程序材料或自动截图，read and follow `D:/asr_chaoshanhua/wechar/.agents/skills/software-certificate-skill/SKILL.md`. Resolve every referenced script, asset and reference relative to `D:/asr_chaoshanhua/wechar/.agents/skills/software-certificate-skill`. Use the bundled deterministic scripts instead of recreating them.
+When a task involves 软件著作权、软著材料、操作手册、源程序材料或自动截图，read and follow `<local-path>`. Resolve every referenced script, asset and reference relative to `<local-path>`. Use the bundled deterministic scripts instead of recreating them.
 <!-- software-certificate-skill:end -->

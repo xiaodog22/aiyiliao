@@ -2,7 +2,7 @@
 
 > 目的：用最短时间验证 4 个高风险点，数据决定 M1 是否全投。
 > 前置：① 启动主应用（已含 avatar 路由，统一网关版，不再有独立网关进程）：
->   `cd ai_medical_system-merged && C:\Users\Administrator\.conda\envs\tts-env\python.exe main.py`（监听 8000，自带端口守卫）
+>   `cd ai_medical_system-merged && <home>\.conda\envs\tts-env\python.exe main.py`（监听 8000，自带端口守卫）
 > ② 连法选择（重要）：
 >   - **开发者工具/模拟器**：直接可用（env.js 已配 ws://127.0.0.1:8000）
 >   - **真机（推荐先模拟器）**：需把 `miniprogram/config/env.js` 的 avatarWs 改为

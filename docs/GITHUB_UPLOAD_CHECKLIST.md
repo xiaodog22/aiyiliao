@@ -246,3 +246,37 @@ git push --force origin main
 | 6 | 首个 assets 提交单独检出时 `icons.js` 仍引用已删图标（该键表清理在 `fix` 提交） | 只影响 `git bisect` 到中间点；整体推送后无影响 |
 | 7 | `docs/` 只保留验收报告 `.md`，32 MB 截图未入库 | 需要复现时按报告内的文件名在本机 `docs/验收与评估_*/assets` 找 |
 | 8 | `.git` 8.2 MB，rebase 留有旧对象 | 需要瘦身时 `git gc --prune=now`（不影响远端历史） |
+
+---
+
+## 9. 隐私复查（2026-11-05 推送后）
+
+**方法**：只扫 `git ls-files` 命中的已推送文件（不含 `env.local`、`DEV_LOG.md`、`artifacts/` 等本地忽略项），
+按身份证号、手机号、邮箱、姓名/住址、真人照片、真实机构、openid、本机路径、密钥九类逐项匹配 + 人工抽样目检。
+
+| 类别 | 结论 | 处置 |
+|---|---|---|
+| 身份证号 | 仅测试夹具（`110101199003071234` 一类的教科书假号）与 sha256 十六进制误命中 | 保留 |
+| 手机号 | 33 个去重值全部是演示号（`13800138001/011/012/013`、`13900139001`）或 `…1111/…2222/…1234` 这类测试值；`14x/16x/18x` 等是 SQL 里 sha256 的连续数字误命中 | 保留 |
+| 邮箱 | 仅 `zhang.san@example.com`、`li.ming@hospital.cn`、`a@b.com` 等示例域 | 保留 |
+| 姓名 / 住址 | 种子与截图里是「张国强」「王女士」「张医生」等虚构值，无真实自然人 | 保留 |
+| 真人照片 / 印章 / 二维码 | 6 张 `docs/screenshots/*.webp` 逐张目检：只有矢量图标与默认头像剪影，无真人照片、无医院公章、无可扫二维码 | 保留 |
+| 真实医疗机构 | 仅 `backend/ai-service/config/hospital-knowledge.json` 与治理文档讨论口径；报告数据用 `DEMO-*` 编号 + 模拟机构 | 保留 |
+| 微信 openid / unionid | 种子里只有 `dev-user-1`、`dev-user-2` 两个假值 | 保留 |
+| **本机绝对路径** | 15 份文档（含 `AGENTS.md`）含 `D:\asr_chaoshanhua\…` 或 `C:\Users\Administrator\…` | **已替换为 `<repo>` / `<home>` / `<local-path>`** |
+| **代码内硬编码路径** | `backend/deploy/scripts/spawn_detached_gateway.py` 写死仓库绝对路径与 venv python，换机即失效 | **已改为按 `__file__` 推导 + `PYTHON_EXE` 环境变量覆盖** |
+| 数据库口令 / 密钥 | `env.local` 已忽略；`docs/v4/08E` 的 `MYSQL_PASSWORD` 明文已于本轮前脱敏 | 保留（掩码） |
+| 小程序 AppID | `wxc549…` 出现在 `miniprogram/project.config.json` 与 5 份文档 | **保留**：AppID 是应用标识而非密钥；改掉会导致开发者工具无法绑定本地项目 |
+
+**复核命令**
+
+```bash
+git grep -lIF "asr_chaoshanhua" -- .        # 期望 0
+git grep -lIiE "Users[\\\\/][A-Za-z]" -- .   # 期望 0（本机用户名不再出现）
+git grep -nIE "[0-9]{17}[0-9Xx]" -- .       # 仅剩测试夹具与哈希误命中
+```
+
+> 结论：**没有真实个人信息进入公开仓库**。已修的是「本机环境痕迹」，不是身份数据。
+> 若后续要连 AppID 一起脱敏：把 `project.config.json` 的 `appid` 改为 `touristappid`，
+> 并把文档里的 appid 掩码为 `wx****…****`，代价是每次导入开发者工具都要手动填 AppID。
+

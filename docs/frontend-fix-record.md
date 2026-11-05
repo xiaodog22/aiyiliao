@@ -325,7 +325,7 @@ git apply docs/patches/F-05.patch
   原因：生成时 `git diff` 命中 docx 的 textconv 驱动失败（`fatal: unable to read files to diff`），输出被截断，当时的 `wc -c` 只看到 1.3 MB 并未报错。
   **后果**：不能用它回滚顶层 `tools/`。顶层回滚请用 `docs/patches/F-02-tests.patch` 与 `F-05.patch` 的 `-R`。
 
-真实绝对路径（复制前）：`C:\Users\Administrator\AppData\Local\Temp\baseline-mp.patch`、`C:\Users\Administrator\AppData\Local\Temp\baseline-top.patch`；已复制到 `docs/patches/`。
+真实绝对路径（复制前）：`<home>\AppData\Local\Temp\baseline-mp.patch`、`<home>\AppData\Local\Temp\baseline-top.patch`；已复制到 `docs/patches/`。
 
 ### 9.5 回滚速查
 
