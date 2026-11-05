@@ -19,6 +19,16 @@ def _env(name: str, default: str) -> str:
     return value if value not in (None, "") else default
 
 
+def _env_float_or_none(name: str) -> "float | None":
+    value = os.environ.get(name)
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
 @dataclass
 class Settings:
     host: str = field(default_factory=lambda: _env("AI_HOST", "127.0.0.1"))
@@ -33,6 +43,54 @@ class Settings:
     ollama_url: str = field(default_factory=lambda: _env("AI_OLLAMA_URL", "http://127.0.0.1:11434"))
     small_model: str = field(default_factory=lambda: _env("AI_SMALL_MODEL", "qwen2.5:0.5b"))
     large_model: str = field(default_factory=lambda: _env("AI_LARGE_MODEL", "qwen2.5:7b"))
+
+    # ---- B2 三步走 provider 链（2026-11-04）----
+    # 顺序：ollama（本地内网穿透）→ deepseek（OpenAI 兼容 API）→ 兜底。
+    # `rule` 不是 provider（由 business TriageRuleEngine 承载），写在配置里也不会被 ai-service 调用。
+    provider_order: str = field(default_factory=lambda: _env("AI_PROVIDER_ORDER", "ollama,deepseek"))
+    # Ollama **首 token** 超时（秒）：只卡"多久出第一个 token"，不卡总生成时长。
+    # 7B 生成 300 token 在 CPU 上远超 6~10s，按总时长卡会把正常生成误判为超时。
+    # 评审建议值：triage 5 / chat 6 / careplan 8 / interpret 6；此处默认取中间值 8，按任务可覆盖。
+    ollama_first_token_timeout: float = field(
+        default_factory=lambda: float(_env("AI_OLLAMA_FIRST_TOKEN_TIMEOUT", "8"))
+    )
+    # 逐任务首 token 阈值（未显式配置则回落到 AI_OLLAMA_FIRST_TOKEN_TIMEOUT）
+    triage_first_token_timeout: "float | None" = field(
+        default_factory=lambda: _env_float_or_none("AI_TRIAGE_FIRST_TOKEN_TIMEOUT")
+    )
+    chat_first_token_timeout: "float | None" = field(
+        default_factory=lambda: _env_float_or_none("AI_CHAT_FIRST_TOKEN_TIMEOUT")
+    )
+    careplan_first_token_timeout: "float | None" = field(
+        default_factory=lambda: _env_float_or_none("AI_CAREPLAN_FIRST_TOKEN_TIMEOUT")
+    )
+    interpret_first_token_timeout: "float | None" = field(
+        default_factory=lambda: _env_float_or_none("AI_INTERPRET_FIRST_TOKEN_TIMEOUT")
+    )
+    # DeepSeek（第二级）：key 只从环境变量注入，**任何文件/日志都不得出现**
+    deepseek_base_url: str = field(
+        default_factory=lambda: _env("AI_DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    )
+    deepseek_api_key: str = field(default_factory=lambda: _env("AI_DEEPSEEK_API_KEY", ""))
+    deepseek_model: str = field(default_factory=lambda: _env("AI_DEEPSEEK_MODEL", "deepseek-chat"))
+    # 逐任务第二级预算（与 B2.2 预算表一致；未配置则用任务自身 timeout）
+    triage_deepseek_timeout: float = field(
+        default_factory=lambda: float(_env("AI_TRIAGE_DEEPSEEK_TIMEOUT_SECONDS", "10"))
+    )
+    chat_deepseek_timeout: float = field(
+        default_factory=lambda: float(_env("AI_CHAT_DEEPSEEK_TIMEOUT_SECONDS", "16"))
+    )
+    careplan_deepseek_timeout: float = field(
+        default_factory=lambda: float(_env("AI_CAREPLAN_DEEPSEEK_TIMEOUT_SECONDS", "36"))
+    )
+    interpret_deepseek_timeout: float = field(
+        default_factory=lambda: float(_env("AI_INTERPRET_DEEPSEEK_TIMEOUT_SECONDS", "28"))
+    )
+    # 熔断：连续失败 N 次 → 冷却 cooldown 秒内直接跳过该级（0 = 关闭熔断）
+    breaker_failures: int = field(default_factory=lambda: int(_env("AI_BREAKER_FAILURES", "3")))
+    breaker_cooldown_seconds: float = field(
+        default_factory=lambda: float(_env("AI_BREAKER_COOLDOWN_SECONDS", "60"))
+    )
 
     # 任务运行参数
     store_path: Path = field(
@@ -194,6 +252,17 @@ class Settings:
 
     log_level: str = field(default_factory=lambda: _env("AI_LOG_LEVEL", "INFO"))
 
+    # ---- provider 链取值辅助（B2）----
+    def first_token_timeout_for(self, task: str) -> float:
+        """逐任务首 token 阈值；未配置则回落到全局默认。"""
+        override = getattr(self, f"{task}_first_token_timeout", None)
+        return float(override) if override else float(self.ollama_first_token_timeout)
+
+    def deepseek_timeout_for(self, task: str, task_timeout: float) -> float:
+        """第二级预算：不超过该任务自身 timeout（避免降级把任务拖到上游先超时）。"""
+        value = getattr(self, f"{task}_deepseek_timeout", None)
+        return min(float(value), float(task_timeout)) if value else float(task_timeout)
+
 
 def config_summary(settings: Settings, knowledge_version: str = "unknown") -> dict:
     """启动配置摘要（可审计；**不含**任何地址、文件路径、密钥值）。
@@ -232,6 +301,15 @@ def config_summary(settings: Settings, knowledge_version: str = "unknown") -> di
         "queueMax": int(settings.queue_max),
         "concurrency": int(settings.llm_worker_pool_size),  # 如实标注实际并发度
         "taskTimeoutSeconds": int(settings.task_timeout_seconds),
+        # B2 三步走：只报状态与名字，**不回显 base URL / key**
+        "providerOrder": ",".join(
+            p.strip().lower() for p in str(settings.provider_order or "").split(",") if p.strip()
+        ),
+        "deepseek": "configured" if settings.deepseek_api_key else "missing-key",
+        "deepseekModel": settings.deepseek_model if settings.deepseek_api_key else "n/a",
+        "fallback": "on" if ("deepseek" in str(settings.provider_order) and settings.deepseek_api_key) else "off",
+        "firstTokenTimeout": float(settings.ollama_first_token_timeout),
+        "breaker": f"{int(settings.breaker_failures)}/{float(settings.breaker_cooldown_seconds):.0f}s",
     }
 
 

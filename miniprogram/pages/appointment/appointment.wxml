@@ -146,7 +146,7 @@
       <block wx:if="{{selDate && selDoctorId}}">
         <view class="section-header section-header-plain">选择时间</view>
         <skeleton wx:if="{{loadingSlots}}" type="list" rows="3" />
-        <view wx:elif="{{filteredSlots.length === 0}}" class="hint-card">该时段暂无号源，请换一天或切换时段试试。</view>
+        <view wx:elif="{{filteredSlots.length === 0}}" class="hint-card">{{emptyHint || '该时段暂无号源，请换一天或切换时段试试。'}}</view>
         <view wx:else class="slot-grid">
           <view
             wx:for="{{filteredSlots}}"

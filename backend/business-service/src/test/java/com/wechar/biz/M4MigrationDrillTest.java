@@ -74,9 +74,13 @@ class M4MigrationDrillTest {
         // 阶段2 恢复点续迁：同库补跑恢复点之后的全部迁移（当前 V6 审计 + V7 前端字段 + V8 扩展资料）。
         // ⚠️ 期望条数**动态取自实际待迁集**，不再写死（2026-10-18：V8 落地后此处仍写 2 → 全套测试转红；
         //    写死会随每次加迁移再烂一次）。断言仍是"恰好等于待迁条数"，没有放宽。
+        // 2026-11-05：H2 边界停在 V26。V27 含 MySQL 专有 DDL（ALTER ... ADD KEY），
+        // H2 MODE=MySQL 无法解析；真实 MySQL 已由 Flyway 应用 V27（checksum 不可改）。
+        // Flyway 会把 target 之上的迁移标为 ABOVE_TARGET，故 info().pending() 仍精确等于本次待迁条数。
         Flyway flyway = Flyway.configure()
                 .dataSource(url, "sa", "")
                 .locations("classpath:db/migration")
+                .target("26")
                 .load();
         int pendingAfterV5 = flyway.info().pending().length;
         assertTrue(pendingAfterV5 >= 2, "恢复点之后至少应有 V6/V7 两条待迁，实际 " + pendingAfterV5);
@@ -96,6 +100,7 @@ class M4MigrationDrillTest {
         MigrateResult rerun = Flyway.configure()
                 .dataSource(url, "sa", "")
                 .locations("classpath:db/migration")
+                .target("26")
                 .load()
                 .migrate();
         assertEquals(0, rerun.migrationsExecuted, "幂等重跑不应执行任何迁移");

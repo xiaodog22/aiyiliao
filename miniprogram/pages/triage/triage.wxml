@@ -196,6 +196,7 @@
 
                 <!-- 底部免责：居中（复刻文档 §2-④）；AI 不可用时如实说明 -->
                 <view class="tri-disc">以上为AI建议，不能替代医生诊断</view>
+                <view class="tri-disc tri-disc-sub" wx:if="{{item.aiUsed}}">已结合院内 AI 大模型分诊结果</view>
                 <view class="tri-disc tri-disc-sub" wx:if="{{item.aiFallback}}">本次为本地规则结果（AI 暂不可用）</view>
                 <view class="tri-foot">
                   <text class="tri-report-link pressable" catchtap="onReport">查看完整报告 ›</text>

@@ -101,7 +101,9 @@
 
           <!-- 附件卡：图片缩略 / 文件卡（设计稿 04 的「检验报告.pdf / 已上传 · 2.3MB」） -->
           <view wx:elif="{{m.kind === 'file'}}" class="cs-msg cs-msg-user">
-            <view wx:if="{{m.isImage}}" class="cs-att-img-wrap" data-url="{{m.url}}" bindtap="onPreviewAttach">
+            <!-- 图片缩略图要求 m.url：签名 URL 只在本次会话内存里（重载后为空），
+                 空 src 会渲染成裂图，故降级为下面的文件卡 -->
+            <view wx:if="{{m.isImage && m.url}}" class="cs-att-img-wrap" data-url="{{m.url}}" bindtap="onPreviewAttach">
               <image class="cs-att-img" src="{{m.url}}" mode="aspectFill" />
             </view>
             <view wx:else class="cs-file" data-url="{{m.url}}" data-pdf="{{m.isPdf}}" bindtap="onOpenFile">

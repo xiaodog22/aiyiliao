@@ -92,6 +92,8 @@ Page({
     this._asked = []
     this._history = []
     this._pendingNavDept = ''
+    // AI 分诊会话 id：首轮由 services/triage.js 建会话后回传，后续轮次复用（见 _ctx）
+    this._consultationId = ''
     this._initUser()
     this._loadProgress()
     this._greet()
@@ -212,7 +214,10 @@ Page({
       history: this._history,
       asked: this._asked,
       rounds: this.data.rounds,
-      useRemote: this._remoteAllowed !== false
+      useRemote: this._remoteAllowed !== false,
+      // 一轮导诊只建一个问诊会话：AI 分诊靠会话内的全部消息聚合症状，
+      // 每轮新建会话会让模型只看得到最后一句话（2026-11-04 接入）。
+      consultationId: this._consultationId || ''
     }, extra || {})
   },
 
@@ -267,10 +272,13 @@ Page({
   },
 
   _analyze(text, force) {
-    this.setData({ status: 'THINKING', thinkingText: 'AI 正在分析…' })
+    // 本地大模型在 CPU 上推理，首次要加载权重：如实告知等待时长，避免用户以为卡死
+    this.setData({ status: 'THINKING', thinkingText: 'AI 正在分析（约 30~60 秒）…' })
     triageService.analyze(text, this._ctx({ forceResult: !!force }))
       .then((result) => {
         this.setData({ status: 'IDLE' })
+        // 会话 id 由服务层建会话后回传；记住它，下一轮往同一会话追加症状
+        if (result && result.consultationId) this._consultationId = result.consultationId
         if (result.emergency) {
           this._raiseEmergency(result)
           this._finish(result, text)
@@ -363,6 +371,7 @@ Page({
       // 改为中文顿号连接，与页面其它文案一致。
       alternates: (result.alternates || []).map((a) => a.dept).filter(Boolean).join('、'),
       slotsText: result.slotsText || '',
+      aiUsed: !!result.aiUsed,
       aiFallback: !!result.aiFallback
     })
     // 结果卡后紧跟一句「要不要带您过去」——回答「要」直接进院内导诊页出路线。

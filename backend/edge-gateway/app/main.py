@@ -19,7 +19,7 @@ import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
-from . import assets, cast as cast_bridge, compat, ratelimit, redact
+from . import assets, cast as cast_bridge, compat, preflight, ratelimit, redact
 from .config import APP_VERSION, GateSettings
 from .envelope import (
     ApiError,
@@ -47,9 +47,19 @@ def create_app(settings: Optional[GateSettings] = None) -> FastAPI:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     redact.install_redaction()  # D4.2：日志脱敏（防原文/凭据落盘）
+    # 逐请求日志是性能杀手，但**启动诊断必须留**（2026-11-01 PERF-03/04）。
+    # 踩过的坑：把 root 设成 WARNING 会连 uvicorn 启动横幅、网关自身启动行一起吞掉，
+    # 运维看不到「服务起来了 / 限流开没开」。所以只在 log_per_request=False 时
+    # 精确地把三个**每请求**logger 压到 WARNING，其余一律不动。
+    if not settings.log_per_request:
+        for _name in ("httpx", "httpcore", "uvicorn.access"):
+            logging.getLogger(_name).setLevel(logging.WARNING)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # 运行时依赖自检（PERF-07 衍生）：sniffio 缺失会让 anyio 每次调用重扫 sys.path，
+        # 实测吃掉 48.6% CPU，而 pip check 查不出来（可选依赖无人声明）。只告警，不阻截启动。
+        preflight.run_startup_check()
         app.state.http = httpx.AsyncClient(
             trust_env=False,  # 本地/内网上游不得走环境代理（HTTP_PROXY/ALL_PROXY）
             timeout=httpx.Timeout(
@@ -162,7 +172,10 @@ def create_app(settings: Optional[GateSettings] = None) -> FastAPI:
             {"name": "ollama", "reachable": ollama_ok, "latencyMs": ollama_ms},
         ]
         if java_ok and python_ok:
-            # AI 生成能力依赖 ollama：缺它只能是 degraded（业务读写不受影响）。
+            # 2026-11-04 复核：Ollama 缺失仍算 degraded（如实上报 AI 生成能力受限）。
+            # 之前设置页永远停在"检查中"的根因在**前端映射**（degraded→checking），
+            # 已在 miniprogram/pages/profile/settings/settings.js 修正：网关只要可达就显示
+            # 在线，各上游按 upstreams[].reachable 逐行显示在线/离线 —— 不靠篡改健康语义。
             status = "ok" if ollama_ok else "degraded"
         elif java_ok or python_ok:
             status = "degraded"

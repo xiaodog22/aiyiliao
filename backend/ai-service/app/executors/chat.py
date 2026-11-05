@@ -35,6 +35,7 @@ from ..knowledge import get_knowledge_loader
 from ._llm import (
     PROVENANCE_AI,
     build_options,
+    current_dependency,
     ensure_model_ready,
     generate_text,
     parse_json_strict,
@@ -141,7 +142,7 @@ def build_chat_executor(
         profile = str(task.get("modelProfile") or "small-default")
         model = resolve_model(settings, profile)
 
-        await ensure_model_ready(probe, model)
+        await ensure_model_ready(probe, model, settings=settings)
 
         # ---- RAG 检索（特征开关控制）----
         citations, rag_context = await _retrieve_context(message, task.get("taskId"))
@@ -177,12 +178,14 @@ def build_chat_executor(
             user_prompt,
             options, settings.chat_timeout_seconds,
             transport=transport, json_mode=True,
+            first_token_timeout_s=settings.first_token_timeout_for("chat"),
+            fallback_timeout_s=settings.deepseek_timeout_for("chat", settings.chat_timeout_seconds),
         )
 
         payload = parse_json_strict(response_text)
         if not isinstance(payload, dict):
             raise TaskFailure("MODEL_OUTPUT_INVALID", "模型输出缺少对话对象结构",
-                              dependency="ollama", retryable=False)
+                              dependency=current_dependency(), retryable=False)
 
         # 拒答与正文二选一：拒答必须给原因，非拒答必须有正文（否则视为输出非法）
         refused = bool(payload.get("refused")) if isinstance(payload.get("refused"), bool) else False
@@ -196,7 +199,7 @@ def build_chat_executor(
                 text = refusal_reason
             else:
                 raise TaskFailure("MODEL_OUTPUT_INVALID", "模型输出缺少回复正文",
-                                  dependency="ollama", retryable=False)
+                                  dependency=current_dependency(), retryable=False)
 
         language = trim(payload.get("language"), 20)
         logger.info("CHAT 完成 task=%s model=%s refused=%s chars=%d citations=%d",
@@ -207,6 +210,7 @@ def build_chat_executor(
                 "text": text,
                 "citations": citations,  # RAG 开关开启时为真实引用，关闭时为空数组
                 "provenance": PROVENANCE_AI,
+                "llmSource": current_dependency(),  # ollama | deepseek（实际产出该结果的 provider）
                 "refused": refused,
                 "refusalReason": refusal_reason,
                 "language": language,

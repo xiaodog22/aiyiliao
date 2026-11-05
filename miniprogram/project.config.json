@@ -13,6 +13,34 @@
       {
         "value": "project.private.config.json",
         "type": "file"
+      },
+      {
+        "value": "tests",
+        "type": "folder"
+      },
+      {
+        "value": ".trae",
+        "type": "folder"
+      },
+      {
+        "value": ".py",
+        "type": "suffix"
+      },
+      {
+        "value": ".pyc",
+        "type": "suffix"
+      },
+      {
+        "value": ".lock",
+        "type": "suffix"
+      },
+      {
+        "value": ".md",
+        "type": "suffix"
+      },
+      {
+        "value": ".svg",
+        "type": "suffix"
       }
     ],
     "include": [

@@ -103,21 +103,33 @@ public class AttachmentStorage {
             throw new ApiException("ATTACHMENT_TOO_LARGE", HttpStatus.PAYLOAD_TOO_LARGE,
                     "文件不能超过 " + (limit / (1024 * 1024)) + "MB");
         }
-        byte[] bytes;
-        try {
-            bytes = file.getBytes();
-        } catch (IOException e) {
-            throw new ApiException("ATTACHMENT_READ_FAILED", HttpStatus.BAD_REQUEST, "文件读取失败，请重试");
-        }
         String objectKey = newObjectKey(ext);
+        Path target = attachmentsDir.resolve(objectKey);
         try {
             Files.createDirectories(attachmentsDir);
-            Files.write(attachmentsDir.resolve(objectKey), bytes);
+            // 2026-11-04 云托管核查：不再 getBytes() 整份进堆 —— 50MB 视频 × 并发上传会打爆
+            // 512MB 规格容器（网关虽已改流式转发，业务侧再整读一次等于前功尽弃）。
+            // transferTo 对已落临时文件的实现是移动而非复制，大文件几乎无额外堆占用。
+            file.transferTo(target);
             return objectKey;
-        } catch (IOException e) {
+        } catch (IOException | IllegalStateException e) {
             throw new ApiException("ATTACHMENT_SAVE_FAILED", HttpStatus.INTERNAL_SERVER_ERROR,
                     "文件保存失败，请稍后重试");
         }
+    }
+
+    /**
+     * 已落盘附件的 sha256（按磁盘文件流式摘要，不整份进堆）。
+     *
+     * 2026-11-04：原实现由调用方 {@code file.getBytes()} 再算摘要，等于把 50MB 视频
+     * 又读进堆一次。改为落盘后走 {@link com.wechar.biz.common.Digests#sha256Hex(Path)}，
+     * 与「网关流式转发 + transferTo 落盘」配套，整条上传链路无全量字节数组。
+     */
+    public String sha256Of(String objectKey) {
+        return resolve(objectKey)
+                .map(f -> com.wechar.biz.common.Digests.sha256Hex(f.path()))
+                .orElseThrow(() -> new ApiException("ATTACHMENT_READ_FAILED", HttpStatus.BAD_REQUEST,
+                        "文件读取失败，请重试"));
     }
 
     /** 物理删除附件文件；objectKey 不匹配白名单或缺文件一律静默（不泄露文件系统信息）。 */

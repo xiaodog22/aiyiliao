@@ -120,8 +120,10 @@ Page({
       const list = (h && Array.isArray(h.upstreams)) ? h.upstreams : []
       const byName = {}
       for (const u of list) { if (u && u.name) byName[u.name] = u }
-      // 能拿到响应即网关自身可达；网关自报 degraded（有上游异常）→ 网关侧「检查中」
-      const gwTone = (h && h.status === 'degraded') ? 'checking' : 'online'
+      // 能拿到 200 响应即网关自身可达。degraded 是**终态**（有上游不可用），不是"还在检查"——
+      // 2026-11-04 修正：原实现把 degraded 映射成 checking，而本地 Ollama 常驻缺失时网关恒为
+      // degraded，于是「统一网关」永远停在"检查中"。具体哪个上游挂了由下面两行如实展示。
+      const gwTone = 'online'
       const items = [
         { name: '统一网关', tone: gwTone, stateText: STATE_TEXT[gwTone] },
         this._upItem('AI 问诊 / 语音', byName.python),

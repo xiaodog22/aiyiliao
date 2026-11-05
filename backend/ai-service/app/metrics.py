@@ -24,6 +24,12 @@ class LLMMetrics:
     stream_ok: int = 0
     stream_fallback: int = 0
     last_fallback_error: str = ""
+    # B2 provider 链：按 provider 计成功/失败，以及熔断跳过/开启次数。
+    # 只存枚举名（ollama / deepseek）与错误码，不含 URL / key / 正文。
+    provider_hits: dict = field(default_factory=dict)
+    provider_failures: dict = field(default_factory=dict)
+    provider_skips: dict = field(default_factory=dict)
+    breaker_open: dict = field(default_factory=dict)
 
     def record_first_token(self, ms: float) -> None:
         with self._lock:
@@ -40,6 +46,24 @@ class LLMMetrics:
         with self._lock:
             self.stream_fallback += 1
             self.last_fallback_error = error
+
+    def record_provider_hit(self, provider: str) -> None:
+        with self._lock:
+            self.provider_hits[provider] = self.provider_hits.get(provider, 0) + 1
+
+    def record_provider_failure(self, provider: str, code: str) -> None:
+        with self._lock:
+            key = f"{provider}:{code}"
+            self.provider_failures[key] = self.provider_failures.get(key, 0) + 1
+
+    def record_provider_skip(self, provider: str, reason: str) -> None:
+        with self._lock:
+            key = f"{provider}:{reason}"
+            self.provider_skips[key] = self.provider_skips.get(key, 0) + 1
+
+    def record_breaker_open(self, provider: str) -> None:
+        with self._lock:
+            self.breaker_open[provider] = self.breaker_open.get(provider, 0) + 1
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -60,6 +84,10 @@ class LLMMetrics:
                 "streamOk": self.stream_ok,
                 "streamFallback": self.stream_fallback,
                 "lastFallbackError": self.last_fallback_error,
+                "providerHits": dict(self.provider_hits),
+                "providerFailures": dict(self.provider_failures),
+                "providerSkips": dict(self.provider_skips),
+                "breakerOpen": dict(self.breaker_open),
             }
 
 

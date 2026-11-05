@@ -1,0 +1,14 @@
+# 构建上下文 = backend/（三个 Dockerfile 共用）
+# 排除大目录，避免把 .venv / Maven target 传进构建上下文（会拖慢上传且可能几 GB）
+.git
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+**/target
+**/runtime
+**/run
+**/node_modules
+**/.pytest_cache
+**/tests
+**/*.md

@@ -33,8 +33,8 @@ import httpx
 from ..config import Settings
 from ..tasks import TaskContext, TaskFailure
 from ..knowledge import get_knowledge_loader
-from ..http_client import ollama_client
-from ._llm import _post_ollama_generate
+from ..providers import chain
+from ._llm import current_dependency, ensure_model_ready, parse_json_strict
 
 logger = logging.getLogger("ai-service.executors.triage")
 
@@ -195,17 +195,8 @@ def build_triage_executor(
         model = settings.large_model if profile == "large-upgrade" else settings.small_model
 
         # ---- 快降级①：服务/模型就位性（探针有缓存，通常毫秒级返回）----
-        tags = await probe.ollama_tags()
-        if tags is None:
-            raise TaskFailure(
-                "CAPABILITY_UNAVAILABLE", "本机模型服务不可达（ollama）",
-                dependency="ollama", retryable=True,
-            )
-        if model not in tags:
-            raise TaskFailure(
-                "CAPABILITY_UNAVAILABLE", f"模型 {model} 未安装",
-                dependency="ollama", retryable=True,
-            )
+        # 已配置 DeepSeek 时不再硬失败：本地模型缺失交给 provider 链降级（B2 三步走）。
+        await ensure_model_ready(probe, model, settings=settings)
 
         options: dict = {"temperature": 0.3, "num_predict": 300}
         gen = task.get("generationParameters") or {}
@@ -236,24 +227,30 @@ def build_triage_executor(
             "options": options,
         }
 
-        # ---- 快降级②：生成调用（独立短超时，不占满任务总预算）----
-        # 复用 httpx 单例 / transport 注入路径（2026-10-22 连接复用优化），
-        # 错误映射集中在 `_post_ollama_generate`（与 chat/careplan/interpret 一致）。
-        async with ollama_client(settings, transport=transport) as client:
-            resp = await _post_ollama_generate(client, settings, payload, settings.triage_timeout_seconds)
+        # ---- 快降级②：生成调用（经 provider 链，独立短超时，不占满任务总预算）----
+        # 收口点：TRIAGE 原先直调 `_post_ollama_generate`，不经过 generate_text —— 链若建在
+        # generate_text 层，导诊永远只有 Ollama 一级。此处改走 `chain.generate`，
+        # 与 chat/careplan/interpret 共用同一条 Ollama → DeepSeek → 兜底 链。
+        # 三级耗尽时抛 CAPABILITY_UNAVAILABLE（dependency 为最后一级实际失败方），
+        # 由 business `TriageRuleEngine` 承接第三级（单一规则事实源，此处不新增词表）。
+        gen_result = await chain.generate(
+            settings,
+            payload,
+            timeout_s=settings.triage_timeout_seconds,
+            first_token_timeout_s=settings.first_token_timeout_for("triage"),
+            fallback_timeout_s=settings.deepseek_timeout_for("triage", settings.triage_timeout_seconds),
+            transport=transport,
+        )
+        response_text, actual_model = gen_result.text, gen_result.model
 
         # ---- 快降级③：输出解析与结构校验（不合法即失败，绝不缝合半成品）----
-        try:
-            raw = resp.json()
-            parsed = json.loads(raw.get("response") or "")
-        except (ValueError, TypeError):
-            raise TaskFailure("MODEL_OUTPUT_INVALID", "模型输出不是合法 JSON", dependency="ollama", retryable=False)
+        parsed = parse_json_strict(response_text)
 
         raw_departments = _normalize_departments(parsed)
         if raw_departments is None:
             raise TaskFailure(
                 "MODEL_OUTPUT_INVALID", "模型输出缺少 recommendedDepartments 结构",
-                dependency="ollama", retryable=False,
+                dependency=current_dependency(), retryable=False,
             )
 
         # ---- 白名单过滤（2026-10-22 可配置化）：只保留白名单内科室，越界科室过滤掉 ----
@@ -281,15 +278,16 @@ def build_triage_executor(
                 "confidence": None
             }]
 
-        actual_model = str(raw.get("model") or model)
+        actual_model = str(actual_model or model)
         logger.info(
-            "TRIAGE 补充完成 | task=%s | model=%s | raw=%d | filtered=%d",
-            task.get("taskId"), actual_model, len(raw_departments), len(filtered_departments)
+            "TRIAGE 补充完成 | task=%s | model=%s | provider=%s | raw=%d | filtered=%d",
+            task.get("taskId"), actual_model, current_dependency(), len(raw_departments), len(filtered_departments)
         )
         return {
             "result": {
                 "recommendedDepartments": filtered_departments,
                 "provenance": "AI_GENERATED",
+                "llmSource": current_dependency(),  # ollama | deepseek
                 "limitations": "AI 补充建议，不构成诊断；就诊科室以院内分诊规则与医生面诊为准。",
                 "promptTemplateVersion": PROMPT_TEMPLATE_VERSION,
             },

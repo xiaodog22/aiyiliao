@@ -48,6 +48,14 @@ public class ConsultationService {
     private final ObjectMapper mapper;
     private final Clock clock;
 
+    /**
+     * TRIAGE 模型档位（2026-11-04 从硬编码挪到配置）：默认 large-upgrade=7b。
+     * 覆盖成 small-default=0.5b 会快很多，但实测会把兜底科室排第一、reason 与症状对不上 ——
+     * 分诊决定患者挂哪个科，降档前请先评估（`APP_AI_TRIAGE_PROFILE`）。
+     */
+    @org.springframework.beans.factory.annotation.Value("${app.ai.triage-profile:large-upgrade}")
+    private String triageProfile = "large-upgrade";
+
     public ConsultationService(ConsultationRepository repository, AiTaskService aiTaskService,
                                TriageRuleEngine triageRuleEngine, MessageService messageService,
                                CatalogRepository catalogRepository, ObjectMapper mapper, Clock clock) {
@@ -652,7 +660,9 @@ public class ConsultationService {
         // ⚠️ 分诊默认走 large 档（qwen2.5:7b）：0.5b 实测会把兜底科室排在第一位、
         //    三个科室全给 0.9 置信度、reason 与输入症状对不上（2026-10-24 实测）——
         //    分诊直接决定患者挂哪个科，不能用这种结果。代价是 CPU 上单次 30~90s，故异步出卡。
-        String useProfile = (profile == null || profile.isBlank()) ? "large-upgrade" : profile;
+        String useProfile = (profile == null || profile.isBlank())
+                ? ((triageProfile == null || triageProfile.isBlank()) ? "large-upgrade" : triageProfile)
+                : profile;
         var taskRow = aiTaskService.create(userId, consultationId, "TRIAGE",
                 null, symptoms, useProfile, null, null);
         return aiTaskService.toData(taskRow);

@@ -3,15 +3,21 @@
  *
  * ⚠️ 数据口径（红线）：
  *   这里的内容是**随包发布的院内科普宣教材料**，不是后端返回值，也不伪装成接口数据。
- *   后端目前没有内容接口，所以"科普"走本地静态内容；**视频文件本体在分包**（主包已 1.82MB，
- *   接近 2MB 上限，视频必须留在 packageContent 内）。
  *   正式上线前，本文件应由院内宣传科/医务科审核后替换 `source` 与正文。
+ *
+ * ⚠️ 媒体全部网络化（F2 · 2026-11-05，为过开发者工具「图片+音视频 ≤200K」质量项）：
+ *   包内**不再存**封面与视频文件——
+ *   · coverKey/heroKey：资源清单 key，页面用 resourceUrl(key, '') 解析（清单只含图片）；
+ *   · videoKey：资源端点 key，详情页用 resource.staticResourceUrl(key) 直拼
+ *     （清单契约不含视频，端点匿名可读 + 视频 1 天缓存 + ETag）；
+ *   · 清单未就绪/离线 → ''，模板既有 wx:if 隐藏封面区；视频全链失败 → 详情页文案降级。
+ *   详情页另有 article 签名视频链（health_articles.video_key，V19）作为可选增强：命中时覆盖基准源。
  *
  * 结构：
  *   FEED      图文与视频的混排列表（列表页按它渲染；视频排前面，更吸引点击）
  *   每条的公共字段：id / type('article'|'video') / title / summary / category / tags / icon
- *   article 专有：readMin / publishedAt / source / sections[{h,p[]}] / keyPoints[]
- *   video   专有：durationSec / video / cover / tips[]
+ *   article 专有：coverKey / heroKey / readMin / publishedAt / source / sections[{h,p[]}] / keyPoints[]
+ *   video   专有：durationSec / videoKey（资源端点 key）/ coverKey（清单 key）/ tips[]
  *
  * icon 取值复用 utils/icons.js 的键名（页面里转成 PNG 路径），不新增图标资源。
  */
@@ -29,8 +35,8 @@ const VIDEOS = [
     tags: ['手卫生', '全家适用'],
     icon: 'sparkles',
     durationSec: 11,
-    video: '/packageContent/videos/wash-hands.mp4',
-    cover: '/packageContent/videos/wash-hands.jpg',
+    videoKey: 'video.wash-hands',
+    coverKey: 'health.wash-hands',
     tips: [
       '用流动水，先把手打湿再涂洗手液',
       '指缝、指尖、拇指、手腕最容易漏掉',
@@ -46,8 +52,8 @@ const VIDEOS = [
     tags: ['高血压', '老年人'],
     icon: 'heartbeat',
     durationSec: 11,
-    video: '/packageContent/videos/measure-bp.mp4',
-    cover: '/packageContent/videos/measure-bp.jpg',
+    videoKey: 'video.measure-bp',
+    coverKey: 'health.measure-bp',
     tips: [
       '固定每天同一时间测：起床后 1 小时内、晚饭前各一次',
       '坐着量，不要躺着量；量前 30 分钟别喝茶、别吸烟',
@@ -63,8 +69,8 @@ const VIDEOS = [
     tags: ['跌倒预防', '老年人'],
     icon: 'personStanding',
     durationSec: 11,
-    video: '/packageContent/videos/stand-up.mp4',
-    cover: '/packageContent/videos/stand-up.jpg',
+    videoKey: 'video.stand-up',
+    coverKey: 'health.stand-up',
     tips: [
       '床头放一盏小夜灯，起夜别摸黑走',
       '床边、卫生间装扶手，地面保持干燥',
@@ -83,8 +89,8 @@ const ARTICLES = [
     category: '睡眠',
     tags: ['睡眠', '老年人'],
     icon: 'moon',
-    cover: '/packageContent/assets/covers/cover-sleep.png',
-    hero: '/packageContent/assets/covers/detail-hero-sleep.png',
+    coverKey: 'content.cover-sleep',
+    heroKey: 'content.detail-hero-sleep',
     readMin: 5,
     publishedAt: '2026-10-10',
     source: '呼吸内科',
@@ -112,7 +118,7 @@ const ARTICLES = [
     category: '慢病管理',
     tags: ['高血压', '老年人'],
     icon: 'heart',
-    cover: '/packageContent/assets/covers/cover-wellness.png',
+    coverKey: 'content.cover-wellness',
     readMin: 3,
     publishedAt: '2026-09-08',
     source: '院内宣传科',
@@ -138,7 +144,7 @@ const ARTICLES = [
     category: '慢病管理',
     tags: ['糖尿病', '饮食'],
     icon: 'leaf',
-    cover: '/packageContent/assets/covers/cover-nutrition.png',
+    coverKey: 'content.cover-nutrition',
     readMin: 3,
     publishedAt: '2026-09-05',
     source: '院内宣传科',
@@ -163,7 +169,7 @@ const ARTICLES = [
     category: '日常防护',
     tags: ['流感', '发热'],
     icon: 'alert',
-    cover: '/packageContent/assets/covers/cover-wellness.png',
+    coverKey: 'content.cover-wellness',
     readMin: 2,
     publishedAt: '2026-09-02',
     source: '院内宣传科',
@@ -188,7 +194,7 @@ const ARTICLES = [
     category: '老年照护',
     tags: ['跌倒预防', '适老化'],
     icon: 'shield',
-    cover: '/packageContent/assets/covers/cover-exercise.png',
+    coverKey: 'content.cover-exercise',
     readMin: 3,
     publishedAt: '2026-08-28',
     source: '院内宣传科',
@@ -215,7 +221,7 @@ const ARTICLES = [
     category: '用药安全',
     tags: ['用药安全', '老年人'],
     icon: 'pill',
-    cover: '/packageContent/assets/covers/cover-wellness.png',
+    coverKey: 'content.cover-wellness',
     readMin: 3,
     publishedAt: '2026-08-25',
     source: '院内药剂科',
@@ -241,7 +247,7 @@ const ARTICLES = [
     category: '就医指导',
     tags: ['体检', '报告解读'],
     icon: 'fileText',
-    cover: '/packageContent/assets/covers/cover-wellness.png',
+    coverKey: 'content.cover-wellness',
     readMin: 3,
     publishedAt: '2026-08-20',
     source: '院内体检中心',

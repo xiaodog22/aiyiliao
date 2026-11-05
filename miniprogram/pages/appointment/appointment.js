@@ -315,15 +315,27 @@ Page({
     fetch
       .then((all) => {
         // 只保留所选日期且能解析出时间的号源；按时间排序
+        // 2026-11-04：过滤掉「今天已过」的时段。后端虽已按 start_time > NOW() 过滤，
+        // 这里再兜一层 —— 页面停留跨过整点时，列表里残留的上一时段不能再被选中提交
+        // （提交必然 422 SLOT_IN_PAST，用户只看到"服务异常"）。
+        const now = new Date()
+        const pad = (n) => (n < 10 ? '0' + n : '' + n)
+        const todayStr = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate())
+        const nowHm = pad(now.getHours()) + ':' + pad(now.getMinutes())
         const slots = (all || [])
           .map((s) => {
             const dt = appointmentService.slotDateTime(s.startTime)
             if (!dt || dt.date !== date) return null
-            return { id: s.id, time: dt.time, remaining: s.remaining, fee: s.fee }
+            return { id: s.id, date: dt.date, time: dt.time, remaining: s.remaining, fee: s.fee }
           })
-          .filter(Boolean)
+          .filter((s) => s && (s.date > todayStr || (s.date === todayStr && s.time > nowHm)))
           .sort((a, b) => (a.time < b.time ? -1 : 1))
-        this.setData({ slots, loadingSlots: false }, () => this._applyPeriod())
+        // 空态文案要能区分「本来没排班」和「今天排的都已经过了」—— 后者是用户最常见的困惑
+        const rawCount = (all || []).length
+        const emptyHint = (!slots.length && rawCount > 0 && date === todayStr)
+          ? '今日号源已过，请选择其他日期'
+          : '该时段暂无号源，请换一天或切换时段试试。'
+        this.setData({ slots, loadingSlots: false, emptyHint }, () => this._applyPeriod())
       })
       .catch((err) => {
         this.setData({ loadingSlots: false })

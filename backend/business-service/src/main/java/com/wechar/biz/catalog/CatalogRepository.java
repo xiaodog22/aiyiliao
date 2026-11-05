@@ -130,7 +130,12 @@ public class CatalogRepository {
     public List<SlotRow> listSlots(String doctorId, Instant fromInclusive, Instant toExclusive) {
         StringBuilder sql = new StringBuilder(
                 "SELECT id, doctor_id, start_time, end_time, capacity, remaining, fee, currency "
-                        + "FROM doctor_slots WHERE doctor_id = ? AND status = 'OPEN'");
+                        + "FROM doctor_slots WHERE doctor_id = ? AND status = 'OPEN'"
+                        // 2026-11-04：过期号源不再下发。此前只有 status 判断，而历史 OPEN 号源不会自动关闭，
+                        // 前端会把「今天 09:00」照常列出，用户选中提交后必然 422 SLOT_IN_PAST。
+                        // 会话时区由连接串固定为 UTC（forceConnectionTimeZoneToSession=true），NOW(3) 与本表
+                        // start_time 同为 UTC 口径，可直接比较。
+                        + " AND start_time > NOW(3)");
         java.util.List<Object> args = new java.util.ArrayList<>(java.util.List.of(doctorId));
         if (fromInclusive != null) {
             sql.append(" AND start_time >= ?");
@@ -146,9 +151,55 @@ public class CatalogRepository {
 
     public boolean hasAvailableSlot(String doctorId) {
         Integer n = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM doctor_slots WHERE doctor_id = ? AND status = 'OPEN' AND remaining > 0",
+                // 2026-11-04：同样排除过期号源 —— 否则医生列表显示"有号"，点进去号源全过期。
+                "SELECT COUNT(*) FROM doctor_slots WHERE doctor_id = ? AND status = 'OPEN' "
+                        + "AND remaining > 0 AND start_time > NOW(3)",
                 Integer.class, doctorId);
         return n != null && n > 0;
+    }
+
+    /**
+     * 号源摘要（PERF-09，2026-11-01）：一次查出一批医生的"是否有号"+"今日剩余量"。
+     *
+     * 背景：{@code hasAvailableSlot} 与 {@code sumRemainingInWindow} 在
+     * {@code CatalogService.toDoctorData()} 里被**逐医生**各调一次 → 20 个医生 40 次子查询，
+     * 实测 1VU 无排队 P50 就 55ms（同组其它端点 6.6~12.9ms），并把全局 SQL 成本推到 20.7 次/请求。
+     *
+     * 两个旧方法语义不同但数据同源，可以一次扫描同时算出：
+     *  - availableCount：**不限时间窗**，统计 remaining &gt; 0 的 OPEN 号源条数（对应 hasAvailableSlot）；
+     *  - todayRemaining：[dayFrom, dayTo) 窗口内 OPEN 号源 remaining 合计（对应 sumRemainingInWindow）。
+     *
+     * 返回的 Map 只含**有 OPEN 号源**的医生；查不到 = 该医生今日无号且无任何可约号源，
+     * 调用方必须按"缺失 → 无号"处理（不能默认成有号）。
+     */
+    public java.util.Map<String, SlotSummary> slotSummaries(java.util.List<String> doctorIds,
+                                                           Instant dayFrom, Instant dayTo) {
+        if (doctorIds == null || doctorIds.isEmpty()) {
+            // 空列表不能拼 IN ()：MySQL/H2 都会语法报错
+            return java.util.Map.of();
+        }
+        String placeholders = String.join(",", java.util.Collections.nCopies(doctorIds.size(), "?"));
+        String sql = "SELECT doctor_id, "
+                + "SUM(CASE WHEN remaining > 0 THEN 1 ELSE 0 END) AS available_count, "
+                + "COALESCE(SUM(CASE WHEN start_time >= ? AND start_time < ? THEN remaining ELSE 0 END), 0) "
+                + "AS today_remaining "
+                + "FROM doctor_slots WHERE status = 'OPEN' AND doctor_id IN (" + placeholders + ") "
+                + "GROUP BY doctor_id";
+        java.util.List<Object> args = new java.util.ArrayList<>(doctorIds.size() + 2);
+        args.add(Timestamp.from(dayFrom));
+        args.add(Timestamp.from(dayTo));
+        args.addAll(doctorIds);
+
+        java.util.Map<String, SlotSummary> summaries = new java.util.HashMap<>();
+        jdbc.query(sql, rs -> {
+            summaries.put(rs.getString("doctor_id"),
+                    new SlotSummary(rs.getInt("available_count"), rs.getInt("today_remaining")));
+        }, args.toArray());
+        return summaries;
+    }
+
+    /** 单个医生的号源摘要，见 {@link #slotSummaries}。 */
+    public record SlotSummary(int availableCount, int todayRemaining) {
     }
 
     /**

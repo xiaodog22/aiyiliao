@@ -51,6 +51,16 @@ public class AppointmentRepository {
             + "patient_name, contact_phone_cipher, symptom_summary, status, queue_number, cancel_reason, "
             + "idempotency_key, request_digest, version, created_at, updated_at";
 
+    /**
+     * 演示库压测/冒烟残留排除（2026-11-05）：idempotency_key 以 m1-smoke / smoke- / gate-m1 / m1c-
+     * 开头的 16 条历史预约只在「列表 + 统计」读取时隐藏，数据本身不删（诊疗过程记录需可追溯）。
+     * 写入、按 id 查详情、按幂等键查重一律不拼接此条件 —— 后者参与防重复提交，过滤会导致重复建单。
+     * 回滚：去掉各处 EXCLUDE_TEST_APPTS 拼接即可，无数据回滚。
+     * JOIN 的 doctor_slots / doctors / departments / users 均无 idempotency_key 列，故无需表别名限定。
+     */
+    private static final String EXCLUDE_TEST_APPTS =
+            " AND (idempotency_key IS NULL OR idempotency_key NOT REGEXP '^(m1-smoke|smoke-|gate-m1|m1c-)') ";
+
     private static SlotRow mapSlot(java.sql.ResultSet rs, int rowNum) throws java.sql.SQLException {
         Timestamp s = rs.getTimestamp("start_time");
         Timestamp e = rs.getTimestamp("end_time");
@@ -130,7 +140,8 @@ public class AppointmentRepository {
     }
 
     public List<AppointmentRow> listByUser(String userId, String status, int limit) {
-        StringBuilder sql = new StringBuilder("SELECT " + APPT_COLS + " FROM appointments WHERE user_id = ?");
+        StringBuilder sql = new StringBuilder("SELECT " + APPT_COLS
+                + " FROM appointments WHERE user_id = ?" + EXCLUDE_TEST_APPTS);
         java.util.List<Object> args = new java.util.ArrayList<>(java.util.List.of(userId));
         if (status != null && !status.isBlank()) {
             sql.append(" AND status = ?");
@@ -148,13 +159,14 @@ public class AppointmentRepository {
     public Stats statsForUser(String userId, Instant now) {
         Integer upcoming = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM appointments WHERE user_id = ? AND status IN ('PENDING','CONFIRMED','CHECKED_IN') "
-                        + "AND slot_id IN (SELECT id FROM doctor_slots WHERE start_time >= ?)",
+                        + "AND slot_id IN (SELECT id FROM doctor_slots WHERE start_time >= ?)" + EXCLUDE_TEST_APPTS,
                 Integer.class, userId, Timestamp.from(now));
         Integer completed = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM appointments WHERE user_id = ? AND status = 'COMPLETED'",
+                "SELECT COUNT(*) FROM appointments WHERE user_id = ? AND status = 'COMPLETED'" + EXCLUDE_TEST_APPTS,
                 Integer.class, userId);
         Integer cancelled = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM appointments WHERE user_id = ? AND status IN ('CANCELLED','EXPIRED','NO_SHOW')",
+                "SELECT COUNT(*) FROM appointments WHERE user_id = ? AND status IN ('CANCELLED','EXPIRED','NO_SHOW')"
+                        + EXCLUDE_TEST_APPTS,
                 Integer.class, userId);
         return new Stats(upcoming == null ? 0 : upcoming, completed == null ? 0 : completed,
                 cancelled == null ? 0 : cancelled);
@@ -165,7 +177,7 @@ public class AppointmentRepository {
         return jdbc.query("SELECT " + APPT_COLS + " FROM appointments a, doctor_slots s "
                         + "WHERE a.slot_id = s.id AND a.user_id = ? "
                         + "AND a.status IN ('PENDING','CONFIRMED') AND s.start_time >= ? "
-                        + "ORDER BY s.start_time ASC, a.id ASC",
+                        + EXCLUDE_TEST_APPTS + "ORDER BY s.start_time ASC, a.id ASC",
                 AppointmentRepository::mapAppt, userId, Timestamp.from(now)).stream().findFirst();
     }
 
@@ -215,7 +227,7 @@ public class AppointmentRepository {
     }
 
     public List<AppointmentView> listViewByUser(String userId, String status, int limit) {
-        StringBuilder sql = new StringBuilder(VIEW_SELECT + " AND a.user_id = ?");
+        StringBuilder sql = new StringBuilder(VIEW_SELECT + " AND a.user_id = ?" + EXCLUDE_TEST_APPTS);
         java.util.List<Object> args = new java.util.ArrayList<>(java.util.List.of(userId));
         if (status != null && !status.isBlank()) {
             sql.append(" AND a.status = ?");
@@ -228,7 +240,8 @@ public class AppointmentRepository {
 
     public Optional<AppointmentView> nextUpcomingViewForUser(String userId, Instant now) {
         return jdbc.query(VIEW_SELECT + " AND a.user_id = ? AND a.status IN ('PENDING','CONFIRMED') "
-                        + "AND s.start_time >= ? ORDER BY s.start_time ASC, a.id ASC",
+                        + "AND s.start_time >= ? " + EXCLUDE_TEST_APPTS
+                        + "ORDER BY s.start_time ASC, a.id ASC",
                 AppointmentRepository::mapView, userId, Timestamp.from(now)).stream().findFirst();
     }
 
@@ -243,7 +256,7 @@ public class AppointmentRepository {
     public List<AppointmentView> listViewByDoctor(String doctorId, String status, Instant dayFromInclusive,
                                                   Instant dayToExclusive, Instant cursorTime, String cursorId,
                                                   int limit) {
-        StringBuilder sql = new StringBuilder(VIEW_SELECT + " AND a.doctor_id = ?");
+        StringBuilder sql = new StringBuilder(VIEW_SELECT + " AND a.doctor_id = ?" + EXCLUDE_TEST_APPTS);
         java.util.List<Object> args = new java.util.ArrayList<>(java.util.List.of(doctorId));
         if (status != null && !status.isBlank()) {
             sql.append(" AND a.status = ?");

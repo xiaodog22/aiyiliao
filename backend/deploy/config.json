@@ -4,6 +4,7 @@
   "proxyTimeoutSeconds": 220,
   "probeTimeoutSeconds": 2,
   "healthTimeoutSeconds": 90,
+  "logging": { "level": "INFO", "perRequest": false },
   "rateLimit": { "enabled": false, "perMinute": 300, "windowSeconds": 60 },
   "cors": { "enabled": false, "allowOrigins": [] },
   "assets": { "dir": "backend/deploy/resources" },

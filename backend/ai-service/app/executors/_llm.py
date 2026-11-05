@@ -1,10 +1,15 @@
-"""M2 生成类执行器共享的 Ollama 助手（TRIAGE 执行器保持自包含，此处不改动它）。
+"""M2 生成类执行器共享的 LLM 助手。
 
 统一收口四件事，避免 CHAT / CARE_PLAN 各写一份后行为漂移：
   1. 档位 → 模型名解析（small-default / large-upgrade）；
   2. 就位性**快降级**（服务不可达 / 模型缺失 → CAPABILITY_UNAVAILABLE，秒级返回）；
-  3. 一次生成调用（独立短超时；超时/HTTP 错误 → 结构化 TaskFailure）；
+  3. 一次生成调用（**统一走 providers.chain 三步走链**：Ollama → DeepSeek → 兜底）；
   4. 输出解析与结构校验（不合法即失败，**绝不缝合半成品**）。
+
+与 2026-11-04 之前的行为差异：
+  - 生成不再直连 Ollama，而是经 `providers.chain`——Ollama 首 token 超时后自动切 DeepSeek；
+  - `dependency` 由 `chain.current_provider()` 动态归因（最后一跳是谁就报谁，不硬编码 ollama）；
+  - `AI_OLLAMA_FIRST_TOKEN_TIMEOUT` 只卡**首个 token**，不卡总生成时长。
 
 红线：不造假、不静默、错误码与 dependency 如实上报（O-10 原则）。
 """
@@ -13,25 +18,16 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from typing import Any, Optional
 
 import httpx
 
 from ..config import Settings
-from ..http_client import ollama_client
 from ..metrics import metrics
+from ..providers import chain
 from ..tasks import TaskContext, TaskFailure
 
 logger = logging.getLogger("ai-service.executors.llm")
-
-
-class _StreamFallback(Exception):
-    """流式生成中途失败的信号：捕获后回退到非流式调用（不抛给用户）。"""
-
-
-def _safe_err_name(exc: BaseException) -> str:
-    return exc.__class__.__name__
 
 LARGE_PROFILE = "large-upgrade"
 PROVENANCE_AI = "AI_GENERATED"
@@ -43,15 +39,33 @@ def resolve_model(settings: Settings, profile: Optional[str]) -> str:
     return settings.large_model if profile == LARGE_PROFILE else settings.small_model
 
 
-async def ensure_model_ready(probe, model: str, *, dependency: str = "ollama") -> None:
-    """就位性快降级：探针带 5s 缓存，通常毫秒级返回。"""
+def current_dependency() -> str:
+    """当前（或最后）实际使用/尝试的 provider，供结果 `llmSource` 与错误 `dependency` 使用。"""
+    return chain.current_provider()
+
+
+async def ensure_model_ready(
+    probe, model: str, *, settings: Optional[Settings] = None, dependency: str = "ollama",
+) -> None:
+    """就位性快降级：探针带 5s 缓存，通常毫秒级返回。
+
+    `settings` 传入时按「是否配好第二级」自动判断：已配置 DeepSeek → 本地模型缺失
+    **不再硬失败**，交给链去尝试第二级；否则保持原有的秒级 CAPABILITY_UNAVAILABLE（向后兼容）。
+    """
+    allow_fallback = chain.has_fallback(settings) if settings is not None else False
     tags = await probe.ollama_tags()
     if tags is None:
+        if allow_fallback:
+            logger.info("本机模型服务不可达，跳过就位检查，交给 provider 链降级")
+            return
         raise TaskFailure(
             "CAPABILITY_UNAVAILABLE", f"本机模型服务不可达（{dependency}）",
             dependency=dependency, retryable=True,
         )
     if model not in tags:
+        if allow_fallback:
+            logger.info("本地模型 %s 未安装，跳过就位检查，交给 provider 链降级", model)
+            return
         raise TaskFailure(
             "CAPABILITY_UNAVAILABLE", f"模型 {model} 未安装",
             dependency=dependency, retryable=True,
@@ -87,92 +101,6 @@ def build_options(task: dict, *, temperature: float, num_predict: int) -> dict:
     return options
 
 
-def _ollama_generate_url(settings: Settings) -> str:
-    return settings.ollama_url.rstrip("/") + "/api/generate"
-
-
-async def _post_ollama_generate(
-    client: httpx.AsyncClient, settings: Settings, payload: dict, timeout_s: float
-) -> httpx.Response:
-    """POST /api/generate 一次，错误统一映射为 TaskFailure（非流式调用路径共用）。
-
-    连接级错误（超时/不可达）→ MODEL_TIMEOUT / CAPABILITY_UNAVAILABLE（可重试）；
-    4xx/5xx → CAPABILITY_UNAVAILABLE（404 模型缺失）或 MODEL_UNAVAILABLE（其他）。
-    不静默、不缝合半成品。
-    """
-    try:
-        resp = await client.post(
-            _ollama_generate_url(settings),
-            json=payload,
-            timeout=httpx.Timeout(timeout_s, connect=settings.probe_timeout_seconds),
-        )
-    except httpx.TimeoutException:
-        raise TaskFailure("MODEL_TIMEOUT", f"模型响应超时（{timeout_s:.0f}s）", dependency="ollama", retryable=True)
-    except httpx.HTTPError as exc:
-        raise TaskFailure(
-            "CAPABILITY_UNAVAILABLE", f"模型服务请求失败（{_safe_err_name(exc)}）",
-            dependency="ollama", retryable=True,
-        )
-    if resp.status_code == 404:
-        raise TaskFailure("CAPABILITY_UNAVAILABLE", f"模型 {payload.get('model')} 未安装或不可用", dependency="ollama", retryable=True)
-    if resp.status_code >= 400:
-        raise TaskFailure("MODEL_UNAVAILABLE", f"模型服务返回 HTTP {resp.status_code}", dependency="ollama", retryable=True)
-    return resp
-
-
-async def _generate_streaming(
-    settings: Settings, model: str, payload: dict, timeout_s: float,
-    *, transport: Optional[httpx.AsyncBaseTransport] = None,
-) -> tuple[str, str]:
-    """流式生成：stream=True 累积 partial response，返回 (全文, 模型名)。
-
-    成功时记录首 token 延迟（metrics）。任何中途失败（连接错误 / 流式 4xx / 空响应）
-    抛出 `_StreamFallback`，由 `generate_text` 捕获并回退非流式。
-    """
-    stream_payload = {**payload, "stream": True}
-    buf: list[str] = []
-    first_token_ms: Optional[float] = None
-    t0 = time.monotonic()
-    async with ollama_client(settings, transport=transport) as client:
-        try:
-            async with client.stream(
-                "POST",
-                _ollama_generate_url(settings),
-                json=stream_payload,
-                timeout=httpx.Timeout(timeout_s, connect=settings.probe_timeout_seconds),
-            ) as resp:
-                if resp.status_code >= 400:
-                    # 让非流式分支用同样的错误映射处理（保持错误码一致）
-                    raise _StreamFallback(httpx.HTTPStatusError(f"stream status {resp.status_code}", request=resp.request, response=resp))
-                async for line in resp.aiter_lines():
-                    line = line.strip()
-                    if not line:
-                        continue
-                    if first_token_ms is None:
-                        first_token_ms = (time.monotonic() - t0) * 1000
-                    try:
-                        obj = json.loads(line)
-                    except (ValueError, TypeError):
-                        continue
-                    if obj.get("done"):
-                        break
-                    chunk = obj.get("response") or ""
-                    if chunk:
-                        buf.append(chunk)
-        except (httpx.TimeoutException, httpx.HTTPError) as exc:
-            raise _StreamFallback(exc)
-
-    text = "".join(buf)
-    if not text:
-        # 流式拿到空响应：回退非流式（避免误判为正常空输出）
-        raise _StreamFallback(RuntimeError("stream produced empty response"))
-    if first_token_ms is not None:
-        metrics().record_first_token(first_token_ms)
-        metrics().record_stream_ok()
-        logger.info("LLM 首 token 延迟 | model=%s | firstTokenMs=%.0f | chars=%d", model, first_token_ms, len(text))
-    return text, str(model)
-
-
 async def generate_text(
     settings: Settings,
     model: str,
@@ -183,52 +111,60 @@ async def generate_text(
     *,
     transport: Optional[httpx.AsyncBaseTransport] = None,
     json_mode: bool = False,
+    first_token_timeout_s: Optional[float] = None,
+    fallback_timeout_s: Optional[float] = None,
 ) -> tuple[str, str]:
-    """调用 Ollama /api/generate，返回 (response 文本, 实际模型名)。
+    """经 provider 链生成，返回 (response 文本, 实际模型名)。
 
     失败一律 TaskFailure（可识别码），不抛裸异常、不返回半成品。
 
-    并发/复用（2026-10-22）：
-    - 底层 httpx client 走 `ollama_client`（复用进程级单例或一次性 client，受 `llm_http_client_reuse` 控制）。
-    - 当 `settings.llm_stream=True`（新行为）时优先走流式；流式中途失败自动回退非流式
-      （WARN + metrics 计数），返回契约不变。
-    - `transport` 注入（测试）：固定一次性 client，行为与优化前一致。
+    参数语义：
+    - `first_token_timeout_s`：Ollama **首 token** 阈值（不填则用全局 `AI_OLLAMA_FIRST_TOKEN_TIMEOUT`）；
+      超时即切第二级，不是"总时长超时"——7B 生成 300 token 在 CPU 上远超 6~10s。
+    - `fallback_timeout_s`：第二级（DeepSeek）的单次预算；不填则复用 `timeout_s`。
+    - `transport`：测试注入固定 transport（与生产复用 client 行为一致）。
     """
     payload: dict = {
         "model": model, "system": system, "prompt": prompt, "stream": False, "options": options,
     }
     if json_mode:
-        payload["format"] = "json"  # 小模型结构化输出：强制 JSON，降低跑偏概率
+        payload["format"] = "json"  # 结构化输出：Ollama 用 format，DeepSeek 用 response_format
 
-    # 新行为：流式优先（transport 注入场景也走流式，便于离线测试；回退路径同样走 transport）
-    if settings.llm_stream:
-        try:
-            return await _generate_streaming(settings, model, payload, timeout_s, transport=transport)
-        except _StreamFallback as fb:
-            logger.warning(
-                "LLM 流式失败，回退非流式 | model=%s | reason=%s",
-                model, _safe_err_name(fb.args[0]) if fb.args else "unknown",
-            )
-            metrics().record_stream_fallback(_safe_err_name(fb.args[0]) if fb.args else "unknown")
-            payload = {**payload, "stream": False}
+    first = first_token_timeout_s
+    if first is None:
+        first = settings.ollama_first_token_timeout
 
-    async with ollama_client(settings, transport=transport) as client:
-        resp = await _post_ollama_generate(client, settings, payload, timeout_s)
-        try:
-            raw = resp.json()
-            text = str(raw.get("response") or "")
-            actual_model = str(raw.get("model") or model)
-        except (ValueError, TypeError):
-            raise TaskFailure("MODEL_OUTPUT_INVALID", "模型响应不是合法 JSON", dependency="ollama", retryable=False)
-    return text, actual_model
+    result = await chain.generate(
+        settings,
+        payload,
+        timeout_s=timeout_s,
+        first_token_timeout_s=float(first),
+        fallback_timeout_s=fallback_timeout_s,
+        transport=transport,
+    )
+    if result.stream_fallback_reason:
+        # 流式入口不可用 → 同 provider 非流式已成功：只降级不报错，但必须留痕
+        logger.warning(
+            "LLM 流式失败，回退非流式 | model=%s | reason=%s",
+            model, result.stream_fallback_reason,
+        )
+        metrics().record_stream_fallback(result.stream_fallback_reason)
+    return result.text, result.model
 
 
-def parse_json_strict(response_text: str) -> Any:
-    """解析模型返回的 JSON 文本；不合法 → MODEL_OUTPUT_INVALID（不猜测、不修补）。"""
+def parse_json_strict(response_text: str, dependency: Optional[str] = None) -> Any:
+    """解析模型返回的 JSON 文本；不合法 → MODEL_OUTPUT_INVALID（不猜测、不修补）。
+
+    `dependency` 默认取链记录的**实际** provider（可能是 deepseek），避免把第二级的问题
+    错报成"本机 Ollama 输出不合法"。
+    """
     try:
         return json.loads(response_text or "")
     except (ValueError, TypeError):
-        raise TaskFailure("MODEL_OUTPUT_INVALID", "模型输出不是合法 JSON", dependency="ollama", retryable=False)
+        raise TaskFailure(
+            "MODEL_OUTPUT_INVALID", "模型输出不是合法 JSON",
+            dependency=dependency or current_dependency(), retryable=False,
+        )
 
 
 def trim(value: Any, limit: int) -> Optional[str]:

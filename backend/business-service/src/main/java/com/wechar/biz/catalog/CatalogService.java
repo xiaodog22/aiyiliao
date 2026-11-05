@@ -9,6 +9,7 @@ import com.wechar.biz.common.Digests;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -93,11 +94,32 @@ public class CatalogService {
                 .toList();
     }
 
+    /**
+     * 医生行 → 对外 DTO。**PERF-09（2026-11-01）已改为批量取号源摘要**。
+     *
+     * 原实现的 N+1：每个医生各调一次 {@code hasAvailableSlot(id)} 和 {@code slotStatus(id)}，
+     * 20 个医生 = 1 主查询 + 40 子查询 = 41 SQL/请求；实测 1VU 无排队 P50 55ms
+     * （同组端点 6.6~12.9ms），全局 SQL 成本被推到 20.7 次/请求。
+     *
+     * 现实现：先按 id 列表一次性聚合（1 次 SQL），再在内存里组装 → 总计 2 次 SQL，
+     * **与医生数量无关**。回归防线见 {@code DoctorQueryBudgetTest}。
+     */
     private List<DoctorData> toDoctorData(List<CatalogRepository.DoctorRow> rows) {
+        if (rows.isEmpty()) {
+            return List.of(); // 不发无意义的 IN () 查询
+        }
+        Instant dayFrom = clock.instant().truncatedTo(ChronoUnit.DAYS);
+        Instant dayTo = dayFrom.plus(1, ChronoUnit.DAYS);
+        Map<String, CatalogRepository.SlotSummary> summaries = repository.slotSummaries(
+                rows.stream().map(CatalogRepository.DoctorRow::id).toList(), dayFrom, dayTo);
+
         return rows.stream().map(d -> {
             List<String> specialties = parseSpecialties(d.specialtiesJson());
-            Boolean hasSlot = repository.hasAvailableSlot(d.id());
-            String[] slotStatus = slotStatus(d.id());
+            CatalogRepository.SlotSummary summary = summaries.get(d.id());
+            // 聚合里查不到该医生 = 没有任何 OPEN 号源（旧 hasAvailableSlot 会返回 false）
+            boolean hasSlot = summary != null && summary.availableCount() > 0;
+            int todayRemaining = summary == null ? 0 : summary.todayRemaining();
+            String[] slotStatus = slotStatusOf(todayRemaining);
             return new DoctorData(d.id(), d.name(), d.departmentId(), d.departmentName(), d.title(),
                     null, specialties, d.introduction(), hasSlot, slotStatus[0], slotStatus[1]);
         }).toList();
@@ -110,11 +132,11 @@ public class CatalogService {
      *  - 其余 → OPEN「今日可预约」。
      * 返回 [枚举, 中文文案]——红线：状态不靠颜色单独表达，文案随枚举同时下发。
      * 仅展示提示：下单仍以 createAppointment 原子扣减为准（契约 hasAvailableSlot 同语义）。
+     *
+     * 入参是**已算好的剩余量**而不是 doctorId：判定逻辑与取数解耦，
+     * 既能被批量路径复用，也让三态规则可以单测（无需 mock 仓库）。
      */
-    private String[] slotStatus(String doctorId) {
-        java.time.Instant dayFrom = clock.instant().truncatedTo(java.time.temporal.ChronoUnit.DAYS);
-        java.time.Instant dayTo = dayFrom.plus(1, java.time.temporal.ChronoUnit.DAYS);
-        int remaining = repository.sumRemainingInWindow(doctorId, dayFrom, dayTo);
+    private String[] slotStatusOf(int remaining) {
         if (remaining <= 0) {
             return new String[] {"FULL", "约满"};
         }

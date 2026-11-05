@@ -140,6 +140,26 @@ public class AuthSessionStore {
         return rows.stream().findFirst();
     }
 
+    /**
+     * 物理清除已彻底失效的会话行（PERF-06，2026-11-01）。
+     *
+     * 判据用 **refresh_expires_at**，不是 access_expires_at：access 过期后 refresh 仍可轮换，
+     * 提前删会让用户在 7 天内无法续期；反过来说 refresh 过期即整条会话彻底无用，删之无副作用。
+     * cutoff 再留 grace 余量（见调用方），避免多实例时钟漂移把边界行误删。
+     *
+     * 分批删除：limit 控制单批行数，避免一次删数十万行压住 undo log 与主从延迟。
+     * 返回本批实删行数，调用方循环到 0 为止。
+     *
+     * ⚠️ 不加 ORDER BY：目标是"删掉所有过期行"，删哪个先无所谓 —— 排序只会多一次排序开销；
+     * 且 **H2 不支持 DELETE ... ORDER BY ... LIMIT**（测试库 MODE=MySQL 也会语法报错），
+     * 加了会让生产可跑、测试不可跑，破坏可移植性（2026-11-01 实测踩到）。
+     * 依赖 V9004 建在 refresh_expires_at 上的索引做范围扫描。
+     */
+    public int deleteRefreshExpiredBefore(Instant cutoff, int limit) {
+        return jdbc.update("DELETE FROM auth_sessions WHERE refresh_expires_at < ? LIMIT ?",
+                Timestamp.from(cutoff), limit);
+    }
+
     private String ownerId(String refreshHash) {
         var rows = jdbc.query("SELECT user_id FROM auth_sessions WHERE refresh_token_hash = ?",
                 (rs, i) -> rs.getString(1), refreshHash);

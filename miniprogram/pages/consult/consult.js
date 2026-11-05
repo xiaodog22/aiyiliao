@@ -345,7 +345,8 @@ Page({
       return {
         id,
         kind: 'file',
-        url: key ? userService.resolveAttachmentUrl(key) : '',
+        // 只有本次会话上传过的文件才有签名 url；重载后无 url → 空串，模板退化为文件卡（不裂图）
+        url: meta.url ? userService.resolveAttachmentUrl(meta.url) : '',
         isImage: IMG_RE.test(name),
         isPdf: /\.pdf(\?|$)/i.test(name),
         fileName: name,
@@ -654,6 +655,8 @@ Page({
   /**
    * 上传 → 以 IMAGE_NOTE 消息发出。
    * ⚠️ 前端不构造任何 URL（objectKey 由服务端下发）；uploading 兼作防重复闸门。
+   * ⚠️ 用**独立上传**端点（POST /api/v1/attachments）：会话内发图没有既有档案，
+   *    走 health-records/{recordId}/attachments 会因 recordId 为空得到 404。
    */
   _uploadAndSend(path, size, name) {
     if (!path) return
@@ -664,12 +667,13 @@ Page({
     const id = this.data.activeId
     this.setData({ uploading: true })
     userService
-      .uploadAttachment(null, path)
+      .uploadStandaloneAttachment(path)
       .then((att) => {
         const objectKey = (att && (att.objectKey || att.object_key)) || ''
         if (!objectKey) throw new Error('EMPTY_KEY')
-        // 记下本次会话的真实文件名/大小：契约消息体不带这两项，重载后按 objectKey 末段展示
-        this._fileMeta[objectKey] = { name, size }
+        // 记下本次会话的真实文件名/大小与短期签名 url：
+        // 契约消息体只带 objectKey，重载后拿不到签名 → 图片降级为文件卡（不裂图）
+        this._fileMeta[objectKey] = { name, size, url: (att && att.url) || '' }
         return userService.sendConsultationMessage(id, { content: objectKey, inputMode: 'IMAGE' })
       })
       .then(() => this._loadMessages())

@@ -59,16 +59,21 @@ public class CarePlanService {
     private final AiTaskService aiTaskService;
     private final ObjectMapper mapper;
     private final Clock clock;
+    /** 模型档位（2026-11-04 可配置）：默认 large-upgrade=7b；small-default=0.5b 更快但会误判拒答。 */
+    private final String modelProfile;
 
     public CarePlanService(CarePlanRepository repository, AiTaskService aiTaskService,
                            ObjectMapper mapper, Clock clock,
                            @org.springframework.beans.factory.annotation.Value(
-                                   "${wechar.care-plan.await-seconds:75}") long awaitSeconds) {
+                                   "${wechar.care-plan.await-seconds:75}") long awaitSeconds,
+                           @org.springframework.beans.factory.annotation.Value(
+                                   "${app.ai.careplan-profile:large-upgrade}") String modelProfile) {
         this.repository = repository;
         this.aiTaskService = aiTaskService;
         this.mapper = mapper;
         this.clock = clock;
         this.taskBudget = Duration.ofSeconds(Math.max(5, awaitSeconds));
+        this.modelProfile = (modelProfile == null || modelProfile.isBlank()) ? "large-upgrade" : modelProfile;
     }
 
     /** 生成结果；replayed 用于 Idempotency-Replayed 头。 */
@@ -116,8 +121,13 @@ public class CarePlanService {
      */
     private CarePlanData generate(String userId, String rowId, CarePlanRequest request) {
         Instant now = clock.instant();
+        // 2026-11-04：显式要求 large 档（qwen2.5:7b）。此前传 null → ai-service 落到 small 档
+        // （qwen2.5:0.5b），小模型无法按 JSON 契约给三天膳食/运动/作息，直接把「睡不好/想多活动」
+        // 这类日常目标判成 refused=true，业务侧只能回空计划 + 拒答文案（实测 1.3~3.5s 就"完成"）。
+        // 代价是 CPU 上约 60~120s，故配套 AI_CAREPLAN_TIMEOUT_SECONDS / WECHAR_CAREPLAN_AWAIT_SECONDS
+        // 一起放宽（见 deploy/env.local 与 application.yml 的链路口径）。
         var taskRow = aiTaskService.create(userId, null, "CARE_PLAN",
-                null, buildInput(request), null, null,
+                null, buildInput(request), modelProfile, null,
                 request.locale() == null || request.locale().isBlank() ? "zh-CN" : request.locale());
         var task = aiTaskService.await(userId, taskRow.id(), taskBudget);
 

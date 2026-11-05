@@ -36,6 +36,7 @@ from ..tasks import TaskContext, TaskFailure
 from ._llm import (
     PROVENANCE_AI,
     build_options,
+    current_dependency,
     ensure_model_ready,
     generate_text,
     parse_json_strict,
@@ -88,7 +89,7 @@ def build_careplan_executor(
         profile = str(task.get("modelProfile") or "small-default")
         model = resolve_model(settings, profile)
 
-        await ensure_model_ready(probe, model)
+        await ensure_model_ready(probe, model, settings=settings)
 
         # 加载院内知识库（careplan 场景，预算 300 tokens）
         hospital_knowledge = knowledge_loader.get_knowledge("careplan", budget_tokens=300)
@@ -113,12 +114,14 @@ def build_careplan_executor(
             _USER_PROMPT.format(goal=goal),
             options, settings.careplan_timeout_seconds,
             transport=transport, json_mode=True,
+            first_token_timeout_s=settings.first_token_timeout_for("careplan"),
+            fallback_timeout_s=settings.deepseek_timeout_for("careplan", settings.careplan_timeout_seconds),
         )
 
         payload = parse_json_strict(response_text)
         if not isinstance(payload, dict):
             raise TaskFailure("MODEL_OUTPUT_INVALID", "模型输出缺少照护建议结构",
-                              dependency="ollama", retryable=False)
+                              dependency=current_dependency(), retryable=False)
 
         refused = bool(payload.get("refused")) if isinstance(payload.get("refused"), bool) else False
         suggestions = _normalize_suggestions(payload.get("suggestions"))
@@ -144,6 +147,7 @@ def build_careplan_executor(
                 "refused": refused,
                 "refusalReason": refusal_reason,
                 "provenance": PROVENANCE_AI,
+                "llmSource": current_dependency(),  # ollama | deepseek
             },
             "model": {
                 "modelId": actual_model,

@@ -22,6 +22,10 @@ Pygments==2.21.0
 pytest==9.1.1
 python-dotenv==1.2.4
 PyYAML==6.0.3
+# sniffio 是 anyio 的运行时依赖（anyio 4.x 声明为可选，缺了不会报错，但 current_async_library()
+# 会每次调用都尝试 import 并重扫 sys.path）。2026-11-01 压测实测：缺失时它吃掉 48.6% 的 CPU，
+# 25VU 吞吐 143 → 补装后 296.6 RPS。**重建 venv 时务必保留本行**。
+sniffio==1.3.1
 starlette==1.8.0
 typing-inspection==0.4.4
 typing_extensions==4.16.0

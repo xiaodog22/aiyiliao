@@ -18,6 +18,7 @@ import hmac
 import logging
 import os
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -225,7 +226,11 @@ async def synthesize(settings: Settings, text: str, engine_voice: str, out_path:
     if edge_tts is None:
         raise RuntimeError("TTS 引擎 edge-tts 未安装")
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = out_path.with_name(out_path.name + ".part")
+    # 2026-11-04：临时文件名必须**唯一**。同一段文本被并发合成（前端自动播报 + 用户手动点播、
+    # 或失败重试）会算出同一个 out_path（内容寻址）；若 .part 名固定，两个协程写同一文件，
+    # 先完成的一方 replace 时另一方仍持有写句柄 → Windows 直接 WinError 32，
+    # 表现为 TTS 503「合成任务失败」（实测 20:30 那批日志）。
+    tmp_path = out_path.with_name(f"{out_path.name}.{uuid.uuid4().hex[:12]}.part")
 
     started = time.perf_counter()
     metrics: dict = {

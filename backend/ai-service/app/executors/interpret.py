@@ -40,6 +40,7 @@ from ..tasks import TaskContext, TaskFailure
 from ._llm import (
     PROVENANCE_AI,
     build_options,
+    current_dependency,
     ensure_model_ready,
     generate_text,
     parse_json_strict,
@@ -91,7 +92,7 @@ def build_interpret_executor(
         profile = str(task.get("modelProfile") or "small-default")
         model = resolve_model(settings, profile)
 
-        await ensure_model_ready(probe, model)
+        await ensure_model_ready(probe, model, settings=settings)
 
         # 加载院内知识库（interpret 场景，预算 400 tokens）
         hospital_knowledge = knowledge_loader.get_knowledge("interpret", budget_tokens=400)
@@ -116,12 +117,14 @@ def build_interpret_executor(
             _USER_PROMPT.format(record=record, scope=scope),
             options, settings.interpret_timeout_seconds,
             transport=transport, json_mode=True,
+            first_token_timeout_s=settings.first_token_timeout_for("interpret"),
+            fallback_timeout_s=settings.deepseek_timeout_for("interpret", settings.interpret_timeout_seconds),
         )
 
         payload = parse_json_strict(response_text)
         if not isinstance(payload, dict):
             raise TaskFailure("MODEL_OUTPUT_INVALID", "模型输出缺少解读结构",
-                              dependency="ollama", retryable=False)
+                              dependency=current_dependency(), retryable=False)
 
         refused = bool(payload.get("refused")) if isinstance(payload.get("refused"), bool) else False
         summary = trim(payload.get("summary"), 300)
@@ -135,7 +138,7 @@ def build_interpret_executor(
         elif summary is None:
             # 非拒答但连一句话结论都没有 → 视为输出无效（不用占位文案兜底）
             raise TaskFailure("MODEL_OUTPUT_INVALID", "模型未给出解读结论",
-                              dependency="ollama", retryable=False)
+                              dependency=current_dependency(), retryable=False)
 
         logger.info("INTERPRET 完成 task=%s model=%s refused=%s n=%d",
                     task.get("taskId"), actual_model, refused, len(sections))
@@ -148,6 +151,7 @@ def build_interpret_executor(
                 "refusalReason": refusal_reason,
                 "language": language,
                 "provenance": PROVENANCE_AI,
+                "llmSource": current_dependency(),  # ollama | deepseek
             },
             "model": {
                 "modelId": actual_model,

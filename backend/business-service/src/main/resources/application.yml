@@ -18,6 +18,19 @@ spring:
   web:
     resources:
       add-mappings: false
+  # 上传体积（2026-11-04 云托管核查补齐）
+  # ⚠️ Spring Boot 默认 max-file-size=1MB / max-request-size=10MB：超过 1MB 的手机照片会在
+  #    进入 Controller **之前**被 multipart 解析器拒绝，导致 app.attachment.max-bytes=10MB
+  #    与 ATTACHMENT_TOO_LARGE 文案完全失效（本地用小图演示测不出来，真机首日必现）。
+  # 这里按业务上限放宽：单文件 50MB（视频上限）> 图片/PDF 10MB；请求体 55MB 覆盖表单开销。
+  # 红线：max-file-size 不得小于 app.attachment.video-max-bytes，否则 50MB 视频会被容器层挡掉。
+  # 临时文件仍落 java.io.tmpdir（容器内 /tmp 可写）；若需隔离磁盘压力，再用
+  # spring.servlet.multipart.location 指向 /app/run/tmp（云镜像已 mkdir）。
+  servlet:
+    multipart:
+      max-file-size: ${MULTIPART_MAX_FILE_SIZE:50MB}
+      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:55MB}
+      file-size-threshold: 512KB
   # MySQL 为硬依赖（docs/v4/08 §7）：连不上就启动失败并明确报错，不用降级掩盖。
   # 生产必须覆盖 MYSQL_URL / MYSQL_USER / MYSQL_PASSWORD（见 README §环境变量清单）。
   datasource:
@@ -56,8 +69,13 @@ app:
     mode: ${APP_AUTH_MODE:strict}
   # 资源库（V14）：图片/图标元数据登记在 resource_asset 表，二进制留在文件系统（**不存 BLOB**）。
   # public-base-url 配置后，资源清单 items[].url 拼为 {base}/api/v1/resources/{key}（绝对 HTTPS，
-  # 供 <image> 与 wx.downloadFile；小程序后台 downloadFile 合法域名需与之一致）。留空 → url=null，
-  # 前端回退包内 bundlePath，行为与改造前一致（也是灰度回滚开关）。
+  # 供 <image> 与 wx.downloadFile；小程序后台 downloadFile 合法域名需与之一致）。
+  # ⚠️ 留空（url=null）**不等于全部回退包内**（2026-11-04 校正，原注释不准确）：
+  #    - 首页 home.js 走 resolveResource()：url 为空 → 用包内 assets（确实不请求网络）；
+  #    - 登录页 login.js 走 resourceUrl()：url 为空 → 按前端 ENV.gateway 自拼
+  #      {gateway}/api/v1/resources/{key}?v={sha256前12}，**仍然走网络**。
+  #    因此云上不配本项时，登录页首屏图仍要求 request + downloadFile 合法域名可用；
+  #    若要彻底免域名（wx.cloud.callContainer 形态），必须把登录页改用 resolveResource 或包内直取。
   resources:
     public-base-url: ${APP_RESOURCES_PUBLIC_BASE_URL:}
     # 资源根目录：相对 business-service 工作目录（mvnw spring-boot:run 时为 backend/business-service），
@@ -66,6 +84,14 @@ app:
   # 头像等用户上传文件根目录（V8）：business 进程工作目录相对路径；生产可挂独立卷。
   upload:
     dir: ${APP_UPLOAD_DIR:./run/uploads}
+  # AI 模型档位（2026-11-04）：把"用 7b 还是 0.5b"从代码里挪到配置，便于按机器性能取舍。
+  #   large-upgrade = qwen2.5:7b（准，CPU 上 30~90s）
+  #   small-default = qwen2.5:0.5b（快，但实测：分诊会把兜底科室排第一且置信度虚高、
+  #                                养护会把「睡不好/想多活动」直接判成 refused=true）
+  # 默认 large；显存/CPU 吃紧时可临时覆盖成 small-default 换速度（准确率下降，页面会如实标注来源）。
+  ai:
+    triage-profile: ${APP_AI_TRIAGE_PROFILE:large-upgrade}
+    careplan-profile: ${APP_AI_CAREPLAN_PROFILE:large-upgrade}
   # 健康档案附件签名与限额（V9；2026-10-19 阶段一支持 mp4）
   # ⚠️ sign-secret 生产必须固定且多实例一致（2026-10-23 收口）：缺省空值时代码**启动即失败**
   #    （fail-fast，不再生成进程内随机密钥），必须用 APP_ATTACHMENT_SIGN_SECRET 注入强随机值。
@@ -123,6 +149,9 @@ voice:
 # （AI_CAREPLAN_TIMEOUT_SECONDS，默认 60），否则上游还在跑本层就先 503；
 # 同时必须 < 网关代理超时（GW_PROXY_TIMEOUT_SECONDS，220）与前端超时（180）。
 # 缺省 75 = 上游 60 + 15 余量。调低会重现"能成功却报不可用"，调高只会多占请求线程。
+# 2026-11-04：CARE_PLAN 改用 large 档（7b）后，本地/CPU 实测 60~120s，故本地 env.local 覆盖为
+# AI_CAREPLAN_TIMEOUT_SECONDS=150 / await=165（链路 150 < 165 < 180 < 220）；默认值仍是 75，
+# 不影响未覆盖该变量的部署（但那些部署会继续用 small 档，见 CarePlanService#generate 注释）。
 wechar:
   care-plan:
     await-seconds: ${WECHAR_CAREPLAN_AWAIT_SECONDS:75}
@@ -177,6 +206,11 @@ app:
     dev-login:
       enabled: ${APP_AUTH_DEV_LOGIN_ENABLED:false}
       key: ${APP_AUTH_DEV_LOGIN_KEY:}
+      # V9010 演示患者：手输手机号 → dev openid 映射（仅 dev 档存在本键）。
+      # 格式 <11位手机号>=<openid>，逗号分隔；映射中的手机号自动并入手输白名单。
+      # 这是 dev 档演示身份的显式登记，不是微信真实凭证；缺省映射为空 → 原两个开发账号行为不变。
+      # 生产/itest profile 没有本键，provider 取空映射，不影响既有语义。
+      identity-map: ${APP_AUTH_DEV_LOGIN_IDENTITY_MAP:13800138011=dev-v9010-patient-a,13800138012=dev-v9010-patient-b,13800138013=dev-v9010-patient-c}
 
 ---
 # 集成测试档（@SpringBootTest spring.profiles.active=itest）：**唯一**保留 header 档的 profile，

@@ -3,3 +3,8 @@
 app:
   attachment:
     sign-secret: test-sign-secret-0123456789abcdef
+
+# 2026-11-05：与 application-itest.yml 同理，H2 档迁移停在 V26（V27 为 MySQL 专有 DDL）。
+spring:
+  flyway:
+    target: 26

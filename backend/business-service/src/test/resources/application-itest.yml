@@ -6,3 +6,16 @@
 app:
   attachment:
     sign-secret: test-sign-secret-0123456789abcdef
+
+# 2026-11-05（V27）：H2 单测档的 Flyway 迁移停在 V26。
+# 原因：V27__health_report_structure.sql 含 MySQL 专有 DDL
+#   （ALTER TABLE ... ADD COLUMN a, ADD COLUMN b, ADD KEY ...），H2 MODE=MySQL 无法解析，
+#   会让全部 @SpringBootTest 上下文启动失败（实测 319 项中 245 项连带 error）。
+# V27 已在真实 wechar_dev 库由 Flyway 应用（rank 37，checksum 不可改动），
+#   因此不修改已应用迁移；itest 用 target 跳过，保持既有 319 项语义不变。
+# 代价与边界：H2 档没有报告新表，报告列表/详情的验收不由单测覆盖，
+#   改由真实 MySQL + 启动后 HTTP 实测（阶段 07 交付报告如实标注）。
+# 后续若新增 V28+ 通用 DDL，需同步调高本 target 并确认 H2 兼容性。
+spring:
+  flyway:
+    target: 26

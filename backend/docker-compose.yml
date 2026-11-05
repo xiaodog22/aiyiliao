@@ -1,0 +1,86 @@
+# =============================================================================
+# 本地等价验证用（不是云托管部署文件）
+# 目的：在买 CDB / 备案域名之前，先用 docker 复现"云托管"的拓扑与网络隔离，
+#       提前暴露：DB 连接、时区、资源目录、容器间调用、健康检查等问题。
+#
+# 用法（在 backend/ 下）：
+#   docker compose up -d --build
+#   docker compose logs -f gateway
+#   docker compose down -v
+#
+# 云上差异（必须知道）：
+#   · 云托管容器磁盘是**临时的**，MySQL 不能放容器里，必须用独立 CDB（本文件仅本地用）
+#   · 云托管只读取容器端口，本文件的 ports 映射仅本地调试
+# =============================================================================
+name: wechar-local
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: local_root
+      MYSQL_DATABASE: wechar
+      TZ: Asia/Shanghai
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports: ["13306:3306"]
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h127.0.0.1 -uroot -plocal_root --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  business:
+    build:
+      context: .
+      dockerfile: deploy/docker/business.Dockerfile
+    environment:
+      # ⚠️ 变量名是 MYSQL_*（application.yml 的占位符），不是 SPRING_DATASOURCE_*
+      MYSQL_URL: jdbc:mysql://mysql:3306/wechar?useUnicode=true&characterEncoding=UTF-8&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
+      MYSQL_USER: root
+      MYSQL_PASSWORD: local_root
+      # 本地验证用 dev 档（云上必须 prod，见部署文档）
+      SPRING_PROFILES_ACTIVE: dev
+      # 生产档启动即校验的两把密钥；本地只放测试值，**严禁复制到云上**
+      PHONE_KEY_BASE64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      APP_ATTACHMENT_SIGN_SECRET: local-only-sign-secret-please-change
+      APP_RESOURCES_DIR: /app/resources
+      APP_UPLOAD_DIR: /app/run/uploads
+      AI_SERVICE_URL: http://ai:8001
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports: ["18088:8088"]
+
+  ai:
+    build:
+      context: .
+      dockerfile: deploy/docker/ai.Dockerfile
+    environment:
+      AI_PROVIDER_ORDER: ollama,deepseek
+      AI_OLLAMA_URL: ${AI_OLLAMA_URL:-http://host.docker.internal:11434}
+      AI_DEEPSEEK_API_KEY: ${AI_DEEPSEEK_API_KEY:-}
+      AI_DEEPSEEK_BASE_URL: ${AI_DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      AI_DEEPSEEK_MODEL: ${AI_DEEPSEEK_MODEL:-deepseek-chat}
+      AI_STORE_PATH: /app/runtime/tasks.json
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports: ["18001:8001"]
+
+  gateway:
+    build:
+      context: .
+      dockerfile: deploy/docker/gateway.Dockerfile
+    environment:
+      GW_BUSINESS_URL: http://business:8088
+      GW_AI_URL: http://ai:8001
+      GW_ASSETS_DIR: /app/assets
+      GW_PROXY_TIMEOUT_SECONDS: "220"
+      GW_RATE_LIMIT_ENABLED: "true"
+      GW_LOG_LEVEL: INFO
+    depends_on: [business, ai]
+    ports: ["18080:8080"]
+
+volumes:
+  mysql-data:

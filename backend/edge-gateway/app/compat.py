@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Optional
 
 from .envelope import ApiError, compat_dropped, compat_pending
@@ -153,12 +154,28 @@ def translate_body(entry: dict, path: str, query: dict, body: bytes) -> tuple[by
     raise ApiError(500, "COMPAT_TRANSLATOR_MISSING", f"兼容翻译器未实现：{translator}", retryable=False)
 
 
+def _dev_login_phones() -> set[str]:
+    """dev 手输登录允许的手机号白名单（`GW_DEV_LOGIN_PHONES`，逗号分隔）。
+
+    2026-11-04：原实现「任意手机号 + 任意密码」都会被翻译成同一个 dev 会话，并把该用户的
+    手机号改写成输入值 —— 等于没有登录校验（用户实测：随便输就能进，且账号被串改）。
+    dev 档没有密码体系（users 表只有 phone_cipher / phone_hash，无 password 列），
+    所以边界只能落在「手机号必须是预置演示账号」这一条；密码若配置了
+    `GW_DEV_LOGIN_PASSWORD` 则额外做等值校验，留空表示不校验（保持联调便利）。
+
+    **默认只放行种子患者 13800138001**；白名单被显式置空 → 拒绝所有手输登录（fail-closed）。
+    """
+    raw = os.environ.get("GW_DEV_LOGIN_PHONES", "13800138001,13900139001")
+    return {p.strip() for p in raw.split(",") if p.strip()}
+
+
 def _legacy_login_to_wechat(body: bytes) -> tuple[bytes, Optional[str]]:
     """`/api/user/login {phone, password}` → dev 档微信登录换取。
 
     ⚠️ 联调替身语义（生产构建不得使用，x-migration 已声明）：
     - 本机联调没有真实微信凭证，走 business-service 的 **dev 档** WechatSessionProvider；
-    - `password` 不做校验（dev 档无密码体系）——只按 phone 建立稳定 dev 会话；
+    - `password` 默认不校验（dev 档无密码体系）——可用 `GW_DEV_LOGIN_PASSWORD` 额外收紧；
+    - **手机号必须在白名单内**，否则 401（见 `_dev_login_phones`）；
     - `phoneCode` 用 `dev-phone-<手机号>`，与 dev 档 provider 的约定一致（11 位则绑定）。
     """
     try:
@@ -168,6 +185,18 @@ def _legacy_login_to_wechat(body: bytes) -> tuple[bytes, Optional[str]]:
     if not isinstance(payload, dict) or not payload.get("phone"):
         return body, None
     phone = str(payload.get("phone")).strip()
+
+    allowed = _dev_login_phones()
+    if not allowed:
+        raise ApiError(403, "DEV_LOGIN_DISABLED", "演示登录未开放（GW_DEV_LOGIN_PHONES 为空）", retryable=False)
+    if phone not in allowed:
+        # 刻意不区分「手机号不存在」与「密码错误」，避免成为账号枚举入口
+        raise ApiError(401, "AUTH_FAILED", "手机号或密码不正确（演示环境请使用预置账号）", retryable=False)
+
+    expected_pwd = os.environ.get("GW_DEV_LOGIN_PASSWORD", "")
+    if expected_pwd and str(payload.get("password") or "") != expected_pwd:
+        raise ApiError(401, "AUTH_FAILED", "手机号或密码不正确（演示环境请使用预置账号）", retryable=False)
+
     new_payload = {
         "code": "legacy-compat-" + phone,
         "phoneCode": "dev-phone-" + phone,

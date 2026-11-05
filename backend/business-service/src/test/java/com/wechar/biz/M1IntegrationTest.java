@@ -1,6 +1,8 @@
 package com.wechar.biz;
 
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -168,9 +170,14 @@ class M1IntegrationTest {
         mockMvc.perform(get("/api/v1/doctors"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(2)));
+        // 2026-11-04 语义收紧：号源列表只下发 **start_time > NOW()** 的时段。
+        // 种子里 3 条号源含 `slot-past-1`(2000-01-01)，它已过期，不再出现在列表里 ——
+        // 否则前端会把它渲染成"可约"，用户点下去必被 SLOT_IN_PAST 拒（真实 422）。
+        // 断言从 hasSize(3) 改为 hasSize(2) + 显式排除过期号源，锁的是新语义而不是数字。
         mockMvc.perform(get("/api/v1/doctors/doc-gastro-1/slots"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data", hasSize(3)));
+                .andExpect(jsonPath("$.data", hasSize(2)))
+                .andExpect(jsonPath("$.data[*].id", not(hasItem("slot-past-1"))));
         mockMvc.perform(get("/api/v1/doctors/not-exist/slots"))
                 .andExpect(status().isNotFound());
     }

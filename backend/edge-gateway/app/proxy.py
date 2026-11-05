@@ -28,6 +28,10 @@ HOP_BY_HOP = {
     "te", "trailers", "transfer-encoding", "upgrade",
 }
 
+# 请求体整读 / 流式的分界：**仅**影响大于此值的上传（头像/健康档案/ASR 音频）。
+# 小请求维持旧行为（整读后转发），避免为省内存改动主链路语义。
+STREAM_BODY_THRESHOLD = 1 << 20  # 1 MiB
+
 
 def _reject_path_traversal(path: str) -> None:
     """拒绝含 `..` 段的转发路径（路径混淆 / 请求走私的经典形态）。
@@ -84,7 +88,28 @@ async def forward(
             if value is not None:
                 headers[key.lower()] = value
 
-    body = body_override if body_override is not None else await request.body()
+    # ---- 请求体：小请求整读，大上传改流式（2026-11-04 云托管核查）----
+    # 原实现一律 `await request.body()`：一次 50MB 视频上传会先让网关在内存里攒一份完整副本，
+    # 转发后 business 再读一份（AttachmentStorage.save 的 file.getBytes()），
+    # 512MB 规格容器下两个并发就可能 OOM。
+    # 这里只对**客户端声明长度 > 1MiB** 的请求改流式（边读边发）；小请求行为与旧实现完全一致，
+    # 不改变错误码/超时语义。流式分支显式回填 content-length（上面的头过滤剔除了它），
+    # 避免 httpx 退化成 chunked 后上游 multipart 解析拿不到长度。
+    if body_override is not None:
+        body = body_override
+    else:
+        declared = 0
+        raw_length = request.headers.get("content-length")
+        if raw_length:
+            try:
+                declared = int(raw_length)
+            except ValueError:
+                declared = 0
+        if declared > STREAM_BODY_THRESHOLD:
+            body = request.stream()
+            headers["content-length"] = str(declared)
+        else:
+            body = await request.body() or None
 
     upstream_request = client.build_request(request.method, url, headers=headers, content=body or None)
     try:

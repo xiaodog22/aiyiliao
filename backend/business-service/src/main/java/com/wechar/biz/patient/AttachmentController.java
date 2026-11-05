@@ -54,14 +54,8 @@ public class AttachmentController {
         IdempotencyKeys.require(idempotencyKey);
         String userId = authService.ensureUser(currentUserContext.currentUserId());
         String objectKey = attachmentStorage.save(file);
-        byte[] bytes;
-        String sha256;
-        try {
-            bytes = file.getBytes();
-            sha256 = com.wechar.biz.common.Digests.sha256Hex(bytes);
-        } catch (java.io.IOException e) {
-            throw new ApiException("ATTACHMENT_READ_FAILED", HttpStatus.BAD_REQUEST, "文件读取失败，请重试");
-        }
+        // 摘要按已落盘文件流式计算（2026-11-04）：不再用 file.getBytes() 把 50MB 视频整份读回堆里。
+        String sha256 = attachmentStorage.sha256Of(objectKey);
         String mime = file.getContentType() == null ? "application/octet-stream" : file.getContentType();
         // 暂存上传尚无附件行（建档挂载时才插行）→ id 为 null（NON_NULL 不出现在响应里）
         var data = new AttachmentData(null, objectKey, attachmentStorage.signedUrl(objectKey),

@@ -38,6 +38,11 @@ class GateSettings:
     probe_timeout_seconds: float = 2.0
     connect_timeout_seconds: float = 5.0
     log_level: str = "INFO"
+    # 逐请求日志开关（2026-11-01 压测实证）：httpx/httpcore/uvicorn.access 的每请求日志
+    # **同步写控制台**，实测把 25VU 吞吐从 135 RPS 压到 52 RPS（-61%），且日志条数与
+    # 吞吐成反比（2 条/请求 52 RPS、1 条 95 RPS、0 条 135 RPS）。
+    # 默认 False = 关。排障需要逐请求明细时用 GW_LOG_PER_REQUEST=true 或 config.json 打开。
+    log_per_request: bool = False
     # ---- 限流（M4 硬化前瞻；默认关，deploy 显式开启）----
     rate_limit_enabled: bool = False
     rate_limit_per_minute: int = 300
@@ -87,6 +92,17 @@ class GateSettings:
                     settings.proxy_timeout_seconds = float(raw["proxyTimeoutSeconds"])
                 if raw.get("probeTimeoutSeconds"):
                     settings.probe_timeout_seconds = float(raw["probeTimeoutSeconds"])
+                # 日志（2026-11-01 PERF-04）：此前只有 GW_LOG_LEVEL 一个入口，
+                # 配置文件里没有键、_env() 也不加载 .env → 手工启动的进程无法设级别，
+                # 只能吃 INFO 默认值（每请求一条 httpx INFO 同步写控制台，实测吞吐砍 2.74×）。
+                # 优先级：环境变量 > config.json > 代码默认值。
+                logging_cfg = raw.get("logging") or {}
+                if logging_cfg.get("level"):
+                    settings.log_level = str(logging_cfg["level"]).upper()
+                elif raw.get("logLevel"):
+                    settings.log_level = str(raw["logLevel"]).upper()
+                if logging_cfg.get("perRequest") is not None:
+                    settings.log_per_request = bool(logging_cfg["perRequest"])
                 # 限流（config.json 可配；默认仍关，须显式 enabled=true）
                 rate_limit = raw.get("rateLimit") or {}
                 if rate_limit.get("enabled") is not None:
@@ -132,6 +148,8 @@ class GateSettings:
             settings.proxy_timeout_seconds = float(_env("GW_PROXY_TIMEOUT_SECONDS"))
         if _env("GW_LOG_LEVEL"):
             settings.log_level = _env("GW_LOG_LEVEL")  # type: ignore[assignment]
+        if _env("GW_LOG_PER_REQUEST"):
+            settings.log_per_request = _env("GW_LOG_PER_REQUEST").lower() in ("1", "true", "yes", "on")  # type: ignore[union-attr]
         if _env("GW_RATE_LIMIT_ENABLED"):
             settings.rate_limit_enabled = _env("GW_RATE_LIMIT_ENABLED").lower() in ("1", "true", "yes", "on")  # type: ignore[union-attr]
         if _env("GW_RATE_LIMIT_PER_MINUTE"):

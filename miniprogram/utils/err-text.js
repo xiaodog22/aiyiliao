@@ -45,7 +45,11 @@ function errText(err, fallback) {
   if (code === 'PARSE_ERROR') return '数据格式异常，请稍后重试'
   // 会话类（request.js 的 AUTH_REQUIRED / AUTH_EXPIRED / SESSION_REVOKED 同义：
   // 会话不可用即需重新登录，不向用户暴露 HTTP 码或英文原文）
-  if (code === 'AUTH_REQUIRED' || code === 'AUTH_EXPIRED' || code === 'SESSION_REVOKED') {
+  // ⚠️ TOKEN_EXPIRED 是**向前兼容**（2026-11-01）：后端目前对 access 过期统一回 SESSION_REVOKED，
+  //    语义不准（过期 ≠ 撤销），后续可能拆成 TOKEN_EXPIRED。前端先认它，后端再改 code——
+  //    顺序反过来会让"已发布的老版本小程序"把过期显示成默认文案。
+  if (code === 'AUTH_REQUIRED' || code === 'AUTH_EXPIRED' || code === 'SESSION_REVOKED'
+      || code === 'TOKEN_EXPIRED') {
     return '登录已过期，请重新登录'
   }
   // 限流（网关 429 / 业务 RATE_LIMITED）：中文确定性文案，不走 HTTP_ERROR 通用分支
