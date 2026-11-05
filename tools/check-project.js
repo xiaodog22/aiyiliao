@@ -107,6 +107,10 @@ console.log('⑤ 禁址扫描（127.0.0.1 / localhost / :800x / :8088）')
 n = 0
 for (const f of js.concat(json, wxml, wxss)) {
   let src = fs.readFileSync(f, 'utf8')
+  // Windows 检出（core.autocrlf=true）会带回 \r：先归一成 LF。
+  // 否则下面的「去 // 注释」用 .*$ 结尾时匹配不到行尾的 \r，
+  // 注释里写的示例地址（如 env.js 的 127.0.0.1 说明）会被误判为违规。
+  src = src.replace(/\r\n/g, '\n')
   // 块注释跨行，里面的说明文字（"代码中禁止出现 8001）不算违规 → 整段抹掉，
   // 但把换行保留成等量换行，保证下面报的行号仍然准。
   src = src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
