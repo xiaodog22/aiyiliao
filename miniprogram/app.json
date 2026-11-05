@@ -16,6 +16,8 @@
     "pages/consult/picker/picker",
     "pages/profile/records/records",
     "pages/profile/health-records/health-records",
+    "pages/profile/reports/reports",
+    "pages/profile/report-detail/report-detail",
     "pages/profile/consultations/consultations",
     "pages/profile/family/family",
     "pages/profile/personal-info/personal-info",

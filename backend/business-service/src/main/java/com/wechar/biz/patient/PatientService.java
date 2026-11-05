@@ -354,14 +354,8 @@ public class PatientService {
                         "健康档案不存在"));
         requireProxyGranted(userId, row.familyMemberId());
         String objectKey = attachmentStorage.save(file);
-        String sha256;
-        byte[] bytes;
-        try {
-            bytes = file.getBytes();
-            sha256 = Digests.sha256Hex(bytes);
-        } catch (java.io.IOException e) {
-            throw new ApiException("ATTACHMENT_READ_FAILED", HttpStatus.BAD_REQUEST, "文件读取失败，请重试");
-        }
+        // 摘要按已落盘文件流式计算（2026-11-04）：不再用 file.getBytes() 把 50MB 视频整份读回堆里。
+        String sha256 = attachmentStorage.sha256Of(objectKey);
         Instant now = clock.instant();
         String id = "hra-" + UUID.randomUUID();
         attachments.insert(new AttachmentRepository.AttachmentRow(
@@ -381,6 +375,9 @@ public class PatientService {
                 .orElseThrow(() -> new ApiException("HEALTH_RECORD_NOT_FOUND", HttpStatus.NOT_FOUND,
                         "健康档案不存在"));
         requireProxyGranted(userId, row.familyMemberId());
+        if (isUnpublishedReport(row)) {
+            return List.of(); // 未出具报告不暴露任何附件
+        }
         return attachments.listByRecord(recordId).stream()
                 .map(a -> new AttachmentData(a.id(), a.objectKey(),
                         attachmentStorage.signedUrl(a.objectKey()),
@@ -535,13 +532,25 @@ public class PatientService {
         return phone == null || phone.isBlank() ? null : Digests.sha256Hex(phone);
     }
 
+    /**
+     * V27 状态门禁：报告类档案未出具（非 READY）时，既有 /health-records 读路径也不得
+     * 返回摘要与附件——摘要在演示数据里含结果描述，附件可能是未审核影像。
+     * 与 HealthReportService 的 /reports/{id} 门禁同源，避免「新接口锁住、旧接口漏出」。
+     */
+    private static boolean isUnpublishedReport(HealthRecordRepository.HealthRecordRow r) {
+        return HealthReportService.isUnpublishedReport(r.category(), r.reportStatus());
+    }
+
     private HealthRecordData toRecord(HealthRecordRepository.HealthRecordRow r) {
-        List<AttachmentData> list = attachments.listByRecord(r.id()).stream()
+        boolean unpublished = isUnpublishedReport(r);
+        List<AttachmentData> list = unpublished ? List.of()
+                : attachments.listByRecord(r.id()).stream()
                 .map(a -> new AttachmentData(a.id(), a.objectKey(),
                         attachmentStorage.signedUrl(a.objectKey()),
                         a.fileName(), a.mime(), a.size(), a.sha256(), a.createdAt()))
                 .toList();
-        return new HealthRecordData(r.id(), r.familyMemberId(), r.category(), r.title(), r.summary(),
+        return new HealthRecordData(r.id(), r.familyMemberId(), r.category(), r.title(),
+                unpublished ? null : r.summary(),
                 r.recordedAt(), r.source(), r.doctorName(), r.abnormal(), r.reportStatus(), r.hospital(),
                 list, r.version());
     }

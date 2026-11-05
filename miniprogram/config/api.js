@@ -76,6 +76,9 @@ const FAMILY_INVITATIONS  = { base: 'java', path: '/api/v1/family-members/invita
 const HR_ATTACHMENTS      = { base: 'java', path: '/api/v1/health-records/{recordId}/attachments' }
 // 报告 AI 解读（契约已实现，2026-10-19：business-service 承接，同步返回）
 const HR_INTERPRET        = { base: 'java', path: '/api/v1/health-records/{recordId}/interpret' }
+// 电子检查报告（V27）：列表 / 详情。后端对非 READY 报告返回脱敏结构，前端不得缓存未审核结果。
+const REPORT_LIST         = { base: 'java', path: '/api/v1/reports' }
+const REPORT_DETAIL       = { base: 'java', path: '/api/v1/reports/{recordId}' }
 const HR_ATTACHMENT_BY_ID = { base: 'java', path: '/api/v1/health-records/{recordId}/attachments/{attachmentId}' }
 // 科普文章（N12/N13）：列表/详情均匿名只读；详情可能带 videoUrl（V19，签名 URL，2h TTL）
 const HEALTH_ARTICLE_DETAIL = { base: 'java', path: '/api/v1/health-articles/{id}' }
@@ -156,6 +159,7 @@ module.exports = {
   DOCTOR_SCHEDULE, DOCTOR_ONLINE_STATUS, DOCTOR_AVAILABILITY,
   BED_LIST, BED_UPDATE, BED_ASSIGNMENT, HEALTH_RECORDS, FAMILY_MEMBERS, FAMILY_MEMBER_BY_ID, FAMILY_INVITATIONS,
   HR_ATTACHMENTS, HR_ATTACHMENT_BY_ID, ATTACHMENT_UPLOAD, ATTACHMENT_FILE, HR_INTERPRET,
+  REPORT_LIST, REPORT_DETAIL,
   HEALTH_ARTICLE_DETAIL,
   CONSULTATION_LIST, CONSULTATION_DETAIL, CONSULTATION_MESSAGES,
   CONSULTATION_TRIAGE, AI_TASK,

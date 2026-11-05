@@ -1,0 +1,195 @@
+/* pages/profile/reports —— 电子检查报告列表（V27）
+   色值只取 app.wxss 变量（本页零字面色值）；字号只用 --font-* 变量，不写死数值；
+   几何一律 rpx，@media (min-width:600px) 内逐选择器 ÷2 折 px（含 border-width）。 */
+.rep-page { padding: 24rpx; }
+
+/* ① 分类 tab */
+.rep-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 16rpx;
+}
+.rep-tab {
+  padding: 12rpx 24rpx;
+  margin-right: 12rpx;
+  margin-bottom: 12rpx;
+  border-radius: var(--radius-sm);
+  border-width: 1rpx;
+  border-style: solid;
+  border-color: var(--border);
+  background: var(--card);
+  color: var(--text-sub);
+  font-size: var(--font-caption);
+}
+.rep-tab-on {
+  background: var(--accent-soft);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* ② 筛选行 */
+.rep-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+.rep-picker { margin-right: 12rpx; margin-bottom: 12rpx; }
+.rep-chip {
+  padding: 10rpx 20rpx;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  border-width: 1rpx;
+  border-style: solid;
+  border-color: var(--border);
+  color: var(--text-sub);
+  font-size: var(--font-caption);
+}
+.rep-chip-reset { color: var(--primary); }
+
+/* 空态 / 错误态 */
+.rep-state {
+  padding: 48rpx 24rpx;
+  text-align: center;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+}
+.rep-state-badge {
+  width: 80rpx;
+  height: 80rpx;
+  margin: 0 auto 16rpx;
+  border-radius: 50%;
+  background: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rep-state-ic { width: 40rpx; height: 40rpx; }
+.rep-state-t { color: var(--text-main); font-size: var(--font-h2); }
+.rep-state-s { margin-top: 12rpx; color: var(--text-sub); font-size: var(--font-caption); }
+.rep-state-btn {
+  display: inline-block;
+  margin-top: 24rpx;
+  padding: 0 40rpx;
+  height: 72rpx;
+  line-height: 72rpx;
+  border-radius: var(--radius-md);
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: var(--font-body);
+}
+
+/* ③ 报告卡 */
+.rep-card {
+  margin-bottom: 20rpx;
+  padding: 28rpx;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+.rep-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.rep-title {
+  flex: 1;
+  margin-right: 16rpx;
+  color: var(--text-main);
+  font-size: var(--font-h2);
+}
+.rep-status {
+  flex-shrink: 0;
+  padding: 6rpx 16rpx;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-caption);
+}
+.rep-status-ok { background: var(--mint-soft); color: var(--mint-text); }
+.rep-status-wait { background: var(--amber-soft); color: var(--amber-text); }
+.rep-status-unknown { background: var(--accent-soft); color: var(--text-sub); }
+
+.rep-demo {
+  display: inline-block;
+  margin-top: 12rpx;
+  padding: 4rpx 14rpx;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--text-sub);
+  font-size: var(--font-caption);
+}
+.rep-line { display: flex; align-items: center; margin-top: 12rpx; }
+.rep-ic { width: 28rpx; height: 28rpx; margin-right: 12rpx; flex-shrink: 0; }
+.rep-line-t { color: var(--text-sub); font-size: var(--font-caption); }
+.rep-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20rpx;
+  padding-top: 16rpx;
+  border-top-width: 1rpx;
+  border-top-style: solid;
+  border-top-color: var(--border);
+}
+.rep-abn {
+  padding: 6rpx 16rpx;
+  border-radius: var(--radius-sm);
+  background: var(--mint-soft);
+  color: var(--mint-text);
+  font-size: var(--font-caption);
+}
+.rep-abn-on { background: var(--amber-soft); color: var(--amber-text); }
+.rep-arrow { width: 32rpx; height: 32rpx; flex-shrink: 0; }
+.rep-foot {
+  margin-top: 12rpx;
+  padding: 16rpx 0;
+  text-align: center;
+  color: var(--text-weak);
+  font-size: var(--font-caption);
+}
+
+/* ≥600px：rpx → px（÷2），含 border-width；600~899px 主栏限宽 */
+@media (min-width: 600px) {
+  .rep-page { padding: 12px; }
+  .rep-tabs { margin-bottom: 8px; }
+  .rep-tab {
+    padding: 6px 12px;
+    margin-right: 6px;
+    margin-bottom: 6px;
+    border-width: 1px;
+  }
+  .rep-filters { margin-bottom: 10px; }
+  .rep-picker { margin-right: 6px; margin-bottom: 6px; }
+  .rep-chip { padding: 5px 10px; border-width: 1px; }
+  .rep-state { padding: 24px 12px; }
+  .rep-state-badge { width: 40px; height: 40px; margin: 0 auto 8px; }
+  .rep-state-ic { width: 20px; height: 20px; }
+  .rep-state-s { margin-top: 6px; }
+  .rep-state-btn {
+    margin-top: 12px;
+    padding: 0 20px;
+    height: 36px;
+    line-height: 36px;
+  }
+  .rep-card { margin-bottom: 10px; padding: 14px; }
+  .rep-title { margin-right: 8px; }
+  .rep-status { padding: 3px 8px; }
+  .rep-demo { margin-top: 6px; padding: 2px 7px; }
+  .rep-line { margin-top: 6px; }
+  .rep-ic { width: 14px; height: 14px; margin-right: 6px; }
+  .rep-card-foot { margin-top: 10px; padding-top: 8px; border-top-width: 1px; }
+  .rep-abn { padding: 3px 8px; }
+  .rep-arrow { width: 16px; height: 16px; }
+  .rep-foot { margin-top: 6px; padding: 8px 0; }
+}
+@media (min-width: 600px) and (max-width: 899px) {
+  .rep-page { max-width: 375px; margin: 0 auto; }
+}
+@media (min-width: 900px) {
+  .rep-page { max-width: 750px; margin: 0 auto; }
+}
+/* 矮屏：压缩纵向留白，报告长列表一屏多见一张卡 */
+@media (max-height: 800px) {
+  .rep-card { margin-bottom: 12rpx; padding: 20rpx; }
+  .rep-filters { margin-bottom: 12rpx; }
+  .rep-state { padding: 24rpx; }
+}

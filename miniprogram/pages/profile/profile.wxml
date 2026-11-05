@@ -55,7 +55,8 @@
       <view wx:if="{{unread}}" class="pf-unread"></view>
       <image class="li-arrow" src="{{icons.chevronRight}}" />
     </view>
-    <view class="li-row pressable" bindtap="goHealthRecords">
+    <!-- 报告查询（V27）：跳电子检查报告列表，不再复用健康档案卡片页（占位入口已接入真实实现） -->
+    <view class="li-row pressable" bindtap="goReports">
       <image class="pf-row-ic" src="{{icons.fileText}}" />
       <view class="li-text"><view class="li-t">报告查询</view></view>
       <image class="li-arrow" src="{{icons.chevronRight}}" />

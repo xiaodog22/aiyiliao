@@ -1,0 +1,94 @@
+<!-- 电子检查报告列表（V27）：分类 tab + 状态/就诊人/时间筛选 + 报告卡流。
+     ⚠️ 所有展示字段来自后端 ReportSummaryData；页面不排序、不补数据、不伪造演示报告。
+     ⚠️ 异常提示为文字 + 颜色双通道，不只靠颜色区分。 -->
+<view class="page theme-{{theme}} rep-page">
+
+  <skeleton wx:if="{{loading}}" type="list" rows="4" />
+
+  <view wx:elif="{{error}}" class="rep-state">
+    <view class="rep-state-badge"><image class="rep-state-ic" src="{{icons.alertWhite}}" /></view>
+    <view class="rep-state-t">报告加载失败</view>
+    <view class="rep-state-s">{{error}}</view>
+    <view class="rep-state-btn" bindtap="fetch">重新加载</view>
+  </view>
+
+  <block wx:else>
+    <!-- ① 报告分类 -->
+    <view class="rep-tabs">
+      <view
+        wx:for="{{tabs}}"
+        wx:key="key"
+        class="rep-tab {{activeTab === item.key ? 'rep-tab-on' : ''}}"
+        data-key="{{item.key}}"
+        bindtap="onTab"
+      >{{item.label}}</view>
+    </view>
+
+    <!-- ② 筛选行：状态 / 就诊人 / 起止日期 -->
+    <view class="rep-filters">
+      <picker class="rep-picker" mode="selector" range="{{statuses}}" range-key="label" value="{{statusIndex}}" bindchange="onStatus">
+        <view class="rep-chip">{{statuses[statusIndex].label}}</view>
+      </picker>
+      <picker class="rep-picker" mode="selector" range="{{members}}" range-key="name" value="{{memberIndex}}" bindchange="onMember">
+        <view class="rep-chip">{{members[memberIndex].name}}</view>
+      </picker>
+      <picker class="rep-picker" mode="date" value="{{from}}" bindchange="onFrom">
+        <view class="rep-chip">{{from || '起始日期'}}</view>
+      </picker>
+      <picker class="rep-picker" mode="date" value="{{to}}" bindchange="onTo">
+        <view class="rep-chip">{{to || '截止日期'}}</view>
+      </picker>
+      <view class="rep-chip rep-chip-reset" bindtap="onClearFilter">重置</view>
+    </view>
+
+    <view wx:if="{{items.length === 0}}" class="rep-state">
+      <view class="rep-state-t">暂无符合条件的报告</view>
+      <view class="rep-state-s">可调整分类、状态或时间范围后重试</view>
+    </view>
+
+    <!-- ③ 报告卡：机构 / 名称 / 编号 / 科室 / 时间 / 状态 / 异常项目数 -->
+    <view
+      wx:for="{{items}}"
+      wx:key="recordId"
+      class="rep-card"
+      data-id="{{item.recordId}}"
+      bindtap="onOpen"
+      aria-role="button"
+    >
+      <view class="rep-card-top">
+        <view class="rep-title">{{item.title}}</view>
+        <view class="rep-status rep-status-{{item.statusCls}}">{{item.statusText}}</view>
+      </view>
+
+      <view wx:if="{{item.isDemo}}" class="rep-demo">演示数据 · 非真实医疗报告</view>
+
+      <view class="rep-line">
+        <image class="rep-ic" src="{{icons.hospital}}" />
+        <text class="rep-line-t">{{item.institutionName || '出具机构未记录'}}</text>
+      </view>
+      <view wx:if="{{item.departmentName}}" class="rep-line">
+        <image class="rep-ic" src="{{icons.list}}" />
+        <text class="rep-line-t">{{item.departmentName}}</text>
+      </view>
+      <view class="rep-line">
+        <image class="rep-ic" src="{{icons.fileText}}" />
+        <text class="rep-line-t">报告编号 {{item.reportNo || '未记录'}}</text>
+      </view>
+      <view class="rep-line">
+        <image class="rep-ic" src="{{icons.calendar}}" />
+        <text class="rep-line-t">检查 {{item.recordedAt || '未记录'}}</text>
+      </view>
+      <view class="rep-line">
+        <image class="rep-ic" src="{{icons.clock}}" />
+        <text class="rep-line-t">报告 {{item.reportedAt || '尚未出具'}}</text>
+      </view>
+
+      <view class="rep-card-foot">
+        <view class="rep-abn {{item.abnormalCount > 0 ? 'rep-abn-on' : ''}}">{{item.abnormalText}}</view>
+        <image class="rep-arrow" src="{{icons.chevronRight}}" />
+      </view>
+    </view>
+
+    <view wx:if="{{items.length > 0}}" class="rep-foot">报告结果仅供健康参考，不作为诊断依据</view>
+  </block>
+</view>

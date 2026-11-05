@@ -1,0 +1,11 @@
+{
+  "navigationBarTitleText": "报告详情",
+  "navigationBarBackgroundColor": "#FFFFFF",
+  "navigationBarTextStyle": "black",
+  "backgroundColor": "#F3F8FF",
+  "backgroundTextStyle": "dark",
+  "enablePullDownRefresh": true,
+  "usingComponents": {
+    "skeleton": "/components/skeleton/skeleton"
+  }
+}

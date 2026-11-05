@@ -1,0 +1,122 @@
+<!-- 电子检查报告详情（V27）：按医院纸质报告阅读顺序组织。
+     ⚠️ 未 READY 报告由后端返回脱敏结构，本页整块不渲染结果区，只显示状态提示 + 元信息。
+     ⚠️ 检查项目采用「每项一张卡」而非 5 列表格，避免窄屏横向溢出；异常同时给文字与颜色。
+     ⚠️ 演示报告显示水印，不使用真实医院公章、签名或二维码。 -->
+<view class="page theme-{{theme}} rd-page">
+
+  <view wx:if="{{report.isDemo}}" class="rd-watermark">演示数据 · 非真实医疗报告</view>
+
+  <skeleton wx:if="{{loading}}" type="list" rows="5" />
+
+  <view wx:elif="{{error}}" class="rd-state">
+    <view class="rd-state-badge"><image class="rd-state-ic" src="{{icons.alertWhite}}" /></view>
+    <view class="rd-state-t">报告加载失败</view>
+    <view class="rd-state-s">{{error}}</view>
+    <view class="rd-state-btn" bindtap="fetch">重新加载</view>
+  </view>
+
+  <block wx:elif="{{report}}">
+    <!-- ① 机构与报告标题 -->
+    <view class="rd-head">
+      <view class="rd-inst">{{report.institutionName || '出具机构未记录'}}</view>
+      <view class="rd-title">{{report.title}}</view>
+      <view class="rd-no">报告编号 {{report.reportNo || '未记录'}}</view>
+      <view wx:if="{{report.isDemo}}" class="rd-demo">{{report.demoNotice}}</view>
+    </view>
+
+    <!-- 未出具：结果区整体不渲染 -->
+    <view wx:if="{{!report.ready}}" class="rd-locked">
+      <image class="rd-locked-ic" src="{{icons.fileLock}}" />
+      <view class="rd-locked-t">{{report.statusNotice || '报告尚未出具，检查结果暂不展示'}}</view>
+      <view class="rd-locked-s">请在报告出具后重新查看，未审核结果不会提前展示</view>
+    </view>
+
+    <block wx:if="{{report.ready}}">
+      <!-- ② 患者基本信息 -->
+      <view wx:if="{{report.patientRows.length > 0}}" class="rd-block">
+        <view class="rd-sec-h"><image class="rd-sec-ic" src="{{icons.user}}" /><text>一、患者基本信息</text></view>
+        <view class="rd-rows">
+          <view wx:for="{{report.patientRows}}" wx:key="label" class="rd-row">
+            <text class="rd-row-k">{{item.label}}</text><text class="rd-row-v">{{item.value}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- ③ 申请与标本信息 -->
+      <view wx:if="{{report.specimenRows.length > 0}}" class="rd-block">
+        <view class="rd-sec-h"><image class="rd-sec-ic" src="{{icons.flask}}" /><text>二、检查申请与标本信息</text></view>
+        <view class="rd-rows">
+          <view wx:for="{{report.specimenRows}}" wx:key="label" class="rd-row">
+            <text class="rd-row-k">{{item.label}}</text><text class="rd-row-v">{{item.value}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- ④ 检查项目分组 -->
+      <view wx:if="{{report.sections.length > 0}}" class="rd-block">
+        <view class="rd-sec-h"><image class="rd-sec-ic" src="{{icons.list}}" /><text>三、检查项目与结果</text></view>
+        <view wx:for="{{report.sections}}" wx:key="id" wx:for-item="sec" class="rd-sec">
+          <view class="rd-sec-bar" data-id="{{sec.id}}" bindtap="onToggleSection">
+            <text class="rd-sec-name">{{sec.sectionName}}</text>
+            <image class="rd-sec-arrow {{sec.open ? 'rd-sec-arrow-open' : ''}}" src="{{icons.chevronRight}}" />
+          </view>
+          <block wx:if="{{sec.open}}">
+            <view wx:for="{{sec.items}}" wx:key="id" wx:for-item="item" class="rd-item">
+              <view class="rd-item-top">
+                <text class="rd-item-name">{{item.itemName}}</text>
+                <text class="rd-item-flag {{item.isAbnormal ? 'rd-item-flag-on' : ''}}">{{item.abnormalLabel}}</text>
+              </view>
+              <view class="rd-item-bottom">
+                <text class="rd-item-value {{item.isAbnormal ? 'rd-item-value-on' : ''}}">{{item.valueText}}</text>
+                <text wx:if="{{item.unit}}" class="rd-item-unit">{{item.unit}}</text>
+                <text class="rd-item-ref">参考：{{item.refText}}</text>
+              </view>
+              <view wx:if="{{item.remark}}" class="rd-item-remark">{{item.remark}}</view>
+            </view>
+          </block>
+        </view>
+      </view>
+
+      <!-- ⑤ 异常项目提示（文字清单，不依赖颜色） -->
+      <view wx:if="{{report.abnormalItems.length > 0}}" class="rd-block">
+        <view class="rd-sec-h"><image class="rd-sec-ic" src="{{icons.alert}}" /><text>四、异常项目提示</text></view>
+        <view wx:for="{{report.abnormalItems}}" wx:key="id" wx:for-item="item" class="rd-abn">
+          <text class="rd-abn-name">{{item.itemName}}</text>
+          <text class="rd-abn-t">{{item.abnormalLabel}} · {{item.valueText}} {{item.unit}}</text>
+        </view>
+      </view>
+
+      <!-- ⑥ 检查所见 / 诊断意见 / 报告结论 / 建议 -->
+      <view wx:if="{{report.hasResultText}}" class="rd-block">
+        <view class="rd-sec-h"><image class="rd-sec-ic" src="{{icons.fileText}}" /><text>五、检查所见与报告结论</text></view>
+        <view wx:if="{{report.findingsText}}" class="rd-text"><text class="rd-text-k">检查所见</text><text class="rd-text-v">{{report.findingsText}}</text></view>
+        <view wx:if="{{report.impressionText}}" class="rd-text"><text class="rd-text-k">诊断意见</text><text class="rd-text-v">{{report.impressionText}}</text></view>
+        <view wx:if="{{report.conclusionText}}" class="rd-text"><text class="rd-text-k">报告结论</text><text class="rd-text-v">{{report.conclusionText}}</text></view>
+        <view wx:if="{{report.recommendationText}}" class="rd-text"><text class="rd-text-k">建议</text><text class="rd-text-v">{{report.recommendationText}}</text></view>
+      </view>
+
+      <!-- ⑧ 附件（仅真实存在的登记文件） -->
+      <view wx:if="{{report.attachments.length > 0}}" class="rd-block">
+        <view class="rd-sec-h"><image class="rd-sec-ic" src="{{icons.archive}}" /><text>六、相关影像与电子附件</text></view>
+        <view class="rd-attachments">
+          <view wx:for="{{report.attachments}}" wx:key="id" wx:for-item="file" class="rd-att">
+            <image wx:if="{{file.isImage}}" class="rd-att-img" src="{{file.url}}" mode="aspectFill" data-url="{{file.url}}" bindtap="onPreview" />
+            <view wx:else class="rd-att-file"><image class="rd-att-ic" src="{{icons.fileText}}" /><text class="rd-att-t">{{file.fileName}}</text></view>
+          </view>
+        </view>
+      </view>
+    </block>
+
+    <!-- ⑦ 报告人员与时间（未 READY 也展示已有的元信息） -->
+    <view wx:if="{{report.reportRows.length > 0}}" class="rd-block">
+      <view class="rd-sec-h"><image class="rd-sec-ic" src="{{icons.calendar}}" /><text>报告信息</text></view>
+      <view class="rd-rows">
+        <view wx:for="{{report.reportRows}}" wx:key="label" class="rd-row">
+          <text class="rd-row-k">{{item.label}}</text><text class="rd-row-v">{{item.value}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="rd-disclaimer">{{report.demoNotice}}。报告内容仅供界面演示与健康参考，不构成诊断或医学参考区间。</view>
+  </block>
+</view>

@@ -11,7 +11,10 @@
  * 后端服务均通过同一网关暴露（统一入口 :8080，穿透映射到同一端口）。local / development 可显式
  * 启用只读 mock；production 禁止临时隧道、localhost、写操作模拟成功和空网关。
  */
-// 当前档位：development（真机联调）。模拟器本地调试改 'local'；发布流水线替换为 'production'。
+// 当前档位：local（PC 模拟器直连本机网关）。真机联调请改回 'development'（走花生壳隧道）；
+// 发布流水线替换为 'production'。
+// ⚠️ 2026-11-04：devtools 报 `TypeError: Failed to fetch` 的直接原因是本档位停在 development，
+//    而隧道域名 qv56gv32944.vicp.fun 当时不可达（后端也没起）—— 模拟器完全没必要经隧道。
 const BUILD_ENV = 'development'
 
 // ⚠️ 档位白名单（fail-closed）：拼错（如 'prod' / 'Production'）不再静默落到 development，
@@ -79,8 +82,10 @@ const CLIENT_VERSION = '4.0.0'        // 契约 X-Client-Version（maxLength 20�
  * ⚠️ 它不是生产机密：production 档 devLoginKey 恒为空（不发头），后端 prod 档也不装配该闸门。
  *    它的作用是「挡住不带密钥的盲扫」，真正的边界是 SPRING_PROFILES_ACTIVE=prod。
  * ⚠️ 换值时要**同步**改 env.local，否则真机联调会 403 DEV_LOGIN_FORBIDDEN。
+ * ⚠️ 2026-11-05：本值已轮换（旧值曾进入公开仓库的历史提交）。它仍只是 dev 闸门，
+ *    真边界是后端 SPRING_PROFILES_ACTIVE=prod 不装配该 provider；轮换后可继续公开。
  */
-const DEV_LOGIN_KEY = 'wb-devlogin-21cbddfc3b21990d6df374f6fa3f92cc'
+const DEV_LOGIN_KEY = 'wb-devlogin-281819dbbf8ade34e27ac5fb04ce48a6'
 
 // 契约 WechatLoginRequest.consentVersion（必填，1~20）：用户确认过的隐私政策版本。
 // ⚠️ 现有登录页只有"登录即代表同意"的文案，尚无独立的同意界面 —— 此处复用仓库内

@@ -999,6 +999,79 @@ paths:
   # patient
   # ==========================================================================
 
+  # ---------- 电子检查报告（V27 · 2026-11-05）----------
+  # 增量扩展：health_records 仍是档案主表，报告明细来自 health_report_details /
+  # sections / items。状态门禁在服务端：非 READY 报告不返回项目、结论与附件，
+  # 客户端隐藏不作为隔离手段。数值型与描述型报告共用同一结构。
+  /api/v1/reports:
+    get:
+      operationId: listHealthReports
+      tags: [patient]
+      summary: 电子检查报告列表
+      description: |
+        默认按报告时间倒序（无报告时间时回退到检查时间）。所有查询强制带当前会话 user_id。
+        `from` / `to` 为 `yyyy-MM-dd`（UTC 口径），作用于检查时间；`to` 为开区间（不含当日）。
+        `familyMemberId` 不传 = 不按成员过滤；传入则只返回该成员名下报告。
+        `abnormalCount` 只统计 abnormalFlag 非 NORMAL / NOT_APPLICABLE 的项目。
+      parameters:
+        - name: reportType
+          in: query
+          required: false
+          schema: {type: string, enum: [LAB, IMAGING, CHECKUP, PATHOLOGY, ECG]}
+        - name: status
+          in: query
+          required: false
+          schema: {type: string, enum: [READY, REVIEWING, PENDING]}
+        - name: familyMemberId
+          in: query
+          required: false
+          schema: {type: string, maxLength: 64}
+        - name: from
+          in: query
+          required: false
+          description: 起始日期（含），格式 yyyy-MM-dd。
+          schema: {type: string, format: date}
+        - name: to
+          in: query
+          required: false
+          description: 截止日期（不含），格式 yyyy-MM-dd。
+          schema: {type: string, format: date}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 报告列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkReportSummaryList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/reports/{recordId}:
+    get:
+      operationId: getHealthReport
+      tags: [patient]
+      summary: 电子检查报告详情
+      description: |
+        越权（非当前 user_id）返回 404；档案无报告明细返回 404 `REPORT_DETAIL_NOT_FOUND`。
+        `reportStatus != READY` 时返回 200 + 脱敏结构：sections / attachments 为空数组，
+        findingsText / impressionText / conclusionText / recommendationText 为 null，
+        仅 statusNotice 给出文字提示。服务端不查询明细表，前端不得缓存未审核结果。
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 报告详情（未出具时为脱敏结构）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkReportDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
   /api/v1/health-records:
     get:
       operationId: listHealthRecords
@@ -3553,6 +3626,124 @@ components:
           description: 就诊机构（效果图卡片副行「本院区 · 门诊检验」）；`null` = 未记录，客户端不渲染该行。
         version: {type: integer, minimum: 1}
       additionalProperties: false
+
+    # ---------- 电子检查报告（V27 · 2026-11-05）----------
+    # 本轮新定义，未冒充既有契约：reportType / abnormalFlag / dataOrigin 枚举
+    # 均来自 V27 迁移与 HealthReportService，仓库此前无权威定义。
+    ReportItem:
+      type: object
+      required: [id, itemName, abnormalFlag]
+      properties:
+        id: {type: string}
+        itemCode: {type: [string, 'null']}
+        itemName: {type: string, description: 检查项目名称。}
+        resultValue:
+          type: [number, 'null']
+          description: 数值型结果（DECIMAL(18,4)）；定性/描述型为 null。
+        resultText:
+          type: [string, 'null']
+          description: 定性或文字结果，如「阴性」「未见异常」。
+        unit: {type: [string, 'null']}
+        referenceLow: {type: [number, 'null']}
+        referenceHigh: {type: [number, 'null']}
+        referenceText:
+          type: [string, 'null']
+          description: 报告出具时的完整参考范围快照，不共用全局固定区间。
+        abnormalFlag:
+          type: string
+          enum: [NORMAL, HIGH, LOW, POSITIVE, NEGATIVE, ABNORMAL, NOT_APPLICABLE]
+        abnormalLabel:
+          type: string
+          description: 服务端给出的中文文字提示；异常不得只靠颜色区分。
+        inspectionMethod: {type: [string, 'null']}
+        remark: {type: [string, 'null']}
+        sortOrder: {type: integer}
+      additionalProperties: false
+
+    ReportSection:
+      type: object
+      required: [id, sectionCode, sectionName, items]
+      properties:
+        id: {type: [string, 'null'], description: 未分组兜底分组的 id 为 null。}
+        sectionCode: {type: string}
+        sectionName: {type: string}
+        sortOrder: {type: integer}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ReportItem'}
+      additionalProperties: false
+
+    ReportSummary:
+      type: object
+      required: [recordId, reportNo, title, reportType, reportStatus, recordedAt, abnormalCount, isDemo]
+      properties:
+        recordId: {type: string, description: health_records.id，详情页路径参数。}
+        reportNo: {type: string}
+        title: {type: string}
+        reportType: {type: string, enum: [LAB, IMAGING, CHECKUP, PATHOLOGY, ECG]}
+        institutionName: {type: [string, 'null']}
+        departmentName: {type: [string, 'null']}
+        patientName: {type: [string, 'null']}
+        reportStatus: {type: [string, 'null'], enum: [READY, REVIEWING, PENDING, 'null']}
+        familyMemberId: {type: [string, 'null']}
+        recordedAt: {type: string, format: date-time}
+        reportedAt: {type: [string, 'null'], format: date-time}
+        abnormalCount: {type: integer, minimum: 0}
+        isDemo: {type: boolean, description: 演示数据标记；客户端必须显示演示水印。}
+      additionalProperties: false
+
+    ReportDetail:
+      type: object
+      required: [recordId, reportNo, title, reportType, reportStatus, isDemo, sections, attachments]
+      description: |
+        非 READY 报告为脱敏结构：结论类字段为 null，sections / attachments 为空数组，
+        statusNotice 为唯一提示文案。演示数据需显示「演示数据 · 非真实医疗报告」水印。
+      properties:
+        recordId: {type: string}
+        reportNo: {type: string}
+        title: {type: string}
+        reportType: {type: string, enum: [LAB, IMAGING, CHECKUP, PATHOLOGY, ECG]}
+        reportStatus: {type: [string, 'null'], enum: [READY, REVIEWING, PENDING, 'null']}
+        isDemo: {type: boolean}
+        demoNotice: {type: [string, 'null']}
+        statusNotice: {type: [string, 'null']}
+        institutionName: {type: [string, 'null']}
+        institutionType: {type: [string, 'null']}
+        departmentName: {type: [string, 'null']}
+        patientName: {type: [string, 'null']}
+        patientSex: {type: [string, 'null']}
+        patientAge: {type: [string, 'null']}
+        outpatientNo: {type: [string, 'null']}
+        inpatientNo: {type: [string, 'null']}
+        clinicalDiagnosis: {type: [string, 'null']}
+        applicantDoctor: {type: [string, 'null']}
+        specimenType: {type: [string, 'null']}
+        specimenNo: {type: [string, 'null']}
+        collectionAt: {type: [string, 'null'], format: date-time}
+        receivedAt: {type: [string, 'null'], format: date-time}
+        testedAt: {type: [string, 'null'], format: date-time}
+        reportedAt: {type: [string, 'null'], format: date-time}
+        operatorName: {type: [string, 'null']}
+        reviewerName: {type: [string, 'null']}
+        inspectionMethod: {type: [string, 'null']}
+        instrumentModel: {type: [string, 'null']}
+        findingsText: {type: [string, 'null'], description: 检查所见（影像/描述型报告）。}
+        impressionText: {type: [string, 'null'], description: 诊断意见。}
+        conclusionText: {type: [string, 'null']}
+        recommendationText: {type: [string, 'null']}
+        sections:
+          type: array
+          items: {$ref: '#/components/schemas/ReportSection'}
+        attachments:
+          type: array
+          items: {$ref: '#/components/schemas/Attachment'}
+      additionalProperties: false
+
+    OkReportSummaryList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/ReportSummary'}}}}]
+
+    OkReportDetail:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/ReportDetail'}}}]
 
     HealthRecordCreate:
       type: object

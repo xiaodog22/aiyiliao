@@ -1,0 +1,264 @@
+/* pages/profile/report-detail —— 电子检查报告详情（V27）
+   色值只取 app.wxss 变量（本页零字面色值）；字号只用 --font-* 变量；
+   几何一律 rpx，@media (min-width:600px) 内逐选择器 ÷2 折 px（含 border-width）。 */
+.rd-page { padding: 24rpx; }
+
+/* 演示水印：斜向铺底、不拦截点击；不使用真实印章或二维码 */
+.rd-watermark {
+  position: fixed;
+  top: 45%;
+  left: -10%;
+  width: 120%;
+  text-align: center;
+  color: var(--primary);
+  opacity: 0.08;
+  font-size: var(--font-title);
+  transform: rotate(-28deg);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ① 报告头 */
+.rd-head {
+  position: relative;
+  margin-bottom: 20rpx;
+  padding: 32rpx;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+  text-align: center;
+}
+.rd-inst { color: var(--text-sub); font-size: var(--font-caption); }
+.rd-title { margin-top: 12rpx; color: var(--text-main); font-size: var(--font-title); }
+.rd-no { margin-top: 12rpx; color: var(--text-weak); font-size: var(--font-caption); }
+.rd-demo {
+  display: inline-block;
+  margin-top: 16rpx;
+  padding: 6rpx 16rpx;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--text-sub);
+  font-size: var(--font-caption);
+}
+
+/* 未出具状态 */
+.rd-locked {
+  margin-bottom: 20rpx;
+  padding: 40rpx 24rpx;
+  border-radius: var(--radius-lg);
+  background: var(--amber-soft);
+  text-align: center;
+}
+.rd-locked-ic { width: 64rpx; height: 64rpx; margin-bottom: 16rpx; }
+.rd-locked-t { color: var(--amber-text); font-size: var(--font-h2); }
+.rd-locked-s { margin-top: 12rpx; color: var(--text-sub); font-size: var(--font-caption); }
+
+/* 通用区块 */
+.rd-block {
+  position: relative;
+  margin-bottom: 20rpx;
+  padding: 24rpx;
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-card);
+}
+.rd-sec-h {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16rpx;
+  padding-bottom: 12rpx;
+  border-bottom-width: 1rpx;
+  border-bottom-style: solid;
+  border-bottom-color: var(--border);
+  color: var(--text-main);
+  font-size: var(--font-h2);
+}
+.rd-sec-ic { width: 32rpx; height: 32rpx; margin-right: 12rpx; }
+.rd-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 10rpx 0;
+  border-bottom-width: 1rpx;
+  border-bottom-style: solid;
+  border-bottom-color: var(--border);
+  font-size: var(--font-caption);
+}
+.rd-row-k { width: 180rpx; flex-shrink: 0; color: var(--text-sub); }
+.rd-row-v { flex: 1; color: var(--text-main); word-break: break-all; }
+
+/* ④ 分组与项目 */
+.rd-sec { margin-bottom: 16rpx; }
+.rd-sec-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12rpx 16rpx;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--primary);
+  font-size: var(--font-body);
+}
+.rd-sec-arrow { width: 28rpx; height: 28rpx; transform: rotate(90deg); }
+.rd-sec-arrow-open { transform: rotate(-90deg); }
+.rd-item {
+  margin-top: 12rpx;
+  padding: 16rpx;
+  border-radius: var(--radius-sm);
+  border-width: 1rpx;
+  border-style: solid;
+  border-color: var(--border);
+}
+.rd-item-top { display: flex; align-items: center; justify-content: space-between; }
+.rd-item-name { flex: 1; margin-right: 12rpx; color: var(--text-main); font-size: var(--font-caption); }
+.rd-item-flag {
+  flex-shrink: 0;
+  padding: 4rpx 12rpx;
+  border-radius: var(--radius-sm);
+  background: var(--mint-soft);
+  color: var(--mint-text);
+  font-size: var(--font-caption);
+}
+.rd-item-flag-on { background: var(--amber-soft); color: var(--amber-text); }
+.rd-item-bottom { display: flex; align-items: baseline; flex-wrap: wrap; margin-top: 8rpx; }
+.rd-item-value { color: var(--text-main); font-size: var(--font-title); }
+.rd-item-value-on { color: var(--accent-red); }
+.rd-item-unit { margin-left: 8rpx; color: var(--text-sub); font-size: var(--font-caption); }
+.rd-item-ref { margin-left: 16rpx; color: var(--text-sub); font-size: var(--font-caption); }
+.rd-item-remark { margin-top: 8rpx; color: var(--text-weak); font-size: var(--font-caption); }
+
+/* ⑤ 异常清单 */
+.rd-abn {
+  margin-bottom: 12rpx;
+  padding: 12rpx 16rpx;
+  border-radius: var(--radius-sm);
+  border-left-width: 6rpx;
+  border-left-style: solid;
+  border-left-color: var(--accent-amber);
+  background: var(--amber-soft);
+}
+.rd-abn-name { color: var(--text-main); font-size: var(--font-caption); }
+.rd-abn-t { margin-left: 12rpx; color: var(--amber-text); font-size: var(--font-caption); }
+
+/* ⑥ 所见 / 结论 */
+.rd-text {
+  margin-bottom: 12rpx;
+  padding: 16rpx;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+.rd-text-k { display: block; margin-bottom: 8rpx; color: var(--text-sub); font-size: var(--font-caption); }
+.rd-text-v { display: block; color: var(--text-main); font-size: var(--font-body); word-break: break-all; }
+
+/* ⑧ 附件 */
+.rd-attachments { display: flex; flex-wrap: wrap; }
+.rd-att { width: 200rpx; margin-right: 12rpx; margin-bottom: 12rpx; }
+.rd-att-img { width: 200rpx; height: 150rpx; border-radius: var(--radius-sm); }
+.rd-att-file {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 200rpx;
+  height: 150rpx;
+  padding: 12rpx;
+  border-radius: var(--radius-sm);
+  border-width: 1rpx;
+  border-style: solid;
+  border-color: var(--border);
+}
+.rd-att-ic { width: 40rpx; height: 40rpx; }
+.rd-att-t { margin-top: 8rpx; color: var(--text-sub); font-size: var(--font-caption); }
+
+.rd-disclaimer {
+  margin-top: 12rpx;
+  padding: 20rpx;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--text-sub);
+  font-size: var(--font-caption);
+}
+
+/* 错误态 */
+.rd-state {
+  padding: 48rpx 24rpx;
+  text-align: center;
+  background: var(--card);
+  border-radius: var(--radius-lg);
+}
+.rd-state-badge {
+  width: 80rpx;
+  height: 80rpx;
+  margin: 0 auto 16rpx;
+  border-radius: 50%;
+  background: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rd-state-ic { width: 40rpx; height: 40rpx; }
+.rd-state-t { color: var(--text-main); font-size: var(--font-h2); }
+.rd-state-s { margin-top: 12rpx; color: var(--text-sub); font-size: var(--font-caption); }
+.rd-state-btn {
+  display: inline-block;
+  margin-top: 24rpx;
+  padding: 0 40rpx;
+  height: 72rpx;
+  line-height: 72rpx;
+  border-radius: var(--radius-md);
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: var(--font-body);
+}
+
+/* ≥600px：rpx → px（÷2），含 border-width */
+@media (min-width: 600px) {
+  .rd-page { padding: 12px; }
+  .rd-head { margin-bottom: 10px; padding: 16px; }
+  .rd-title { margin-top: 6px; }
+  .rd-no { margin-top: 6px; }
+  .rd-demo { margin-top: 8px; padding: 3px 8px; }
+  .rd-locked { margin-bottom: 10px; padding: 20px 12px; }
+  .rd-locked-ic { width: 32px; height: 32px; margin-bottom: 8px; }
+  .rd-locked-s { margin-top: 6px; }
+  .rd-block { margin-bottom: 10px; padding: 12px; }
+  .rd-sec-h { margin-bottom: 8px; padding-bottom: 6px; border-bottom-width: 1px; }
+  .rd-sec-ic { width: 16px; height: 16px; margin-right: 6px; }
+  .rd-row { padding: 5px 0; border-bottom-width: 1px; }
+  .rd-row-k { width: 90px; }
+  .rd-sec { margin-bottom: 8px; }
+  .rd-sec-bar { padding: 6px 8px; }
+  .rd-sec-arrow { width: 14px; height: 14px; }
+  .rd-item { margin-top: 6px; padding: 8px; border-width: 1px; }
+  .rd-item-name { margin-right: 6px; }
+  .rd-item-flag { padding: 2px 6px; }
+  .rd-item-bottom { margin-top: 4px; }
+  .rd-item-unit { margin-left: 4px; }
+  .rd-item-ref { margin-left: 8px; }
+  .rd-item-remark { margin-top: 4px; }
+  .rd-abn { margin-bottom: 6px; padding: 6px 8px; border-left-width: 3px; }
+  .rd-abn-t { margin-left: 6px; }
+  .rd-text { margin-bottom: 6px; padding: 8px; }
+  .rd-text-k { margin-bottom: 4px; }
+  .rd-att { width: 100px; margin-right: 6px; margin-bottom: 6px; }
+  .rd-att-img { width: 100px; height: 75px; }
+  .rd-att-file { width: 100px; height: 75px; padding: 6px; border-width: 1px; }
+  .rd-att-ic { width: 20px; height: 20px; }
+  .rd-att-t { margin-top: 4px; }
+  .rd-disclaimer { margin-top: 6px; padding: 10px; }
+  .rd-state { padding: 24px 12px; }
+  .rd-state-badge { width: 40px; height: 40px; margin: 0 auto 8px; }
+  .rd-state-ic { width: 20px; height: 20px; }
+  .rd-state-s { margin-top: 6px; }
+  .rd-state-btn { margin-top: 12px; padding: 0 20px; height: 36px; line-height: 36px; }
+}
+@media (min-width: 600px) and (max-width: 899px) {
+  .rd-page { max-width: 375px; margin: 0 auto; }
+}
+@media (min-width: 900px) {
+  .rd-page { max-width: 750px; margin: 0 auto; }
+}
+@media (max-height: 800px) {
+  .rd-head { padding: 20rpx; margin-bottom: 12rpx; }
+  .rd-block { padding: 16rpx; margin-bottom: 12rpx; }
+  .rd-locked { padding: 24rpx; }
+}

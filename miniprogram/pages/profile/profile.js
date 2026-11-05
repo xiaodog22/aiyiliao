@@ -129,6 +129,11 @@ Page({
     wx.navigateTo({ url: '/pages/profile/health-records/health-records' })
   },
 
+  // V27 电子检查报告列表（原「报告查询」占位入口）
+  goReports() {
+    wx.navigateTo({ url: '/pages/profile/reports/reports' })
+  },
+
   goConsultations() {
     wx.navigateTo({ url: '/pages/profile/consultations/consultations' })
   },
