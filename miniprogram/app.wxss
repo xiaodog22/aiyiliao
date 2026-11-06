@@ -1,5 +1,5 @@
 /**
- * app.wxss —— 全局设计 Token（楚大夫蓝调 · 参考图基调对齐版 2026-10-16）
+ * app.wxss —— 全局设计 Token（康诊云蓝调 · 参考图基调对齐版 2026-10-16）
  * 主色体系：品牌蓝 #0B6EF8 / 深海军蓝标题+正文 #14264C / 极淡蓝底 #F3F8FF
  * 组件体系：.hero-light（浅色 hero）· .tile-*（五色图标底板）· .li-*（列表行规约）
  *           .notice-bar（信息条）· .section-*（区块标题）· .page-wave（波浪）· .anim-*（入场动效）
@@ -7,7 +7,7 @@
  */
 
 page {
-  /* 楚大夫蓝调 · 效果图对齐版（2026-10-18，design-output 29 张效果图 + 设计规范说明.md 取色）
+  /* 康诊云蓝调 · 效果图对齐版（2026-10-18，design-output 29 张效果图 + 设计规范说明.md 取色）
      全仓唯一色源：改色只动这里；旧值（#165DFF/#F5F7FA/#1D2129…）全仓归零。
 
      ⚠️ 与设计规范的**唯一有意的偏离**：--text-sub 保持 #5064A0 而非规范里的 #8A9BB8。
@@ -403,7 +403,7 @@ page {
   --bg: #FFFFFF;
 }
 
-/* ============ SVG 图标尺寸（楚大夫线性图标） ============ */
+/* ============ SVG 图标尺寸（康诊云线性图标） ============ */
 .ic-xs { width: 24rpx; height: 24rpx; vertical-align: middle; }
 .ic-sm { width: 32rpx; height: 32rpx; vertical-align: middle; }
 .ic-md { width: 44rpx; height: 44rpx; }

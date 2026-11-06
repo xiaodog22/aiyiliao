@@ -7,7 +7,7 @@
 
 ## 1. 项目是什么
 
-**医疗健康 AI 微信小程序**（代号：楚大夫 / 患者端 AI 助手「小安」）
+**医疗健康 AI 微信小程序**（代号：康诊云 / 患者端 AI 助手「小安」）
 
 - 形态：原生微信小程序（WXML + WXSS + JS，**禁止 Vue/React/UniApp**），面向中老年适老化（大字三档/高对比）
 - 后端：**统一网关单入口** —— `miniprogram/config/env.js` 的 `gateway`（:8000 反代 Python FastAPI :8001 + Java Spring Boot :8088）；前端代码禁止出现 8001/8088/127.0.0.1/localhost
