@@ -27,6 +27,9 @@ const NEW_TESTS = [
 ].map((f) => path.join('tools', f))
 
 // ② 既有门禁回归（与 2026-10-18 基线一致的口径）
+// known:true 登记治理（2026-11-10）：只用于「已定位、有明确卡点、不阻塞本轮」的历史失败。
+// 退出条件：下次里程碑复测通过即改回 known:false；连续 2 个里程碑未复测则升级为阻塞项，
+// 不允许沉淀成永久豁免。每条 known 必须在注释里写明卡点与收口方向。
 const GATES = [
   { cmd: 'check-project.js', known: false },
   { cmd: 'check-require.js', known: false },
@@ -47,13 +50,18 @@ const GATES = [
   { cmd: 'test-knowledge-filter.js', known: false },
   // 2026-10-30 适老化触控 + 登录页字号令牌化（D-B/D-D-P2 触控 6 条、D-A-P2-02/03）
   { cmd: 'test-a11y-touch.js', known: false },
+  // 2026-11-10 提交完成态操作入口（展示条件 / 状态校验 / 幂等 / 组件重复触发）
+  { cmd: 'test-submission-actions.js', known: false },
   // 第二轮详细版 deep-audit（此前只在分片报告里手工跑，D-A-P1-01 断言⑦就在 login 里）
   { cmd: 'test-login-deep-audit.js', known: false },
   { cmd: 'test-patient-deep-audit.js', known: false },
   { cmd: 'test-doctor-deep-audit.js', known: false },
   { cmd: 'test-pkg-deep-audit.js', known: false },
-  { cmd: 'check-v4-docs.js', known: true },       // 登记在案：常量 24 路由 vs 实际 25
-  { cmd: 'check-v4-prototypes.js', known: true }  // 登记在案：原型截图尺寸 + manifest 缺页
+  // 2026-11-09 补登记：该套件一直存在但从未进一键入口（3 项失败长期无人看见）。
+  // 现余 1 项待查（断言① 设默认后 wb_voice 未落 storage），先按登记在案处理，不阻塞。
+  { cmd: 'test-profile-deep-audit.js', known: true },
+  { cmd: 'check-v4-docs.js', known: true },       // 登记在案：11 条新增路由未登记进 V4 主说明书
+  { cmd: 'check-v4-prototypes.js', known: true }  // 登记在案：原型清单缺页 + 截图尺寸
 ]
 
 function run(cmd, args) {

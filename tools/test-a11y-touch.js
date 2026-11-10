@@ -88,13 +88,21 @@ TOUCH.forEach(([id, file, sel, name, minRpx, minPx, label]) => {
 }
 
 // ---------------- F03 登录页字号令牌化 ----------------
-const LOGIN_FILES = [
-  'pages/auth/auth-common.wxss',
-  'pages/auth/login/login.wxss',
-  'pages/auth/patient-login/patient-login.wxss',
-  'pages/auth/doctor-login/doctor-login.wxss',
-  'pages/auth/manual-login/manual-login.wxss'
-]
+// 由磁盘真实文件集推导，不手写清单。
+// 2026-11-09 事故：清单里残留 2026-11-05 已删除的 pages/auth/auth-common.wxss →
+// readFileSync 直接 ENOENT 抛异常，本门禁自 11-05 起是**崩溃**而非报错，等于完全失效。
+const AUTH_DIR = path.join(ROOT, 'pages', 'auth')
+const LOGIN_FILES = fs.readdirSync(AUTH_DIR, { withFileTypes: true })
+  .filter((d) => d.isDirectory())
+  .flatMap((d) => fs.readdirSync(path.join(AUTH_DIR, d.name))
+    .filter((f) => f.endsWith('.wxss'))
+    .map((f) => 'pages/auth/' + d.name + '/' + f))
+  .sort()
+
+// 磁盘推导修好了「硬编码清单导致 ENOENT 崩溃」，但引入新风险：目录被清空/改名时
+// 清单为空 → F03-* 全不执行 → FAIL=0 假绿。补一条数量下限把空集变成显式失败。
+check('F03-0', '登录页 wxss 清单非空且 ≥4（防目录清空/改名导致空集假绿）',
+  LOGIN_FILES.length >= 4, '实得 ' + LOGIN_FILES.length)
 
 LOGIN_FILES.forEach((file, i) => {
   const { base } = split(file)
@@ -118,6 +126,24 @@ LOGIN_FILES.forEach((file, i) => {
   check('F03-6', '字号令牌三档确实递增（standard < large < xlarge）',
     all.length >= 3 && Number(all[0]) < Number(all[1]) && Number(all[1]) < Number(all[2]),
     'body=' + all.slice(0, 3).join(' / '))
+}
+
+// ---------------- F04 宽屏大字档按钮高度复核（Pad 适老化，静态可回归） ----------------
+// 2026-11-10：组件曾在 ≥600px 用 height:44px / border-radius:12px 字面覆盖令牌，
+// 把 theme-large(54px) / theme-xlarge(64px) 钉死成默认档，且 radius 与真源 10px 不一致。
+{
+  const app = read('app.wxss')
+  const wideApp = app.slice(app.indexOf('@media (min-width: 600px)'))
+  const heights = (wideApp.match(/--btn-height:\s*([0-9]+)px/g) || [])
+    .map((s) => Number(s.match(/([0-9]+)px/)[1]))
+  const sa = split('components/submission-actions/submission-actions.wxss')
+  const hardCoded = /(?:^|;)\s*(?:height|border-radius)\s*:\s*[0-9]+px/.test(sa.wide)
+  check('F04-1', '宽屏 --btn-height 三档递增（standard < large < xlarge）',
+    heights.length >= 3 && heights[0] < heights[1] && heights[1] < heights[2],
+    'px=' + heights.slice(0, 3).join(' / '))
+  check('F04-2', '组件宽屏段不得用字面 px 覆盖 height / border-radius（由令牌承载）',
+    !hardCoded && /var\(--btn-height\)/.test(sa.base) && /var\(--radius-md\)/.test(sa.base),
+    hardCoded ? '仍存在字面覆盖' : 'height=var(--btn-height), radius=var(--radius-md)')
 }
 
 console.log('--------------------------------')

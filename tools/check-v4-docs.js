@@ -37,7 +37,11 @@ const routes = app
   ? [...(app.pages || []), ...(app.subPackages || []).flatMap((sp) => (sp.pages || []).map((p) => sp.root + '/' + p))]
   : []
 
-if (routes.length !== 24) fail(`app.json 路由数应为 24，实际 ${routes.length}`)
+// ⚠️ 不校验"路由数等于某个常量"：24 是 V4 冻结时的快照，不是不变量。
+//    2026-11-09 前这里写的是 `routes.length !== 24`，产品扩到 36 路由后它必然红，
+//    报错还把 app.json（唯一真源）说成错的，真实的文档缺口被这条噪音盖住。
+//    真正的不变量在下面一行：app.json 的每条路由都必须在 V4 主说明书里登记。
+if (!routes.length) fail('app.json 未读到任何路由')
 
 // ---------- V4 主说明书 ----------
 const doc = read(DOC)

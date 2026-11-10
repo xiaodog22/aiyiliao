@@ -1,0 +1,35 @@
+/* 提交完成态操作区：色值/字号/圆角全部走 app.wxss 令牌，零字面色值（白字除外） */
+.sa-wrap {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 16rpx 0;
+}
+
+.sa-btn,
+.sa-passed {
+  height: var(--btn-height);
+  padding: 0 28rpx;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sa-btn { font-size: var(--font-body); }
+.sa-btn-pass { background: var(--primary); color: #FFFFFF; }
+.sa-btn-assess { background: var(--accent-soft); color: var(--primary); }
+.sa-passed { color: var(--text-sub); font-size: var(--font-caption); }
+
+/* 动画只动 opacity（真机屏闪教训）；sa-hover 供 WXML hover-class 使用 */
+.sa-disabled { opacity: 0.5; }
+.sa-hover { opacity: 0.85; }
+
+/* ≥600px：只折算字面 rpx。height / border-radius / font-size 全部由 app.wxss 断点令牌承载
+   （--btn-height 三档 44/54/64px、--radius-md 10px），组件内不得用字面 px 覆盖，
+   否则 theme-large / theme-xlarge 在 Pad 上被钉死成默认档。F04 断言守门。 */
+@media (min-width: 600px) {
+  .sa-wrap { gap: 8px; padding: 8px 0; }
+  .sa-btn,
+  .sa-passed { padding: 0 14px; }
+}

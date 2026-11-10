@@ -103,5 +103,8 @@
   },
   "style": "v2",
   "resizable": true,
+  "usingComponents": {
+    "submission-actions": "/components/submission-actions/submission-actions"
+  },
   "sitemapLocation": "sitemap.json"
 }

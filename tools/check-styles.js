@@ -39,6 +39,9 @@ const ALLOW = {
   'next-card': '与全局 .card 组合使用',
   'rec-line': '⚠️ 无自身样式：继承 page 正文字号/色 + 父卡内边距。复核非破版，但样式偏素 —— 列入观察，不属本轮范围',
   'device-info': '容器 hook，排版由子元素自带样式承担',
+  // 2026-11-09（report-detail 电子检查报告页）：
+  'rd-rows': '纯容器 hook：行内排版/分隔线由子元素 .rd-row（flex + padding + border-bottom）承担',
+  'rd-sec-name': '分组标题文本：字号/色/内边距全部由父级 .rd-sec-bar 承担，<text> 直接继承',
   'none': '微信内置写法 hover-class="none"：正则 /class="…"/ 会匹配到 hover-class 尾部，属采集误报'
 }
 

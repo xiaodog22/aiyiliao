@@ -22,7 +22,8 @@
 | `miniprogram/` | 前端主项目（pages / services / utils / config / components / 分包） | ✅ 日常改动区 |
 | `backend/` | edge-gateway(:8000) / business-service(:8088) / ai-service(:8001) | ⚠️ 仅联调或改契约时 |
 | `tools/` | 构建 + 验证脚本（check-*.js / test-*.js / build-*.py） | ✅ 改动前先查有没有现成脚本 |
-| `docs/` | 方案 / 契约 / 验收文档 + `历史设计规范/`（1.md~5.md、LAYOUT_PLAN.md） | ⚠️ 只读为主 |
+| `docs/` | 方案 / 契约 / 交付文档 / 手册 / 评审复盘 / 验收文档 + `历史设计规范/`（1.md~5.md、LAYOUT_PLAN.md、页面复刻/） | ⚠️ 只读为主 |
+| `archive/` | 已退出活动链的本地归档（重复副本、被取代的旧版本、一次性流水线产物、备份包）。不参与构建、门禁、运行与人工检索主路径 | ❌ 不碰 |
 | `avatar-backend/` `mao/` `models/` | 已下线数字人相关（备份） | ❌ 不碰 |
 | `design-output/` `ui-design-runs/` | 设计交付存档 | ❌ 不碰 |
 
@@ -47,6 +48,7 @@
 6. 最小修改：一次只改任务相关文件，禁止顺带重构 / 改名 / 搬目录。
 7. 修改前先确认影响范围；无理由不动 API、目录、UI 体系。
 8. 复用既有体系：颜色令牌只改 `app.wxss` 的 page 块；图标只用 `utils/icons.js`（**禁止 emoji 作图标**）；错误文案只用 `utils/err-text.js`；页面数据一律走 `services/`（禁止页面内散写业务数据）。
+   - 例外（2026-11-10 明确）：纯本地校验提示（非后端错误码、非网络异常）允许放在组件模块级常量并注明理由，`err-text.js` 仍只负责后端错误码映射；禁止在 WXML 或页面里散写文案。
 
 ### 写（输出）
 9. 默认输出格式，每项一行：`完成 → 修改 → 验证 → 日志 → 下一步`。

@@ -21,7 +21,9 @@ function checkShot(rel,vp,label){
 }
 let manifest,app;try{manifest=JSON.parse(read(MF));app=JSON.parse(read(APP))}catch(e){fail('JSON 语法错误: '+e.message);manifest={pages:[]};app={pages:[],subPackages:[]}}
 const routes=[...(app.pages||[]),...(app.subPackages||[]).flatMap(sp=>(sp.pages||[]).map(p=>sp.root+'/'+p))]
-if(routes.length!==24)fail(`app.json 路由数应为24，实际${routes.length}`)
+// 路由数常量（原 `!==24`）已移除：24 是 V4 冻结快照，产品扩到 36 后必然红且报错方向误导。
+// 下面第 25 行才是真不变量 —— app.json（真源）与清单双向集合相等，比总数断言更严。
+if(!routes.length)fail('app.json 未读到任何路由')
 const mr=manifest.pages.map(x=>x.route);for(const r of routes)if(!mr.includes(r))fail('清单遗漏路由 '+r);for(const r of mr)if(!routes.includes(r))fail('清单存在未知路由 '+r)
 if(new Set(mr).size!==mr.length)fail('清单存在重复路由');if(new Set(manifest.pages.map(x=>x.file)).size!==manifest.pages.length)fail('清单存在重复 HTML 文件')
 const required=[path.join(WEB,'index.html'),path.join(WEB,'shared','tokens.css'),path.join(WEB,'shared','components.css'),path.join(WEB,'shared','prototype.js')]

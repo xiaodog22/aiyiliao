@@ -280,21 +280,29 @@ async function testFormBoundary() {
   fam.onSubmit()
   check('[family] 姓名纯空白被拒「请填写成员姓名」', fam.data.formErr === '请填写成员姓名', '实得 ' + fam.data.formErr)
   fam.onInputName({ detail: { value: '陈大伯' } })
+  // 表单字段顺序 = 姓名 → 关系 → 手机号（family.wxml:86 / 94 / 101），
+  // 校验按字段顺序报第一个错：两者同时非法时先报「关系」，符合用户从上往下填的视线顺序。
+  // 两条规则仍各自被断言守住（2026-11-09 对齐：原用例假设手机号先于关系，与表单顺序相反）。
   fam.onInputPhone({ detail: { value: '123' } })
-  fam.onSubmit()
-  check('[family] 手机号「123」被拒格式提示', /^手机号格式不正确/.test(fam.data.formErr || ''), '实得 ' + fam.data.formErr)
-  fam.onInputPhone({ detail: { value: '' } })
   fam.onSubmit()
   check('[family] 未选关系被拒「请选择与本人的关系」', fam.data.formErr === '请选择与本人的关系', '实得 ' + fam.data.formErr)
   fam.onPickRelation({ currentTarget: { dataset: { rel: 'FATHER' } } })
   fam.onSubmit()
-  await tick5(); await tick5()
+  check('[family] 手机号「123」被拒格式提示', /^手机号格式不正确/.test(fam.data.formErr || ''), '实得 ' + fam.data.formErr)
+  fam.onInputPhone({ detail: { value: '' } })
+  const beforeSubmit = requestLog.length
+  fam.onSubmit()
+  await settle(fam, (d) => d.saving === false, 800)
   check('[family] 合法提交后 saving 复位且发了 POST /family-members',
     fam.data.saving === false && (function () {
-      const i = requestLog.findIndex((u) => u.indexOf('/api/v1/family-members') >= 0)
-      return i >= 0 && requestMethods[i] === 'POST'
+      // 只在本轮新增的调用里找 POST：requestLog 跨用例累积，onLoad 的 GET 列表排在前面，
+      // 用 findIndex 取首个命中会把 GET 当成提交（2026-11-09 修正）
+      const idx = requestLog
+        .map((u, i) => ({ u, i }))
+        .filter((x) => x.i >= beforeSubmit && x.u.indexOf('/api/v1/family-members') >= 0)
+      return idx.length > 0 && requestMethods[idx[0].i] === 'POST'
     })(),
-    JSON.stringify(requestLog.slice(-3)))
+    JSON.stringify(requestLog.slice(beforeSubmit)))
 
   // ---- personal-info 边界（错误走 wx.showToast 通道） ----
   const pcfg = loadPage(path.join('pages', 'profile', 'personal-info', 'personal-info.js'))

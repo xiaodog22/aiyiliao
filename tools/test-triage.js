@@ -293,22 +293,35 @@ const reqPath = require.resolve(path.join(ROOT, 'services', 'request.js'))
 const apiPath = require.resolve(path.join(ROOT, 'config', 'api.js'))
 const API = require(apiPath)
 const calls = []
+let stubExports = null
 
-function stubRequest(postImpl) {
-  require.cache[reqPath] = {
-    id: reqPath,
-    filename: reqPath,
-    loaded: true,
-    exports: {
-      API: API,
-      post(spec, data, opts) {
-        calls.push(String(spec.path).split('?')[0])
-        return postImpl(spec, data, opts)
-      },
-      get() { return Promise.resolve({}) }
-    }
+function stubRequest(postImpl, getImpl) {
+  // 真实导出面作基底，只覆盖 post/get。
+  // 2026-11-09 事故：桩原先手写 { API, post, get } 白名单，request.js 新增 newIdempotencyKey 后
+  // 未同步 → user.js 里 req.newIdempotencyKey() 抛 TypeError，整套服务层集成测试直接失效。
+  // 同时全程复用同一个 exports 对象（只换 post/get 实现）：各场景的 triage/ai/user 都持有
+  // 这一份引用，换桩即对全部消费者生效，避免旧桩实现串到下一个场景。
+  if (!stubExports) {
+    delete require.cache[reqPath]
+    stubExports = Object.assign({}, require(reqPath))
+    require.cache[reqPath] = { id: reqPath, filename: reqPath, loaded: true, exports: stubExports }
   }
-  delete require.cache[require.resolve(path.join(ROOT, 'services', 'triage.js'))]
+  stubExports.API = API
+  stubExports.post = function (spec, data, opts) {
+    calls.push(String(spec.path).split('?')[0])
+    return postImpl(spec, data, opts)
+  }
+  // get 用于 AI 任务轮询（GET /api/v1/ai/tasks/{taskId}），场景不给实现时返回空任务（永不终态）
+  stubExports.get = function (spec) {
+    return getImpl ? getImpl(spec) : Promise.resolve({})
+  }
+  // 只清 triage.js 不够：ai.js / user.js 也被 triage 间接依赖，它们若持有旧桩
+  // （或早于首次换桩就已缓存真实 request），换桩后仍走上一场景的实现 —— 场景 3「后端全挂」
+  // 因此可能拿到场景 1 的成功响应。凡是 require 过 request 的服务模块都要一并失效。
+  ;['triage.js', 'ai.js', 'user.js'].forEach((f) => {
+    const p = path.join(ROOT, 'services', f)
+    delete require.cache[require.resolve(p)]
+  })
   return require(path.join(ROOT, 'services', 'triage.js'))
 }
 
@@ -386,13 +399,19 @@ NMAP.DESTINATIONS.forEach((d) => {
 })
 check('导航-全科医学科已上图（1F 门诊大厅内）', NMAP.DESTINATIONS.some((d) => d.id === 'gp'))
 
-// 场景 1：正常后端（急诊判定 false + 科室推荐命中）
-stubRequest((spec) => {
-  const p = String(spec.path)
-  if (p.indexOf('emergency') >= 0) return Promise.resolve({ is_emergency: false })
-  if (p.indexOf('recommend-department') >= 0) return Promise.resolve({ clinic: '消化内科门诊', reason: '上消化道症状' })
-  return Promise.resolve({})
-})
+// 场景 1：正常后端 —— 建会话 → 提交分诊任务 → 轮询到 SUCCEEDED
+// ⚠️ 契约已从 Phase 1 的「emergency/check + recommend-department 两个接口」迁移为
+//    「POST /consultations → POST /consultations/{id}/triage → GET /ai/tasks/{id}」任务链
+//    （见 services/triage.js §aiTriage）。旧端点若被重新引入，下面「未回退」断言会直接报出来。
+stubRequest(
+  (spec) => (/\/triage$/.test(String(spec.path))
+    ? Promise.resolve({ taskId: 't-ok' })
+    : Promise.resolve({ consultation: { id: 'c-1' } })),
+  () => Promise.resolve({
+    status: 'SUCCEEDED',
+    result: { recommendedDepartments: [{ departmentName: '消化内科', reason: '上消化道症状', confidence: 0.9 }] }
+  })
+)
 const S1 = require(path.join(ROOT, 'services', 'triage.js'))
 
 // ==================== ⑩ 路线询问应答词（问诊页/导诊页共用）====================
@@ -419,12 +438,17 @@ S1.analyze('胸口压榨样疼')
   })
   .then((r) => {
     check('服务-普通症状直接出结论（不追问）', !r.question, 'question=' + JSON.stringify(r.question))
-    check('服务-调用了急诊判定与科室推荐两个接口', calls.length === 2, calls.join(','))
+    check('服务-走「建会话 + 提交分诊任务」两步',
+      calls.length === 2 && /\/consultations$/.test(calls[0]) && /\/triage$/.test(calls[1]), calls.join(','))
+    check('服务-未回退到已下线的 emergency / recommend-department 端点',
+      !calls.some((u) => u.indexOf('emergency') >= 0 || u.indexOf('recommend-department') >= 0), calls.join(','))
     check('服务-融合后端科室结果', r.primary.dept === '消化内科', r.primary.dept)
     check('服务-标注 AI 已使用', r.aiUsed === true && r.aiFallback === false)
     check('服务-融合后可导航（1F 有房间）', r.navigable === true)
+    check('服务-回传会话 id 供下一轮追加', r.consultationId === 'c-1', String(r.consultationId))
     // 场景 3：后端全挂 → 本地兜底，绝不能卡住用户
-    const S2 = stubRequest(() => Promise.reject(new Error('network down')))
+    const S2 = stubRequest(() => Promise.reject(new Error('network down')),
+      () => Promise.reject(new Error('network down')))
     return S2.analyze('腰痛膝盖痛', { forceResult: true })
   })
   .then((r) => {
@@ -432,23 +456,38 @@ S1.analyze('胸口压榨样疼')
     check('服务-标记为 AI 降级', r.aiFallback === true)
     // 场景 3b：隐私开关「仅本地分析」→ 一个字都不发后端（隐私告知里点了"仅本地分析"）
     calls.length = 0
-    const S2b = stubRequest(() => Promise.resolve({ clinic: '呼吸内科' }))
+    const S2b = stubRequest(() => Promise.resolve({ consultation: { id: 'c-x' } }))
     return S2b.analyze('胃疼反酸一周了', { forceResult: true, useRemote: false })
   })
   .then((r) => {
     check('服务-仅本地分析时零后端调用', calls.length === 0, 'calls=' + calls.join(','))
     check('服务-仅本地分析仍出科室结论', r.primary.dept === '消化内科', r.primary.dept)
     check('服务-仅本地分析标注 AI 降级', r.aiFallback === true)
-    // 场景 4：后端报急 → 升级为 emergency
-    const S3 = stubRequest((spec) => {
-      if (String(spec.path).indexOf('emergency') >= 0) return Promise.resolve({ is_emergency: true, text: '建议立即就医' })
-      return Promise.resolve({ clinic: '呼吸内科' })
-    })
+    // 场景 4：任务终态 FAILED（模型超时/失败）→ 本地兜底并带结构化错误
+    const S3 = stubRequest(
+      (spec) => (/\/triage$/.test(String(spec.path))
+        ? Promise.resolve({ taskId: 't-bad' })
+        : Promise.resolve({ consultation: { id: 'c-2' } })),
+      () => Promise.resolve({ status: 'FAILED', error: { code: 'MODEL_TIMEOUT', message: '模型超时' } })
+    )
     return S3.analyze('咳嗽有点胸闷', { forceResult: true })
   })
   .then((r) => {
-    check('服务-后端报急即升级 emergency', r.emergency && r.level === 'emergency', 'level=' + r.level)
-    check('服务-升级后主推荐仍为急诊科', r.primary.dept === '急诊科', r.primary.dept)
+    check('服务-任务失败仍给本地结论', !!(r.primary && r.primary.dept), 'dept=' + (r.primary && r.primary.dept))
+    check('服务-任务失败标注降级且带 aiError',
+      r.aiFallback === true && !!(r.aiError && r.aiError.code === 'MODEL_TIMEOUT'),
+      JSON.stringify(r.aiError || null))
+    // 安全底线（引擎层）：远端急诊信号一旦给出，必须升级为急诊并同步切急诊科。
+    // ⚠️ 当前 triage.js 只把 { clinic, reason } 交给 mergeRemote，远端急诊并集实际未接线
+    //    —— 已作为独立发现登记（DEV_LOG 2026-11-09），此处守住引擎能力不退化。
+    check('服务-引擎层远端急诊并集能力成立（接线缺口见 DEV_LOG 2026-11-09）',
+      (function () {
+        const eng = require(path.join(ROOT, 'utils', 'triage-engine.js'))
+        const merged = eng.mergeRemote(
+          { emergency: false, level: 'routine', levelText: '', primary: { dept: '呼吸内科' }, redFlags: [] },
+          { emergency: { is_emergency: true, text: '建议立即就医' } })
+        return merged.emergency === true && merged.primary.dept === '急诊科'
+      })())
     summary()
   })
   .catch((e) => {

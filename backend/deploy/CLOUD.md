@@ -162,6 +162,7 @@ CORS 只在 WebView / H5 调试台里才生效（`GW_CORS_ALLOW_ORIGINS` 显式�
 - [ ] 控制台端口改为 8080 / 8088 / 8001
 - [ ] business / ai 关闭公网访问
 - [ ] 第 3 节所有「启动失败」类变量已注入，ai 与 business 的 `AI_SERVICE_TOKEN` 同值
+- [ ] `GW_PROXY_TIMEOUT_SECONDS=220` 已**显式**注入（勿依赖 `config.py` 默认值）；`AI_TTS_PUBLIC_BASE` 已指向对外 HTTPS 域名而非 127.0.0.1；前端 `production` 档三档超时为 90/120/180s
 - [ ] 容器从最小副本 1 起步（最小副本 0 会在半小时无请求后缩容，冷启动直接打登录）
 - [ ] 真机传一张 3MB 照片 + 一个 30MB 视频（验证 multipart 已放开）
 - [ ] 真机打开登录页，小安机器人图正常显示（验证 downloadFile 域名）

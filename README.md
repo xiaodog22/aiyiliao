@@ -76,6 +76,8 @@ miniprogram/          原生小程序前端
   packageNav/         分包：院内导航
   packageContent/     分包：健康科普
   services/           数据访问层，页面不直接发请求
+  components/         通用组件（app.json 全局注册，页面可直接用标签）
+  utils/              纯逻辑真源；submission-actions.js = 提交完成态操作入口状态机
   config/env.js       唯一网关地址
   config/api.js       唯一接口路径表
 backend/
@@ -83,9 +85,17 @@ backend/
   ai-service/         FastAPI：导诊 / 问诊 / 养生 / ASR / TTS
   business-service/   Spring Boot：医生 / 挂号 / 床位 / 用户
   deploy/             一键启停脚本与环境模板
+docs/                 方案 / 契约 / 交付文档 / 手册 / 评审复盘 / 历史设计规范
+  INDEX.md            文档总索引（按「设计 → 架构 → 数据库 → 测试 → 部署」分层）
+  交付文档/           对外交付：后端功能测试设计、数据库表结构总览、代码规范
+  手册/               操作手册 DOCX（含待转 PDF 稿）
+  评审与复盘/          优化总结、待优化清单、测试用例调整建议
+  v4/ 设计/ 运维/      契约总纲、设计方案、运维记录
+  历史设计规范/        1.md~5.md、LAYOUT_PLAN.md、页面复刻方法（只读档案）
+docs/screenshots/     界面截图
 tools/                构建与校验脚本（依赖、样式、契约、分页、包体门禁等）
 site/                 项目主页（单文件 HTML）
-docs/screenshots/     界面截图
+archive/              已退出活动链的本地归档（重复副本 / 旧产物 / 大备份包，不入库）
 ```
 
 ### 包体基线（2026-11-05 质量面板整改后）
@@ -205,9 +215,11 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 
 按「设计 → 架构 → 数据库 → 测试 → 部署」分层，完整索引见 **[docs/INDEX.md](docs/INDEX.md)**。
 
-- 设计规范：[`1.md`](1.md)~[`5.md`](5.md)、[`LAYOUT_PLAN.md`](LAYOUT_PLAN.md)、[UIUX 说明书 V4](医疗_AI_智能健康小程序_UIUX_原型设计与界面说明书_V4.md)
+- 设计规范：[`docs/历史设计规范/1.md`](docs/历史设计规范/1.md)~[`5.md`](docs/历史设计规范/5.md)
+  <sub>（仅本地保留，属早期乱码草稿，未入库）</sub>、[`LAYOUT_PLAN.md`](docs/历史设计规范/LAYOUT_PLAN.md)、
+  [UIUX 说明书 V4](design-output/医疗_AI_智能健康小程序_UIUX_原型设计与界面说明书_V4.md)（界面规范唯一真源）
 - 架构与契约：[`docs/v4/`](docs/v4/)、[`backend/contracts/business-openapi.yaml`](backend/contracts/business-openapi.yaml)
-- 数据库：[`数据库表结构总览`](数据库表结构总览_20261022.md)、[`DATA_GOVERNANCE.md`](backend/deploy/DATA_GOVERNANCE.md)、[检查报告体系交付报告](backend/deploy/REPORT_DELIVERY_20261105.md)
+- 数据库：[`数据库表结构总览`](docs/交付文档/数据库表结构总览_20261022.md)、[`DATA_GOVERNANCE.md`](backend/deploy/DATA_GOVERNANCE.md)、[检查报告体系交付报告](backend/deploy/REPORT_DELIVERY_20261105.md)
 - 协作规范：[`AGENTS.md`](AGENTS.md)、[`WORKBODY_AGENT_RULES.md`](WORKBODY_AGENT_RULES.md)
 
 ## 贡献

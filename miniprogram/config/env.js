@@ -49,9 +49,12 @@ const ENVIRONMENTS = {
   production: {
     // 必须替换为已备案、已配置微信合法域名的正式 HTTPS 地址。
     gateway: '',
-    aiTimeout: 45000,
-    ttsTimeout: 60000,
-    carePlanTimeout: 90000,
+    // 2026-11-10：与网关 220s 链路预算对齐（ai 150s < business 165s < 前端 180s < 网关 220s，
+    // 见 backend/deploy/env.local 链路预算注释与 CLOUD.md §3）。原 45/60/90s 会让 careplan
+    // 前端先超时，而后端仍在生成；三档须保持 ai < tts < carePlan，收紧必须同步后端预算。
+    aiTimeout: 90000,
+    ttsTimeout: 120000,
+    carePlanTimeout: 180000,
     mockReadFallback: false
   }
 }

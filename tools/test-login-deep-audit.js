@@ -107,7 +107,8 @@ const FAKE_PROD_ENV = {
   gateway: 'https://api.example.com',
   fastapi: 'https://api.example.com',
   springboot: 'https://api.example.com',
-  aiTimeout: 45000, ttsTimeout: 60000, carePlanTimeout: 90000,
+  // 与 miniprogram/config/env.js 的 production 档真源一致（2026-11-10 统一到 220s 链路预算）
+  aiTimeout: 90000, ttsTimeout: 120000, carePlanTimeout: 180000,
   serviceReady: true,
   MOCK_READ_FALLBACK: false,
   MOCK_FALLBACK: false,
