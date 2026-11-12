@@ -174,9 +174,11 @@ public class DoctorController {
     public ResponseEntity<Envelope<ConsultationService.AcceptResult>> acceptConsultation(
             @PathVariable String consultationId,
             @RequestHeader(value = IdempotencyKeys.HEADER, required = false) String idempotencyKey) {
-        String key = IdempotencyKeys.require(idempotencyKey);
+        // 鉴权/授权先于参数校验（DEF-15）：患者 token 不带幂等键时原来回 400 MISSING_IDEMPOTENCY_KEY、
+        // 带上才回 403 —— 无权限的人可以据此探出接口的参数要求。先判角色，未授权一律 403。
         String userId = authService.ensureUser(currentUserContext.currentUserId());
         String doctorId = doctorService.requireDoctor(userId).id();
+        String key = IdempotencyKeys.require(idempotencyKey);
         var result = consultationService.accept(doctorId, consultationId);
         return ResponseEntity.ok()
                 .header(IdempotencyKeys.REPLAY_HEADER, String.valueOf(result.replayed()))
@@ -192,9 +194,10 @@ public class DoctorController {
     public ResponseEntity<Envelope<ConsultationService.CloseResult>> closeConsultation(
             @PathVariable String consultationId,
             @RequestHeader(value = IdempotencyKeys.HEADER, required = false) String idempotencyKey) {
-        IdempotencyKeys.require(idempotencyKey);
+        // 同 accept：先角色后参数（DEF-15）
         String userId = authService.ensureUser(currentUserContext.currentUserId());
         String doctorId = doctorService.requireDoctor(userId).id();
+        IdempotencyKeys.require(idempotencyKey);
         return ResponseEntity.ok(Envelope.ok(RequestIds.current(),
                 consultationService.close(doctorId, consultationId)));
     }
@@ -216,12 +219,14 @@ public class DoctorController {
             @PathVariable String appointmentId,
             @RequestHeader(value = IdempotencyKeys.HEADER, required = false) String idempotencyKey,
             @Valid @RequestBody AppointmentStatusUpdateRequest request) {
+        // 同 accept：先角色（403）再幂等键/路径参数（400），不向非医生泄露参数要求（DEF-15）
+        String userId = authService.ensureUser(currentUserContext.currentUserId());
+        doctorService.requireDoctor(userId);
         String key = IdempotencyKeys.require(idempotencyKey); // 缺失 → 400（契约参数 required）
         if (appointmentId == null || appointmentId.isBlank() || appointmentId.length() > PATH_ID_MAX) {
             throw new ApiException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY,
                     "appointmentId 长度须为 1~64 字符");
         }
-        String userId = authService.ensureUser(currentUserContext.currentUserId());
         var result = doctorService.updateStatus(userId, appointmentId, key, request);
         // 幂等重放时与 care-plan / 预约创建 / 问诊创建一致回 Idempotency-Replayed: true（D1 统一）
         ResponseEntity.BodyBuilder ok = ResponseEntity.ok();

@@ -49,18 +49,42 @@ const RELATIONS = ['父亲', '母亲', '配偶', '子女', '其他']
 
 const EMPTY_FORM = { name: '', relation: '', phone: '' }
 
+/**
+ * 授权流程文案（DEF-04）。放在模块级常量而不是散在方法/WXML 里：
+ * 这类是**本地流程提示**，不是后端错误码，按 AGENTS §4.8 的例外集中登记。
+ *
+ * ⚠️ 口径说明（重要）：后端只提供「发起邀请」+「接受邀请」两步，且没有"被邀请人"
+ * 独立登录态 —— 联调档下由邀请人本人确认。所以本页把两步合并为一次"家人已同意"的
+ * 确认：先建邀请（落一条 PENDING 记录、令牌只存哈希），再用返回的一次性令牌核销。
+ * 真实上线应由家人在自己的账号里接受邀请，本页只负责发起。
+ */
+const AUTH_COPY = {
+  title: '申请代管授权',
+  content: '请让家人在场并确认同意代管其健康档案与预约挂号。确认后将生成并核销一次性授权码。',
+  confirm: '家人已同意',
+  ok: '已获得授权',
+  fail: '授权失败，请重试'
+}
+
 /** 契约成员 → 页面字段（未返回字段留空不显示） */
 function normalize(list) {
   return (Array.isArray(list) ? list : []).map((m) => {
     const rawRelation = String(m.relation || '')
     const proxyStatus = String(m.proxyStatus || '').toUpperCase()
+    // 「本人」不需要代管授权（看自己的档案本就不走代理闸门）；后端不会创建 SELF 成员，
+    // 只有演示数据里有，这里兜住避免给"本人"弹「申请授权」。
+    const isSelf = rawRelation.toUpperCase() === 'SELF' || rawRelation === '本人'
+    const granted = isSelf || proxyStatus === 'GRANTED'
     return {
       id: m.id || '',
       name: m.displayName || '',
       relation: RELATION_TEXT[rawRelation.toUpperCase()] || rawRelation,
+      isSelf: isSelf,
       // 设计稿副行是「年龄段 · 授权态」；年龄段缺失时退到脱敏手机号（都是后端真实字段，不编造）
       metaText: [m.ageBand || m.phoneMasked || '', PROXY_TEXT[proxyStatus] || ''].filter(Boolean).join(' · '),
-      proxyGranted: proxyStatus === 'GRANTED',
+      proxyGranted: granted,
+      // 只有"非本人且未授权"才需要走授权流程（DEF-04 的入口显示条件）
+      canAuthorize: !granted && !isSelf,
       avatarUrl: m.avatarUrl || '',
       avatarErr: false
     }
@@ -74,7 +98,10 @@ function mockMembers() {
     displayName: m.name,
     relation: m.relation,
     ageBand: m.age == null || m.age === '' ? '' : String(m.age) + ' 岁',
-    proxyStatus: m.relation === '本人' ? 'NONE' : 'GRANTED'
+    // ⚠️ 演示数据不代表授权已生效：与后端 createMember（恒写 NONE）保持同一口径。
+    //    原来这里给非「本人」成员一律标 GRANTED，会在开发档演示出**错误的授权状态**，
+    //    让人误以为「加了家人就能代管档案」（DEF-12）。
+    proxyStatus: 'NONE'
   }))
 }
 
@@ -117,14 +144,72 @@ Page({
   onManage(e) {
     const item = this.data.members[Number(e.currentTarget.dataset.index)]
     if (!item) return
+    if (!item.proxyGranted) {
+      // DEF-04：未授权不再只弹一句说明（那条路是死路），直接把「申请授权」给出来
+      wx.showModal({
+        title: '管理 ' + (item.name || '成员') + ' 的健康档案',
+        content: '该成员尚未完成代理授权，暂不能代管其健康档案。可现在申请授权。',
+        confirmText: '申请授权',
+        cancelText: '知道了',
+        success: (res) => { if (res.confirm) this._authorize(item) }
+      })
+      return
+    }
     wx.showModal({
       title: '管理 ' + (item.name || '成员') + ' 的健康档案',
-      content: item.proxyGranted
-        ? '已获得该成员的代管授权；成员档案的独立视图尚未上线，当前可维护成员信息。'
-        : '该成员尚未完成代理授权，暂不能代管其健康档案。',
+      content: '已获得该成员的代管授权；成员档案的独立视图尚未上线，当前可维护成员信息。',
       showCancel: false,
       confirmText: '知道了'
     })
+  },
+
+  /** 成员卡上的「申请授权」入口（DEF-04） */
+  onAuthorize(e) {
+    const item = this.data.members[Number(e.currentTarget.dataset.index)]
+    if (!item || !item.canAuthorize) return
+    this._authorize(item)
+  },
+
+  /**
+   * 发起并确认授权（DEF-04）。
+   * 后端两步：POST invitations（拿一次性 token）→ POST invitations/accept（核销 + 置 GRANTED）。
+   * 这里合成一次用户确认，理由见 AUTH_COPY 注释（后端没有"被邀请人"独立登录态）。
+   */
+  _authorize(item) {
+    if (!item || !item.id || this._authorizing) return
+    this._authorizing = true   // 同步锁：弹窗是异步的，连点会叠出两次确认
+    wx.showModal({
+      title: AUTH_COPY.title,
+      content: AUTH_COPY.content,
+      confirmText: AUTH_COPY.confirm,
+      success: (res) => {
+        if (!res.confirm) { this._authorizing = false; return }
+        this._grantProxy(item)
+      },
+      fail: () => { this._authorizing = false }
+    })
+  },
+
+  /** 建邀请 → 立即核销 → 刷新列表（列表=后端真相，不在本地改状态） */
+  _grantProxy(item) {
+    wx.showLoading({ title: '处理中', mask: true })
+    userService.createFamilyInvitation({ relation: item.relation || '家人', channel: 'PHONE_DEEPLINK' })
+      .then((inv) => {
+        const token = inv && inv.token
+        if (!token) throw { code: 'NO_INVITATION_TOKEN', message: '授权码生成失败' }
+        return userService.acceptFamilyInvitation({ token: token, memberId: item.id })
+      })
+      .then(() => {
+        wx.hideLoading()
+        this._authorizing = false
+        wx.showToast({ title: AUTH_COPY.ok, icon: 'success' })
+        return this.fetch()
+      })
+      .catch((err) => {
+        wx.hideLoading()
+        this._authorizing = false
+        wx.showToast({ title: errText(err, AUTH_COPY.fail), icon: 'none' })
+      })
   },
 
   // 移除成员（DELETE /api/v1/family-members/{id}，成功后重新拉取列表）

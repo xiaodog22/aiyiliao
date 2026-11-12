@@ -42,6 +42,7 @@ public class PatientService {
     private final AttachmentStorage attachmentStorage;
     private final com.wechar.biz.consent.ConsentRepository consentRepository;
     private final com.wechar.biz.ai.AiTaskService aiTaskService;
+    private final FamilyProxyGuard proxyGuard;
     private final Duration interpretBudget;
     private final Clock clock;
 
@@ -49,6 +50,7 @@ public class PatientService {
                           AttachmentRepository attachments, AttachmentStorage attachmentStorage,
                           com.wechar.biz.consent.ConsentRepository consentRepository,
                           com.wechar.biz.ai.AiTaskService aiTaskService,
+                          FamilyProxyGuard proxyGuard,
                           Clock clock,
                           @org.springframework.beans.factory.annotation.Value(
                                   "${wechar.interpret.await-seconds:60}") long interpretAwaitSeconds) {
@@ -58,6 +60,7 @@ public class PatientService {
         this.attachmentStorage = attachmentStorage;
         this.consentRepository = consentRepository;
         this.aiTaskService = aiTaskService;
+        this.proxyGuard = proxyGuard;
         this.clock = clock;
         this.interpretBudget = Duration.ofSeconds(Math.max(5, interpretAwaitSeconds));
     }
@@ -484,11 +487,20 @@ public class PatientService {
         return new FamilyInvitationData(invitationId, token, now.plus(INVITE_TTL), channel);
     }
 
-    /** 接受邀请（契约外补充，联调用）：核销一次性令牌，成功后授予邀请人对创建成员的 GRANTED。 */
+    /**
+     * 接受邀请（2026-11-12 开放为契约端点，DEF-04）：核销一次性令牌，
+     * 成功后授予邀请人对指定成员的 GRANTED，并返回该成员的最新视图。
+     *
+     * ⚠️ 令牌是**一次性**的：重复调用返回 409 INVITATION_EXPIRED，
+     *    不是幂等重放 —— 授权状态本身可重复读取（GET /family-members 即真相）。
+     */
     @Transactional
-    public String acceptInvitation(String token, String memberId) {
+    public FamilyMemberData acceptInvitation(String token, String memberId) {
         if (token == null || token.isBlank()) {
             throw new ApiException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY, "token 必填");
+        }
+        if (memberId == null || memberId.isBlank()) {
+            throw new ApiException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY, "memberId 必填");
         }
         var invite = family.findInvitationByTokenHash(Digests.sha256Hex(token))
                 .orElseThrow(() -> new ApiException("INVITATION_NOT_FOUND", HttpStatus.NOT_FOUND,
@@ -497,28 +509,26 @@ public class PatientService {
             throw new ApiException("INVITATION_EXPIRED", HttpStatus.CONFLICT,
                     "邀请已使用或已过期（一次性）");
         }
+        // 先确认成员归属，再核销令牌：成员不属于本人才给出的邀请不该被白白消耗。
+        var member = family.findMember(invite.userId(), memberId)
+                .orElseThrow(() -> new ApiException("FAMILY_MEMBER_NOT_FOUND", HttpStatus.NOT_FOUND,
+                        "目标成员不存在"));
         if (!family.consumeInvitation(invite.invitationId(), clock.instant())) {
             throw new ApiException("INVITATION_EXPIRED", HttpStatus.CONFLICT,
                     "邀请已使用或已过期（一次性）");
         }
         // 授权生效：仅接受成功后 GRANTED（对邀请人 user_id 的该成员）
-        var member = family.findMember(invite.userId(), memberId)
+        family.grantProxy(invite.userId(), member.id(), clock.instant());
+        return family.findMember(invite.userId(), member.id()).map(PatientService::toMember)
                 .orElseThrow(() -> new ApiException("FAMILY_MEMBER_NOT_FOUND", HttpStatus.NOT_FOUND,
                         "目标成员不存在"));
-        family.grantProxy(invite.userId(), member.id(), clock.instant());
-        return invite.userId();
     }
 
     // ------------------------------------------------------------ 内部
 
     /** 契约红线：带 familyMemberId 的档案操作，无 GRANTED 授权一律 404（不泄露存在性）。 */
     private void requireProxyGranted(String userId, String familyMemberId) {
-        if (familyMemberId == null || familyMemberId.isBlank()) {
-            return; // 本人档案
-        }
-        family.findMemberByStatus(userId, familyMemberId, "GRANTED")
-                .orElseThrow(() -> new ApiException("FAMILY_MEMBER_NOT_FOUND", HttpStatus.NOT_FOUND,
-                        "家庭成员不存在或未获得代理授权（添加不等于授权）"));
+        proxyGuard.requireGranted(userId, familyMemberId);
     }
 
     private void requireCategory(String category) {

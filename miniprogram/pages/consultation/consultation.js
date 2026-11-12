@@ -25,7 +25,15 @@ const req = require('../../services/request.js')
 const { aptStatusText } = require('../../utils/apt-status.js')
 const { fmtDate } = require('../../utils/datetime.js')
 const { errText } = require('../../utils/err-text.js')
+const { hasContent } = require('../../utils/input-guard.js')
 const icons = require('../../utils/icons.js')
+
+/**
+ * 输入字数上限（DEF-08）：微信 `<input>` 默认 maxlength=140，不写就静默截断；
+ * 后端问诊消息上限 2000，长篇病情描述不能被无声砍掉。
+ */
+const INPUT_MAX = 2000
+const INPUT_MAX_TIP = '已达字数上限，可先发送再补充'
 
 /** 问诊会话状态 → 文案（契约 ConsultationData.status，未知值原样透传） */
 const CONSULT_STATUS_TEXT = { ACTIVE: '进行中', CLOSED: '已结束', ARCHIVED: '已归档' }
@@ -73,6 +81,7 @@ Page({
     status: 'IDLE',
     thinkingText: '正在为您分诊…',
     input: '',
+    inputMax: INPUT_MAX,
     // 本次 AI 问诊会话（POST /api/v1/consultations）；空 = 下一条消息时创建
     activeId: '',
     // AI 已追问但信息还不够出结论（第 2 轮起才会尝试分诊）
@@ -337,11 +346,25 @@ Page({
   },
 
   onQuick(e) { this.send(e.currentTarget.dataset.text) },
-  onInput(e) { this.setData({ input: e.detail.value }) },
+  onInput(e) {
+    const v = (e.detail && e.detail.value) || ''
+    // 到上限才提示一次（DEF-08）：到顶后键盘输入不再进框，不说明会像"键盘坏了"
+    if (v.length >= INPUT_MAX && !this._maxTipShown) {
+      this._maxTipShown = true
+      wx.showToast({ title: INPUT_MAX_TIP, icon: 'none' })
+    }
+    if (v.length < INPUT_MAX) this._maxTipShown = false
+    this.setData({ input: v })
+  },
 
   onSend() {
     const text = (this.data.input || '').trim()
     if (!text) return
+    // 纯标点/空白不算一句话（DEF-09 同类面）：拦在本地，不消耗一次 15~25s 的模型调用
+    if (!hasContent(text)) {
+      wx.showToast({ title: '请描述具体症状，如“嗓子疼三天”', icon: 'none' })
+      return
+    }
     this.setData({ input: '' })
     this.send(text)
   },

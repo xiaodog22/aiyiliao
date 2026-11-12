@@ -259,6 +259,9 @@ class MeExtendedProfileContractTest {
         for (int i = 0; i < bytes.length; i++) {
             bytes[i] = (byte) (i % 251);
         }
+        // DEF-05 同类面：头像端点也校验文件头，测试文件必须是真 PNG 头（否则 415）
+        byte[] magic = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+        System.arraycopy(magic, 0, bytes, 0, magic.length);
         mockMvc.perform(multipart("/api/v1/me/avatar")
                         .file(new MockMultipartFile("file", "avatar.png", "image/png", bytes))
                         .header("X-User-Id", USER))

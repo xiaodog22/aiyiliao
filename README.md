@@ -183,11 +183,11 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 
 | 层 | 载体 | 规模 |
 | --- | --- | --- |
-| Java 单元/契约/集成 | `backend/business-service/src/test` | 48 个测试类 / 319 项（`mvnw -o test` 实测） |
+| Java 单元/契约/集成 | `backend/business-service/src/test` | 48 个测试类 / 322 项（`mvnw -o test` 实测，2026-11-12） |
 | 网关行为 | `backend/edge-gateway/tests` | 132 项 pytest |
 | SQL 次数预算（防 N+1） | `DoctorQueryBudgetTest` + `QueryCounter` | 5 项 |
 | 端点级 SQL 画像 | `EndpointSqlProfileTest` | 2 项（逐端点上限 + 与数据量无关） |
-| **小程序逻辑层（并发）** | `miniprogram/tests/` + `tools/test-fe.js` | **8 项**（零依赖 `node:test`） |
+| **小程序逻辑层（并发）** | `miniprogram/tests/` + `tools/test-fe.js` | **14 项**（零依赖 `node:test`） |
 | **前后端契约快照** | `tools/contract-snapshot.js` + `contracts/snapshots/` | **5 端点**结构快照 |
 | 性能回归门禁 | `tools/perf-gate.js` | 25VU/20s，支持 `--rounds=N` + 配置指纹 |
 
@@ -199,6 +199,24 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 - AI 链路（分诊 / 问诊 / care-plan / TTS）**未做压测**：本机内存余量不足驻留 7B 模型。
 
 ## 开发记录
+
+### 2026-11-12 缺陷清单（17 条）修复批次
+
+按《缺陷清单_20261112.md》逐条修复，并在同批次做同类问题排查。落地后新增四条**运行时不变式**，
+后续开发请按它们自查：
+
+| 不变式 | 落点 | 回归守卫 |
+| --- | --- | --- |
+| 带 `familyMemberId` 的写路径（档案 / 挂号 / 改约）必须 `proxyStatus=GRANTED` | `FamilyProxyGuard`（唯一入口） | `M1IntegrationTest.未授权家庭成员_代挂号404_授权后放行` |
+| 同一用户同一号源只允许一笔在办预约（PENDING/CONFIRMED/CHECKED_IN） | `AppointmentRepository.hasActiveAppointment` | `M1IntegrationTest.同号源重复建单_409_…` |
+| 时间字段只有一套解析：ISO Instant → `utils/datetime.js`（禁字符串截取） | `services/appointment.js` / reports 两页 | `test-fe-datetime.js` DT-12~15 |
+| 兜底科室（全科医学科）不作确定结论，页面改「导诊台 / 全科」说明 | `triage-engine.noConclusion` | `test-patient-deep-audit.js` C11/C12 |
+
+其余：附件与头像落盘前比对**文件头魔数**（`FileMagic`，伪装文件 415）；导诊会话落 storage 可恢复
+（switchTab 不再清空对话）；三个输入框补 `maxlength`（1000/2000）且纯标点不再发请求；
+网关对非 ASCII 请求头回 400（不再 500）；取消预约用 `Idempotency-Replayed` 头区分「首次/重放」；
+契约补登记 5 个已实现端点。**未完成/待确认项见 `DEV_LOG.md` 同日条目末尾**（DB 唯一索引、限流生产开关）。
+
 
 - [DEV_LOG_README.md](DEV_LOG_README.md)：2026-10-30 之前的 README，已归档
 - `DEV_LOG.md`、`AI_CONTEXT.md`：本地开发日志与上下文索引，含内部联调信息，不随仓库发布

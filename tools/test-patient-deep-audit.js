@@ -256,6 +256,114 @@ section('C. 边界与篡改辅助断言')
     '兜底=' + aptGuarded)
 }
 
+/* ==================== C9~C12. 2026-11-12 缺陷回归（DEF-07 / DEF-09 / DEF-16） ==================== */
+section('C9~C12. 导诊页缺陷回归：脏输入 / 会话恢复 / 兜底科室')
+{
+  // C9 DEF-09：纯标点不构成症状 —— 不追加消息、不发请求、给中文提示
+  toastCalls.length = 0
+  const dirtyCtx = makeCtx(triageDef)
+  dirtyCtx._remoteAllowed = true
+  dirtyCtx._pendingNavDept = ''
+  dirtyCtx.data.status = 'IDLE'
+  dirtyCtx.data.messages = []
+  triageDef.send.call(dirtyCtx, '。。。')
+  check('C9 纯标点输入被本地拦截（不追加用户消息）', dirtyCtx.data.messages.length === 0,
+    'messages=' + dirtyCtx.data.messages.length)
+  check('C9b 纯标点输入给中文提示（不静默）',
+    toastCalls.some((t) => /请描述具体症状/.test(String(t))), JSON.stringify(toastCalls))
+  check('C9c 纯标点输入回填原文（不清空用户已打的字）', dirtyCtx.data.input === '。。。')
+
+  // C9d 反例：真实单字不得被误拦（路线询问应答词就是单字）
+  const shortCtx = makeCtx(triageDef)
+  shortCtx._remoteAllowed = false      // 仅本地分析：send 不会发请求
+  shortCtx._pendingNavDept = ''
+  shortCtx.data.status = 'IDLE'
+  shortCtx.data.messages = []
+  shortCtx._history = []
+  shortCtx._asked = []
+  triageDef.send.call(shortCtx, '疼')
+  check('C9d 单字症状「疼」不被误拦', shortCtx.data.messages.length >= 1,
+    'messages=' + shortCtx.data.messages.length)
+
+  // C10 DEF-07：对话快照落盘 → 新页面实例能恢复（switchTab 会销毁本页）
+  delete storage['wb_triage_live_session_v1']
+  const srcCtx = makeCtx(triageDef)
+  srcCtx.data.messages = []
+  srcCtx.data.msgId = 0
+  srcCtx.data.lastResult = null
+  srcCtx._consultationId = 'c-restored-1'
+  srcCtx._asked = ['duration']
+  srcCtx._history = ['嗓子疼三天']
+  srcCtx._pendingNavDept = ''
+  srcCtx._appendMsg({ id: 1, role: 'user', type: 'text', content: '嗓子疼三天', time: '09:00' })
+  srcCtx._persistSession()
+  check('C10 快照已写入 storage', !!storage['wb_triage_live_session_v1'])
+
+  const dstCtx = makeCtx(triageDef)
+  dstCtx.data.messages = []
+  dstCtx.data.msgId = 0
+  dstCtx._asked = []
+  dstCtx._history = []
+  dstCtx._consultationId = ''
+  const restored = triageDef._restoreSession.call(dstCtx)
+  check('C10b 返回 true 且消息流恢复', restored === true && dstCtx.data.messages.length === 1,
+    'restored=' + restored + ' messages=' + dstCtx.data.messages.length)
+  check('C10c 会话 id / 已问槽位 / 症状历史一并恢复',
+    dstCtx._consultationId === 'c-restored-1' && dstCtx._asked.indexOf('duration') >= 0
+      && dstCtx._history.indexOf('嗓子疼三天') >= 0)
+  check('C10d msgId 不回退（避免新消息 id 冲突）', dstCtx.data.msgId >= 1, 'msgId=' + dstCtx.data.msgId)
+
+  // C10e 过期快照不得复活（6 小时 TTL）
+  const expired = JSON.parse(JSON.stringify(storage['wb_triage_live_session_v1']))
+  expired.at = Date.now() - (7 * 60 * 60 * 1000)
+  storage['wb_triage_live_session_v1'] = expired
+  const expCtx = makeCtx(triageDef)
+  expCtx.data.messages = []
+  const restoredExpired = triageDef._restoreSession.call(expCtx)
+  check('C10e 超过 TTL 的快照被丢弃（不复活昨天的科室卡）', restoredExpired === false,
+    'restored=' + restoredExpired)
+
+  // C11 DEF-16：兜底科室不作为结论 —— 不出科室卡（也就不给「去预约」入口）
+  const fallbackCtx = makeCtx(triageDef)
+  fallbackCtx.data.messages = []
+  fallbackCtx.data.msgId = 0
+  fallbackCtx.data.status = 'IDLE'
+  triageDef._pushResult.call(fallbackCtx, {
+    noConclusion: true,
+    level: 'selfcare', levelText: '居家观察', levelCls: 'self',
+    primary: { dept: '全科医学科', score: 0, reasons: [] },
+    alternates: [], navigable: true
+  })
+  const types = fallbackCtx.data.messages.map((m) => m.type)
+  check('C11 兜底结论不渲染 triage 科室卡', types.indexOf('triage') < 0, JSON.stringify(types))
+  check('C11b 兜底结论改为可执行说明（含导诊台建议）',
+    fallbackCtx.data.messages.some((m) => m.type === 'text' && /导诊台/.test(m.content || '')),
+    JSON.stringify(fallbackCtx.data.messages.map((m) => m.type)))
+
+  // C12 引擎层：noConclusion 只在「兜底科室 + 弱命中」成立；强命中（乏力）仍是有效建议
+  const E = require('../miniprogram/utils/triage-engine.js')
+  const vague = E.analyze('就是不舒服', { asked: ['duration', 'severity', 'part', 'associated'], rounds: 4 })
+  check('C12 兜底科室在追问用尽后标记 noConclusion', vague.primary.dept === E.FALLBACK_DEPT && vague.noConclusion === true,
+    'dept=' + vague.primary.dept + ' score=' + vague.primary.score + ' noConclusion=' + vague.noConclusion)
+  const weakHit = E.analyze('最近有点低热', { asked: [], rounds: 0 })
+  check('C12b 兜底科室（低热）同样不当作结论', weakHit.noConclusion === true,
+    'dept=' + weakHit.primary.dept + ' score=' + weakHit.primary.score)
+  // ⚠️ 判据是「科室」不是「分数」：实测 就是不舒服=7 分、低热=4 分，
+  //    缺陷单建议的 score<4 阈值挡不住它们；而按科室判定后「乏力」也被降级 ——
+  //    代价可接受：文案仍明确给出「全科医学科」去处，用户不会无处可去。
+  const fatigue = E.analyze('最近总是乏力')
+  check('C12c 兜底科室一律降级（乏力亦然），但保留全科去处文案',
+    fatigue.primary.dept === E.FALLBACK_DEPT && fatigue.noConclusion === true,
+    'dept=' + fatigue.primary.dept + ' score=' + fatigue.primary.score)
+  const realDept = E.analyze('嗓子疼三天了')
+  check('C12d 命中专科时不受影响（noConclusion=false）', realDept.noConclusion === false,
+    'dept=' + realDept.primary.dept)
+  const emergency = E.analyze('胸口压榨样疼痛，出冷汗')
+  check('C12e 红旗急诊不受影响（noConclusion=false，主推荐急诊科）',
+    emergency.noConclusion === false && emergency.primary.dept === '急诊科',
+    'dept=' + emergency.primary.dept)
+}
+
 /* ==================== D. 对比度量化（打印表） ==================== */
 section('D. WCAG 对比度量化（static 推算，375px 档）')
 function lin(c) {

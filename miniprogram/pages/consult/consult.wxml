@@ -197,6 +197,7 @@
       confirm-type="send"
       bindconfirm="onSend"
       disabled="{{sending}}"
+      maxlength="{{inputMax}}"
       adjust-position="{{false}}"
       cursor-spacing="0"
       bindfocus="onKbHeight"

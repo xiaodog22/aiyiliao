@@ -46,6 +46,9 @@
           <view wx:if="{{item.relation}}" class="fm-chip">{{item.relation}}</view>
         </view>
         <view class="fm-actions">
+          <!-- DEF-04：未授权成员给出「申请授权」入口（后端 invitations + accept 的 UI 落点） -->
+          <view wx:if="{{item.canAuthorize}}" class="fm-act fm-act-auth"
+                data-index="{{index}}" bindtap="onAuthorize">申请授权</view>
           <view class="fm-act" data-index="{{index}}" bindtap="onManage">管理健康档案</view>
           <view wx:if="{{item.relation !== '本人'}}" class="fm-act fm-act-danger"
                 data-index="{{index}}" bindtap="onRemove">移除成员</view>

@@ -13,6 +13,7 @@ const assert = require('node:assert')
 const path = require('path')
 
 const { fmtDate, fmtLocalDateTime } = require(path.join(__dirname, '..', 'miniprogram', 'utils', 'datetime.js'))
+const { slotDateTime } = require(path.join(__dirname, '..', 'miniprogram', 'services', 'appointment.js'))
 
 // ==================== fmtDate：ISO Instant / 纯日期 → YYYY-MM-DD ====================
 
@@ -86,4 +87,34 @@ test('DT-11 时区守卫：进程 TZ 必须是 Asia/Shanghai（否则 DT-08/09 �
   const offsetMinutes = -new Date('2026-07-01T00:00:00Z').getTimezoneOffset()
   assert.strictEqual(offsetMinutes, 480,
     '本测试文件要求在 TZ=Asia/Shanghai 下运行（当前 UTC 偏移 ' + offsetMinutes + ' 分钟）')
+})
+
+// ==================== 号源时间：slotDateTime（DEF-02 回归）====================
+// 背景：挂号页原实现用正则截字符串，把带 Z 的 UTC Instant 当本地时间用 ——
+// 同一个 2026-11-13T09:00:00Z 在挂号页显示 09:00、医生端（走 fmtLocalDateTime）显示 17:00。
+// 下面三条锁死「只有一套解析口径」。
+
+test('DT-12 号源：UTC Instant 按本地时区换算（与医生端同一口径，DEF-02）', () => {
+  assert.deepStrictEqual(slotDateTime('2026-11-13T09:00:00Z'), { date: '2026-11-13', time: '17:00' })
+  // 跨日：23:30Z → 上海次日 07:30
+  assert.deepStrictEqual(slotDateTime('2026-11-12T23:30:00Z'), { date: '2026-11-13', time: '07:30' })
+  // 显式 +08:00 偏移
+  assert.deepStrictEqual(slotDateTime('2026-11-13T09:00:00+08:00'), { date: '2026-11-13', time: '09:00' })
+})
+
+test('DT-13 号源：与 fmtLocalDateTime 结果完全一致（禁止第二套解析）', () => {
+  const samples = ['2026-11-13T01:00:00Z', '2026-11-13T09:00:00Z', '2026-12-31T16:30:00Z']
+  samples.forEach((v) => assert.deepStrictEqual(slotDateTime(v), fmtLocalDateTime(v)))
+})
+
+test('DT-14 号源：无时区标记的演示数据按原样拆分（不被误解成 UTC）', () => {
+  assert.deepStrictEqual(slotDateTime('2026-08-30 09:30:00'), { date: '2026-08-30', time: '09:30' })
+  assert.deepStrictEqual(slotDateTime('2026-08-30T14:00:00'), { date: '2026-08-30', time: '14:00' })
+})
+
+test('DT-15 号源：空值/不可解析/只有日期 → null（页面丢弃该号源，不展示猜的时间）', () => {
+  assert.strictEqual(slotDateTime(''), null)
+  assert.strictEqual(slotDateTime(null), null)
+  assert.strictEqual(slotDateTime('abc'), null)
+  assert.strictEqual(slotDateTime('2026-08-30'), null)   // 有日期无时间：号源必须有时间
 })

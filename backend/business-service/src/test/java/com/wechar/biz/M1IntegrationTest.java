@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -45,6 +46,21 @@ class M1IntegrationTest {
     private org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private static final String DEV_KEY = "m1-test-key-0001";
+
+    /**
+     * DEF-03 起「同一用户 + 同一号源」只允许一笔在办预约（PENDING/CONFIRMED/CHECKED_IN）。
+     * 本类多个用例都会给 dev-user-1 在 slot-future-1 建单，若不清理，先跑的用例会把
+     * 后跑的判成重复（实测：PATCH 与 by-idempotency-key 两条因此 409）。
+     * 每个用例前清掉本用户的历史预约，让断言从"干净的一笔"开始；
+     * 种子里的 ap-bound-1 属 u-bound-user，不在清理范围内（预约统计用例依赖它）。
+     */
+    @BeforeEach
+    void resetDevUserAppointments() {
+        jdbc.update("DELETE FROM appointments WHERE user_id IN ('dev-user-1', 'u-dev-user-1')");
+        // 删行不会自动回补号源：不重置的话 remaining 会随用例累计泄漏，最后一个建单用例
+        // 会以 SLOT_FULL(409) 失败（实测踩到）。恢复到种子态：capacity 5 - 1 条种子预约 ap-bound-1。
+        jdbc.update("UPDATE doctor_slots SET remaining = 4 WHERE id = 'slot-future-1'");
+    }
 
     /** 从信封中提取 data.id（取最后一个 ap-/fm-/hr- 主键，创建响应即含新资源）。 */
     private static String extractId(String body, String prefix) {
@@ -625,6 +641,88 @@ class M1IntegrationTest {
                 .andExpect(status().isNotFound());
     }
 
+    // ---------------------------------------------------------------- DEF-01 / DEF-03 回归
+
+    /**
+     * DEF-03：同一用户对同一号源只允许一笔「在办」预约。
+     * 幂等键只挡同键重放；成功后前端会换新键再提交 —— 那条路径原来能建第二单，
+     * 导致 remaining 被多扣、取消只回补 1，号源账实不符。
+     */
+    @Test
+    void 同号源重复建单_409_DUPLICATE_APPOINTMENT_取消后可重约() throws Exception {
+        String body = "{\"slotId\":\"slot-future-1\",\"patientName\":\"重复甲\"}";
+        String created = mockMvc.perform(post("/api/v1/appointments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-User-Id", "dev-user-1")
+                        .header("Idempotency-Key", "m1-dup-key-0001")
+                        .content(body))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        String id = extractId(created, "ap-");
+
+        // 换新键、同号源 → 409 DUPLICATE_APPOINTMENT（不是 SLOT_FULL，也不是 500）
+        mockMvc.perform(post("/api/v1/appointments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-User-Id", "dev-user-1")
+                        .header("Idempotency-Key", "m1-dup-key-0002")
+                        .content(body))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DUPLICATE_APPOINTMENT"));
+
+        // 取消后同号源可重约（终态不占号）
+        mockMvc.perform(post("/api/v1/appointments/" + id + "/cancel")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-User-Id", "dev-user-1")
+                        .header("Idempotency-Key", "m1-dup-key-0003")
+                        .content("{}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/appointments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-User-Id", "dev-user-1")
+                        .header("Idempotency-Key", "m1-dup-key-0004")
+                        .content(body))
+                .andExpect(status().isOk());
+    }
+
+    /**
+     * DEF-01：带 familyMemberId 的挂号与档案读写同口径 —— 非 GRANTED 一律 404。
+     * 原实现只在档案路径校验授权，挂号把 familyMemberId 直接落库：
+     * 加一个家人（恒 NONE）就能替其占号。
+     */
+    @Test
+    void 未授权家庭成员_代挂号404_授权后放行() throws Exception {
+        String memberBody = mockMvc.perform(post("/api/v1/family-members")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-User-Id", "dev-user-1")
+                        .header("Idempotency-Key", "m1-fam-def01-key-01")
+                        .content("{\"displayName\":\"未授权成员\",\"relation\":\"母亲\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.proxyStatus").value("NONE"))
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        String memberId = extractId(memberBody, "fm-");
+
+        mockMvc.perform(post("/api/v1/appointments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-User-Id", "dev-user-1")
+                        .header("Idempotency-Key", "m1-fam-def01-key-02")
+                        .content("{\"slotId\":\"slot-future-1\",\"patientName\":\"未授权成员\","
+                                + "\"familyMemberId\":\"" + memberId + "\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("FAMILY_MEMBER_NOT_FOUND"));
+
+        // 拒绝发生在扣号之前：授权后同一号源仍可正常建单
+        jdbc.update("UPDATE family_members SET proxy_status = 'GRANTED' WHERE id = ? AND user_id = ?",
+                memberId, "u-dev-user-1");
+        mockMvc.perform(post("/api/v1/appointments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-User-Id", "dev-user-1")
+                        .header("Idempotency-Key", "m1-fam-def01-key-03")
+                        .content("{\"slotId\":\"slot-future-1\",\"patientName\":\"已授权成员\","
+                                + "\"familyMemberId\":\"" + memberId + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("PENDING"));
+    }
+
     @Test
     void 邀请_令牌仅返回一次_库内只存哈希_不授予权限() throws Exception {
         // 先添加一名成员（本测试自建，避免与其他测试的 GRANTED 状态互相影响）
@@ -662,5 +760,24 @@ class M1IntegrationTest {
                 "SELECT proxy_status FROM family_members WHERE id = ?",
                 String.class, memberId);
         org.assertj.core.api.Assertions.assertThat(proxyStatus).isEqualTo("NONE");
+
+        // 接受邀请 → GRANTED（DEF-04：这是"添加 ≠ 授权"红线唯一的放行入口）
+        mockMvc.perform(post("/api/v1/family-members/invitations/accept")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-User-Id", "dev-user-1")
+                        .header("Idempotency-Key", "m1-invite-key-02")
+                        .content("{\"token\":\"" + token + "\",\"memberId\":\"" + memberId + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(memberId))
+                .andExpect(jsonPath("$.data.proxyStatus").value("GRANTED"));
+
+        // 令牌一次性：重复提交 → 409 INVITATION_EXPIRED（不是幂等重放）
+        mockMvc.perform(post("/api/v1/family-members/invitations/accept")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-User-Id", "dev-user-1")
+                        .header("Idempotency-Key", "m1-invite-key-03")
+                        .content("{\"token\":\"" + token + "\",\"memberId\":\"" + memberId + "\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INVITATION_EXPIRED"));
     }
 }

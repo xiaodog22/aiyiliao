@@ -87,6 +87,23 @@ public class AttachmentStorage {
         return "mp4".equals(ext) ? videoMaxBytes : maxBytes;
     }
 
+    /**
+     * 文件头必须与扩展名一致；不一致 → 415 ATTACHMENT_FORMAT。
+     * 读取失败（IO）→ 400 ATTACHMENT_READ_FAILED（如实告知，不伪装成「格式不支持」）。
+     */
+    private static void requireMagicMatches(MultipartFile file, String ext) {
+        byte[] head;
+        try (java.io.InputStream in = file.getInputStream()) {
+            head = com.wechar.biz.common.FileMagic.readHead(in);
+        } catch (IOException e) {
+            throw new ApiException("ATTACHMENT_READ_FAILED", HttpStatus.BAD_REQUEST, "文件读取失败，请重试");
+        }
+        if (!com.wechar.biz.common.FileMagic.matches(ext, head)) {
+            throw new ApiException("ATTACHMENT_FORMAT", HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                    "文件内容与扩展名不符，请上传真实可用的 jpg/png/webp/pdf/mp4 文件");
+        }
+    }
+
     /** 保存附件，返回 objectKey（32 位 hex + 扩展名）。 */
     public String save(MultipartFile file) {
         if (file == null || file.isEmpty()) {
@@ -103,6 +120,9 @@ public class AttachmentStorage {
             throw new ApiException("ATTACHMENT_TOO_LARGE", HttpStatus.PAYLOAD_TOO_LARGE,
                     "文件不能超过 " + (limit / (1024 * 1024)) + "MB");
         }
+        // 内容嗅探（DEF-05）：扩展名与 Content-Type 都是客户端声明，必须再比对文件头。
+        // 只读 12 字节，不解析内容；不匹配 → 415，不落盘、不回显任何文件内容。
+        requireMagicMatches(file, ext);
         String objectKey = newObjectKey(ext);
         Path target = attachmentsDir.resolve(objectKey);
         try {

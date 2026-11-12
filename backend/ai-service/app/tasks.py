@@ -285,7 +285,14 @@ class TaskService:
             "submitRequestId": request_id,
         }
         await self.store.put(task)
-        await self.store.put_idempotency(idempotency_key, task["taskId"], digest)
+        # 幂等索引属**派生数据**（可重建），入队才是主链路。原顺序把 put_idempotency 放在
+        # put_nowait 之前，索引一旦抛错任务就永远进不了队列 —— 内存里有、队列里没有，
+        # 比"卡住"更彻底（DEF-06 加重因素，2026-11-12）。这里显式兜住，保证入队一定执行。
+        try:
+            await self.store.put_idempotency(idempotency_key, task["taskId"], digest)
+        except Exception as exc:  # noqa: BLE001 —— 索引失败不得阻断受理，仅告警
+            logger.warning("幂等索引写入失败（任务照常入队）task=%s err=%s",
+                           task["taskId"], exc.__class__.__name__)
         self._queue.put_nowait(task["taskId"])
         logger.info("任务已受理 task=%s type=%s", task["taskId"], task["taskType"])
         return self._view(task), True

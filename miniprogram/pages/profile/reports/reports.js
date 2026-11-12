@@ -11,6 +11,7 @@ const app = getApp()
 const icons = require('../../../utils/icons.js')
 const userService = require('../../../services/user.js')
 const { errText } = require('../../../utils/err-text.js')
+const { fmtLocalDateTime } = require('../../../utils/datetime.js')
 
 const TABS = [
   { key: '', label: '全部报告' },
@@ -27,9 +28,18 @@ const STATUSES = [
 const STATUS_TEXT = { READY: '已出报告', REVIEWING: '待审核', PENDING: '待出结果' }
 const STATUS_CLS = { READY: 'ok', REVIEWING: 'wait', PENDING: 'wait' }
 
-/** ISO 时间 → 'YYYY-MM-DD HH:mm'；后端时间按 UTC 口径保存，此处只做展示切片不换算时区。 */
+/**
+ * ISO Instant → 'YYYY-MM-DD HH:mm'（**按设备本地时区换算**）。
+ *
+ * ⚠️ 2026-11-12 缺陷 DEF-17：原实现在这里自造 `replace('T',' ').slice(0,16)`，
+ *    把后端带 `Z` 的 UTC Instant 当本地时间直出（少 8 小时）。它与挂号页的时间问题
+ *    （DEF-02）互为掩盖：种子数据把「北京时间」当 UTC 存，前端又不换算，屏幕上"看着对"。
+ *    两处必须在同一批改：统一走 utils/datetime.js，禁止再写第二套时间格式化。
+ */
 function fmt(v) {
-  return v ? String(v).replace('T', ' ').slice(0, 16) : ''
+  const t = fmtLocalDateTime(v)
+  if (!t.date) return ''
+  return t.time ? t.date + ' ' + t.time : t.date
 }
 
 function normalize(list) {

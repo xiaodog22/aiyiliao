@@ -119,7 +119,8 @@ def create_app(settings: Optional[GateSettings] = None) -> FastAPI:
             path = request.url.path
             if path not in ratelimit.EXEMPT_PATHS:
                 client_host = request.client.host if request.client else None
-                decision = limiter.check(ratelimit.client_key(dict(request.headers), client_host))
+                decision = limiter.check(ratelimit.client_key(
+                    dict(request.headers), client_host, settings.rate_limit_trust_forwarded_for))
                 if not decision.allowed:
                     body = error_payload(
                         "RATE_LIMITED", "请求过于频繁，请稍后重试", _rid(request), retryable=True

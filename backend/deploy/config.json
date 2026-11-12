@@ -5,7 +5,7 @@
   "probeTimeoutSeconds": 2,
   "healthTimeoutSeconds": 90,
   "logging": { "level": "INFO", "perRequest": false },
-  "rateLimit": { "enabled": false, "perMinute": 300, "windowSeconds": 60 },
+  "rateLimit": { "enabled": false, "perMinute": 300, "windowSeconds": 60, "trustForwardedFor": true },
   "cors": { "enabled": false, "allowOrigins": [] },
   "assets": { "dir": "backend/deploy/resources" },
   "compat": { "legacyLoginEnabled": false },

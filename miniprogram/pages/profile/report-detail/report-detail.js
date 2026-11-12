@@ -11,11 +11,19 @@ const app = getApp()
 const icons = require('../../../utils/icons.js')
 const userService = require('../../../services/user.js')
 const { errText } = require('../../../utils/err-text.js')
+const { fmtLocalDateTime } = require('../../../utils/datetime.js')
 
 const DEMO_NOTICE = '演示数据 · 非真实医疗报告 · 不构成诊断依据'
 
+/**
+ * ISO Instant → 'YYYY-MM-DD HH:mm'（**按设备本地时区换算**，与列表页同一口径）。
+ * ⚠️ 2026-11-12 缺陷 DEF-17：原实现 `replace('T',' ').slice(0,16)` 把 UTC 当本地直出。
+ *    列表页与详情页必须用同一个函数，否则同一份报告在两页显示不同时间。
+ */
 function fmt(v) {
-  return v ? String(v).replace('T', ' ').slice(0, 16) : ''
+  const t = fmtLocalDateTime(v)
+  if (!t.date) return ''
+  return t.time ? t.date + ' ' + t.time : t.date
 }
 
 /** 只把后端真实返回的非空值组装成信息行；缺值不渲染，不填「未知」假值。 */

@@ -23,7 +23,9 @@ const NEW_TESTS = [
   'test-fe-aptstatus.js',
   'test-fe-paginate.js',
   'test-fe-config.js',
-  'test-fe-request.js'
+  'test-fe-request.js',
+  // 2026-11-12 缺陷 DEF-09：纯标点输入被当有效症状送进模型（导诊/问诊三处输入框）
+  'test-fe-input-guard.js'
 ].map((f) => path.join('tools', f))
 
 // ② 既有门禁回归（与 2026-10-18 基线一致的口径）

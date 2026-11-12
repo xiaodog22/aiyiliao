@@ -259,6 +259,26 @@ function removeFamilyMember(id) {
   return req.del(withPath(API.FAMILY_MEMBER_BY_ID, { id: String(id || '') }))
 }
 
+/**
+ * 发起代理授权邀请（POST /api/v1/family-members/invitations）。
+ * 响应 { invitationId, token, expiresAt, channel }：**token 只在这次响应里出现**（库内只存哈希），
+ * 调用方用完即弃，不要写 storage。
+ * @param {{relation:string, channel?:string, phone?:string}} payload channel ∈ QRCODE | PHONE_DEEPLINK
+ */
+function createFamilyInvitation(payload) {
+  return post(API.FAMILY_INVITATIONS, payload, { idempotencyKey: req.newIdempotencyKey() })
+}
+
+/**
+ * 接受邀请并授予代理权限（POST /api/v1/family-members/invitations/accept，DEF-04）。
+ * 成功后该成员 proxyStatus = GRANTED，返回成员最新视图。
+ * ⚠️ token 一次性：重复提交 → 409 INVITATION_EXPIRED（不是幂等重放）。
+ * @param {{token:string, memberId:string}} payload
+ */
+function acceptFamilyInvitation(payload) {
+  return post(API.FAMILY_INVITE_ACCEPT, payload, { idempotencyKey: req.newIdempotencyKey() })
+}
+
 /** 我的问诊/咨询（GET /api/v1/consultations → ConsultationData[]） */
 function listMyConsultations() {
   return get(API.CONSULTATION_LIST).then(asList)
@@ -413,7 +433,9 @@ function resolveAvatar(avatarUrl) {
 module.exports = {
   getUser, setUser, restore, logout,
   login, loginByWxCode, listMyAppointments, submitAppointment, cancelAppointment,
-  getMe, listHealthRecords, listReports, getReport, listFamilyMembers, createFamilyMember, removeFamilyMember, listMyConsultations, getConsultation, createConsultation, listConsultationMessages, sendConsultationMessage,
+  getMe, listHealthRecords, listReports, getReport, listFamilyMembers, createFamilyMember, removeFamilyMember,
+  createFamilyInvitation, acceptFamilyInvitation,
+  listMyConsultations, getConsultation, createConsultation, listConsultationMessages, sendConsultationMessage,
   listCatalogDoctors, listDepartments, listMessages, unreadCount, markMessageRead,
   interpretRecord,
   uploadAttachment, uploadStandaloneAttachment, listAttachments, deleteAttachment, resolveAttachmentUrl,

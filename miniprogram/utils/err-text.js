@@ -54,6 +54,12 @@ function errText(err, fallback) {
   }
   // 限流（网关 429 / 业务 RATE_LIMITED）：中文确定性文案，不走 HTTP_ERROR 通用分支
   if (code === 'RATE_LIMITED') return '操作过于频繁，请稍后再试'
+  // 挂号业务冲突（DEF-03）：同一号源已有在办预约 —— 明确告知，别让用户以为是号源被抢
+  if (code === 'DUPLICATE_APPOINTMENT') return '您已预约该时段，请勿重复挂号'
+  // 家庭代管授权（DEF-01/04）：添加家人不等于拿到授权，授权未完成或已失效
+  if (code === 'FAMILY_MEMBER_NOT_FOUND') return '尚未获得该成员的代管授权'
+  if (code === 'INVITATION_EXPIRED') return '授权码已使用或已过期，请重新申请'
+  if (code === 'INVITATION_NOT_FOUND') return '授权码无效，请重新申请'
 
   // ② 业务错误 / 无 code：仅当 message 是中文才展示
   if (readable(raw)) return raw

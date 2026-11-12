@@ -76,18 +76,23 @@ class FixedWindowLimiter:
 EXEMPT_PATHS = {"/health", "/api/gw/health"}
 
 
-def client_key(headers: dict, client_host: str | None) -> str:
+def client_key(headers: dict, client_host: str | None, trust_forwarded_for: bool = True) -> str:
     """客户端标识：优先 X-Forwarded-For 首跳（隧道/反代场景），否则回落到直连地址。
 
-    ⚠️ XFF 可被伪造——本限流是**粗粒度保护**，不承担鉴权职责；真实配额须在鉴权后按用户维度做。
+    ⚠️ XFF 可被客户端伪造 —— 这是"D 侧粗粒度保护"，不承担鉴权职责；真实配额须在鉴权后按用户维度做。
+    因此**是否采信 XFF 必须显式配置**（DEF-13）：
+    - 前面有可信反代（frp / Nginx，会覆盖客户端自带的 XFF）→ `trust_forwarded_for=True`；
+    - 直接暴露给客户端（无中间层）→ `False`，否则每次伪造一个 XFF 值就能开一个新桶，
+      "第 61 次仍 429""伪造 IP 不放行"两条验收必然不成立。
     """
-    xff = ""
-    for key, value in headers.items():
-        if key.lower() == "x-forwarded-for":
-            xff = value or ""
-            break
-    if xff:
-        first = xff.split(",")[0].strip()
-        if first:
-            return first
+    if trust_forwarded_for:
+        xff = ""
+        for key, value in headers.items():
+            if key.lower() == "x-forwarded-for":
+                xff = value or ""
+                break
+        if xff:
+            first = xff.split(",")[0].strip()
+            if first:
+                return first
     return client_host or "unknown"

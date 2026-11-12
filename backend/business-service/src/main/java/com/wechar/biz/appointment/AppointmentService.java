@@ -10,6 +10,7 @@ import com.wechar.biz.common.ApiException;
 import com.wechar.biz.common.Digests;
 import com.wechar.biz.crypto.PhoneCrypto;
 import com.wechar.biz.message.MessageService;
+import com.wechar.biz.patient.FamilyProxyGuard;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
@@ -40,14 +41,17 @@ public class AppointmentService {
     private final CatalogRepository catalog;
     private final PhoneCrypto phoneCrypto;
     private final MessageService messageService;
+    private final FamilyProxyGuard proxyGuard;
     private final Clock clock;
 
     public AppointmentService(AppointmentRepository repository, CatalogRepository catalog,
-                              PhoneCrypto phoneCrypto, MessageService messageService, Clock clock) {
+                              PhoneCrypto phoneCrypto, MessageService messageService,
+                              FamilyProxyGuard proxyGuard, Clock clock) {
         this.repository = repository;
         this.catalog = catalog;
         this.phoneCrypto = phoneCrypto;
         this.messageService = messageService;
+        this.proxyGuard = proxyGuard;
         this.clock = clock;
     }
 
@@ -69,6 +73,11 @@ public class AppointmentService {
             return new CreateResult(toData(repository.findViewById(row.id()).orElseThrow(), Boolean.TRUE), true);
         }
 
+        // (a2) 代操作授权（契约红线，DEF-01）：带 familyMemberId 的挂号与档案读写同口径，
+        //    仅 proxyStatus=GRANTED 放行；「添加家人」不等于拿到授权。
+        //    ⚠️ 必须放在扣号之前：未授权请求不该消耗任何号源。
+        proxyGuard.requireGranted(userId, request.familyMemberId());
+
         // (b) 号源
         var slot = repository.findSlot(request.slotId())
                 .orElseThrow(() -> new ApiException("SLOT_NOT_FOUND", HttpStatus.NOT_FOUND, "号源不存在"));
@@ -83,6 +92,17 @@ public class AppointmentService {
         }
         if (!"OPEN".equals(slot.status())) {
             throw new ApiException("SLOT_CLOSED", HttpStatus.CONFLICT, "该号源已关闭");
+        }
+
+        // (c2) 业务唯一性（DEF-03）：同一用户对同一号源只允许一笔「在办」预约。
+        //   幂等键只挡「同一个键的重放」，挡不住「成功后换新键再约一次」——
+        //   前端成功后立即作废旧键，那条路径必然换键。这里按 (user_id, slot_id, 在办状态) 兜住。
+        if (repository.hasActiveAppointment(userId, request.slotId())) {
+            throw new ApiException("DUPLICATE_APPOINTMENT", HttpStatus.CONFLICT,
+                    "您在该时段已有一笔有效预约，请勿重复挂号", false,
+                    List.of(new com.wechar.biz.common.GlobalExceptionHandler.ErrorDetail(
+                            "slotId", "同用户同号源已有 PENDING/CONFIRMED/CHECKED_IN 记录",
+                            "DUPLICATE_APPOINTMENT")));
         }
 
         // (d) doctor 属于 slot 的科室关联校验（slot.doctorId → doctors.department_id）
@@ -183,6 +203,10 @@ public class AppointmentService {
             }
             phoneCipher = phoneCrypto.encrypt(request.contactPhone()).getBytes(StandardCharsets.UTF_8);
         }
+        // PATCH 也能改写 familyMemberId —— 同一授权红线，不能在“换就诊人”这一步被绕开（DEF-01 同类面）
+        if (request.familyMemberId() != null) {
+            proxyGuard.requireGranted(row.userId(), request.familyMemberId());
+        }
 
         boolean updated = repository.updateWithVersion(appointmentId, request.version(),
                 request.symptomSummary() != null ? request.symptomSummary() : row.symptomSummary(),
@@ -225,9 +249,12 @@ public class AppointmentService {
      *  - 其他终态（COMPLETED/EXPIRED/NO_SHOW）→ 409（不允许取消的状态）；
      *  - Idempotency-Key 由控制器校验必填与长度；取消结果确定（同一资源），
      *    重复调用天然幂等 —— 同终态回放即幂等语义。
+     *
+     * @return {@link CancelResult}：cancelled=false 表示「本次调用没有改变状态」（重复取消/并发落后者），
+     *         调用方据此区分「首次取消成功」与「早已取消」，不再只能靠 200 猜（DEF-11）。
      */
     @Transactional
-    public AppointmentData cancel(String userId, String appointmentId, String idempotencyKey, String reason) {
+    public CancelResult cancel(String userId, String appointmentId, String idempotencyKey, String reason) {
         var view = repository.findViewById(appointmentId)
                 .filter(v -> userId.equals(v.appt().userId())) // 身份范围过滤（不泄露他人存在性）
                 .orElseThrow(() -> new ApiException("APPOINTMENT_NOT_FOUND", HttpStatus.NOT_FOUND, "预约不存在"));
@@ -235,7 +262,7 @@ public class AppointmentService {
         String status = row.status();
 
         if ("CANCELLED".equals(status)) {
-            return toData(view, null); // 重复取消 → 同一终态 200
+            return new CancelResult(toData(view, null), false); // 重复取消 → 同一终态 200，未变更
         }
         if (!"PENDING".equals(status) && !"CONFIRMED".equals(status) && !"CHECKED_IN".equals(status)) {
             throw new ApiException("APPOINTMENT_STATE_CONFLICT", HttpStatus.CONFLICT,
@@ -246,13 +273,23 @@ public class AppointmentService {
                 row.symptomSummary(), row.familyMemberId(), row.contactPhoneCipher(),
                 "CANCELLED", cancelReason, clock.instant());
         if (!updated) {
+            // 并发取消的落后者：另一请求已把它推到 CANCELLED → 按幂等回放 200（cancelled=false），
+            // 而不是 409。并发 10 连击时「5×200」的真正问题不是状态码，而是无法区分首/重（DEF-11）。
+            var latest = repository.findViewById(appointmentId).orElse(null);
+            if (latest != null && "CANCELLED".equals(latest.appt().status())) {
+                return new CancelResult(toData(latest, null), false);
+            }
             throw new ApiException("VERSION_CONFLICT", HttpStatus.CONFLICT,
                     "预约刚被其他请求修改，请重试");
         }
         // V21 互通闭环：取消成功 → 号源原子回补（仅 slot 仍 OPEN 且未满时生效；
         // 过期/关闭的号源本就不可再约，不回补）。同一事务，失败整体回滚。
         repository.releaseSlotRemaining(row.slotId());
-        return toData(repository.findViewById(appointmentId).orElseThrow(), null);
+        return new CancelResult(toData(repository.findViewById(appointmentId).orElseThrow(), null), true);
+    }
+
+    /** 取消结果：appointment=终态视图；cancelled=本次调用是否真正改变了状态。 */
+    public record CancelResult(AppointmentData appointment, boolean cancelled) {
     }
 
     /** stats：upcoming/completed/cancelled。 */

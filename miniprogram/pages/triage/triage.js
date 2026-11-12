@@ -24,9 +24,32 @@ const speechService = require('../../services/speech.js')
 const userService = require('../../services/user.js')
 const triageService = require('../../services/triage.js')
 const req = require('../../services/request.js')
+const { hasContent } = require('../../utils/input-guard.js')
 const { aptStatusText } = require('../../utils/apt-status.js')
 
 const REPORT_KEY = 'wb_triage_report'
+
+/**
+ * 本轮导诊会话的本地快照（DEF-07）。
+ *
+ * 为什么需要：`去预约` 走的是 `wx.switchTab`，而微信的 switchTab 会**关闭所有非 tabBar 页面**
+ * —— 导诊页（非 tab）连同整段对话被销毁，返回时重新 onLoad 只剩一句问候。
+ * 用户刚描述完症状、跳去挂号看一眼再回来，全部要重说一遍。
+ * 修法：把消息流 + 结论 + 会话 id 落到 storage，onLoad 时恢复并跳过问候语。
+ *
+ * 为什么带 TTL：导诊是"这一次就诊"的上下文，隔天再进来还挂着昨天的科室卡会误导。
+ * 6 小时覆盖一次完整门诊（取号 → 候诊 → 检查 → 复诊），过期即丢弃。
+ */
+const SESSION_KEY = 'wb_triage_live_session_v1'
+const SESSION_TTL = 6 * 60 * 60 * 1000
+
+/**
+ * 输入字数上限（DEF-08）：微信 `<input>` **默认 maxlength=140**，不写就静默截断。
+ * 后端导诊上限是 1000（TriageRequest @Size(max=1000)），症状描述被砍到 140 会直接
+ * 拉低分诊准确率，而用户看不到任何提示。上限与后端保持一致，到顶时提示一次。
+ */
+const INPUT_MAX = 1000
+const INPUT_MAX_TIP = '已达字数上限，可先发送再补充'
 
 /**
  * 对话消息上限（与 consultation.js 同一口径）。
@@ -74,6 +97,7 @@ Page({
     status: 'IDLE',
     thinkingText: 'AI 正在分析…',
     input: '',
+    inputMax: INPUT_MAX,
     msgId: 0,
     recording: false,
     voiceHint: '',
@@ -96,7 +120,9 @@ Page({
     this._consultationId = ''
     this._initUser()
     this._loadProgress()
-    this._greet()
+    // DEF-07：先尝试恢复上一次的对话（从挂号页 switchTab 回来时整页是新建的），
+    // 恢复成功就不再塞问候语 —— 否则用户会看到「您好！我是AI健康助手」把历史顶下去。
+    if (!this._restoreSession()) this._greet()
     this._privacyCheck()
 
     // 首页「一句话症状」入口带文本进来（?text=）→ 直接分析，省掉一次输入。
@@ -107,6 +133,8 @@ Page({
   },
 
   onUnload() {
+    // switchTab 离场会销毁本页：离场前落一次快照，回来才能接上（DEF-07）
+    this._persistSession()
     speechService.stopRecord()
     speechService.stopSpeak()
   },
@@ -200,7 +228,80 @@ Page({
     })
   },
 
-  onInput(e) { this.setData({ input: e.detail.value }) },
+  // ==================== 会话快照（DEF-07：switchTab 会销毁本页）====================
+
+  /**
+   * 落盘当前对话（storage，本机；症状原文不上传）。
+   * 调用点：追加消息、出结论、补问、急诊、离场 —— 覆盖所有会改变界面的状态。
+   */
+  _persistSession() {
+    try {
+      if (!this.data.messages.length) return
+      wx.setStorageSync(SESSION_KEY, {
+        v: 1,
+        at: Date.now(),
+        messages: this.data.messages,
+        msgId: this.data.msgId,
+        slotsText: this.data.slotsText,
+        rounds: this.data.rounds,
+        canReport: this.data.canReport,
+        lastResult: this.data.lastResult,
+        emergency: this.data.emergency,
+        // 下面几项挂在实例上（不是 data），一并存，否则恢复后 AI 会话会重新建
+        consultationId: this._consultationId || '',
+        asked: this._asked || [],
+        history: this._history || [],
+        pendingNavDept: this._pendingNavDept || ''
+      })
+    } catch (e) {
+      // storage 满/被禁 → 只是失去"跳走再回来"的能力，不影响导诊本身（不打断用户）
+      console.warn('[triage] 会话快照写入失败（忽略）')
+    }
+  },
+
+  /**
+   * 恢复上次对话。
+   * @returns {boolean} true = 已恢复（调用方跳过问候语）
+   */
+  _restoreSession() {
+    let s = null
+    try { s = wx.getStorageSync(SESSION_KEY) } catch (e) { s = null }
+    if (!s || s.v !== 1 || !Array.isArray(s.messages) || !s.messages.length) return false
+    if (!s.at || (Date.now() - Number(s.at)) > SESSION_TTL) {
+      this._clearSession()
+      return false
+    }
+    this._consultationId = s.consultationId || ''
+    this._asked = Array.isArray(s.asked) ? s.asked : []
+    this._history = Array.isArray(s.history) ? s.history : []
+    this._pendingNavDept = s.pendingNavDept || ''
+    this.setData({
+      messages: s.messages,
+      msgId: Number(s.msgId) || s.messages.length,
+      slotsText: s.slotsText || '',
+      rounds: Number(s.rounds) || 0,
+      canReport: !!s.canReport,
+      lastResult: s.lastResult || null,
+      emergency: s.emergency || null,
+      status: 'IDLE'
+    })
+    return true
+  },
+
+  _clearSession() {
+    try { wx.removeStorageSync(SESSION_KEY) } catch (e) {}
+  },
+
+  onInput(e) {
+    const v = (e.detail && e.detail.value) || ''
+    // 到上限才提示一次：到顶后键盘输入不再进框，不说明会像"键盘坏了"（不静默吞字）
+    if (v.length >= INPUT_MAX && !this._maxTipShown) {
+      this._maxTipShown = true
+      wx.showToast({ title: INPUT_MAX_TIP, icon: 'none' })
+    }
+    if (v.length < INPUT_MAX) this._maxTipShown = false
+    this.setData({ input: v })
+  },
 
   onSend() {
     const text = (this.data.input || '').trim()
@@ -241,6 +342,16 @@ Page({
         return
       }
       this._pendingNavDept = ''   // 用户又说症状了 → 丢弃待答态，按新的分诊输入处理
+    }
+
+    // ⓪-2 有效性（DEF-09）：`trim()` 只挡空白，`"。。。"` 这类纯标点会一路走到 AI 分诊任务，
+    //    白烧 30~60s 推理再给一个无意义追问。这里只拦「去掉空白/标点后一个字都不剩」的输入，
+    //    `"疼"`、`"要"` 这类单字照常通过（路线询问的应答词就是单字）。
+    //    输入不清空（回填），用户可以接着在原句上补字，不用重打。
+    if (!hasContent(t)) {
+      this.setData({ input: t })
+      wx.showToast({ title: '请描述具体症状，如“嗓子疼三天”', icon: 'none' })
+      return
     }
 
     const msgId = this.data.msgId + 1
@@ -300,8 +411,16 @@ Page({
 
   _finish(result, text) {
     this._history.push(text)
+    // 兜底不是结论（DEF-16）：不落"全科医学科"的导诊记录、不提供完整报告，
+    // 否则报告页会把一次"没判断出来"渲染成白纸黑字的科室建议。
+    if (result && result.noConclusion) {
+      this.setData({ lastResult: null, canReport: false })
+      this._persistSession()
+      return
+    }
     this.setData({ lastResult: result, canReport: true })
     triageService.saveSession(result, text)
+    this._persistSession()
     this._speakAdvice(result)
   },
 
@@ -320,12 +439,12 @@ Page({
     const list = this.data.messages
     const i = list.length
     if (i >= MSG_CAP) {
-      this.setData({ messages: list.slice(i - MSG_CAP + 1).concat(msg), msgId: msg.id })
+      this.setData({ messages: list.slice(i - MSG_CAP + 1).concat(msg), msgId: msg.id }, () => this._persistSession())
       return
     }
     const patch = { msgId: msg.id }
     patch['messages[' + i + ']'] = msg
-    this.setData(patch)
+    this.setData(patch, () => this._persistSession())
   },
 
   _push(msg) {
@@ -337,7 +456,7 @@ Page({
   /** 多轮补问（带快捷选项，长者可直接点） */
   _ask(q) {
     this._asked.push(q.slot)
-    this.setData({ rounds: this.data.rounds + 1, status: 'IDLE' })
+    this.setData({ rounds: this.data.rounds + 1, status: 'IDLE' }, () => this._persistSession())
     this._push({
       type: 'ask',
       content: q.question,
@@ -353,6 +472,18 @@ Page({
 
   /** 结构化导诊结果卡 */
   _pushResult(result) {
+    // 兜底科室不作为结论（DEF-16）：识别不出归属时不出科室卡、不给「去预约」入口，
+    // 否则「全科医学科」会被当成一次确定的分诊结果（追问用尽 / 点「直接出结果」时最易发生）。
+    if (result.noConclusion) {
+      this._push({
+        type: 'text',
+        content: '暂时无法从您的描述判断明确的就诊科室。建议到院后先到门诊大厅「导诊台」咨询，'
+          + '由护士协助分诊；也可直接到「全科医学科」就诊。'
+          + '若出现胸痛、呼吸困难、意识不清等情况，请立即就医或拨打 120。'
+      })
+      this.setData({ status: 'IDLE' })
+      return
+    }
     const p = result.primary || {}
     this._push({
       type: 'triage',
@@ -477,7 +608,8 @@ Page({
   onReport() {
     const r = this.data.lastResult
     if (!r) {
-      wx.showToast({ title: '先描述一下症状吧', icon: 'none' })
+      // 可能是"还没说症状"，也可能是上一轮落在兜底科室（noConclusion 不出报告）——统一如实说明
+      wx.showToast({ title: '暂无可查看的导诊报告', icon: 'none' })
       return
     }
     try { wx.setStorageSync(REPORT_KEY, triageService.toReport(r)) } catch (e) {}

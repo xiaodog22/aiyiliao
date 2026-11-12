@@ -13,6 +13,7 @@
  *    且旧 submit 发送契约外字段会被 additionalProperties:false 拒绝（400）——故本文件不再提供。
  */
 const { get, withPath, API } = require('./request.js')
+const { fmtLocalDateTime } = require('../utils/datetime.js')
 
 /** 响应统一成数组（Envelope data 即数组；兼容 {list:[]} 包裹） */
 function asList(data) {
@@ -89,14 +90,24 @@ function listDoctorSlotsC(doctorId, from, to) {
 }
 
 /**
- * 把契约 Slot 的 startTime（date-time）拆成页面需要的 {date, time}：
- * 兼容 'YYYY-MM-DDTHH:mm:ss(+08:00)' 与 'YYYY-MM-DD HH:mm:ss' 两种序列化。
- * 解析不出 → 返回 null，页面丢弃该号源（不展示猜的时间）。
+ * 把契约 Slot 的 startTime 拆成页面需要的 {date, time}（**统一经设备本地时区换算**）。
+ *
+ * ⚠️ 2026-11-12 缺陷 DEF-02：原实现用正则 `/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/`
+ *    直接截字符串，把带 `Z` 的 UTC Instant 当本地时间用 —— 同一个 `2026-11-13T09:00:00Z`
+ *    在挂号页显示 09:00、在医生端（走 fmtLocalDateTime）显示 17:00，两端差 8 小时；
+ *    页面用 09:00 与本地 now 比较，「今天已过」的过滤同时失效。
+ *    契约（utils/datetime.js 头注释）规定时间字段一律 ISO Instant + 按设备本地展示，
+ *    所以这里不能再有第二套解析口径：直接复用 fmtLocalDateTime。
+ *
+ * 兼容：'YYYY-MM-DD HH:mm[:ss]'（演示/mock 数据，无时区标记）由 fmtLocalDateTime 按原样拆分，
+ *      不会被误当 UTC 平移 8 小时。
+ * @param {string} startTime 契约 Slot.startTime（ISO Instant）
+ * @returns {{date:string,time:string}|null} 解析不出（或只有日期没有时间）→ null，页面丢弃该号源
  */
 function slotDateTime(startTime) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(String(startTime || ''))
-  if (!m) return null
-  return { date: m[1] + '-' + m[2] + '-' + m[3], time: m[4] + ':' + m[5] }
+  const t = fmtLocalDateTime(startTime)
+  if (!t.date || !t.time) return null
+  return { date: t.date, time: t.time }
 }
 
 module.exports = {

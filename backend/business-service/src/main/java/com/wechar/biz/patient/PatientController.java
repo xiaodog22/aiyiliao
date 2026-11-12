@@ -6,6 +6,7 @@ import com.wechar.biz.common.Envelope;
 import com.wechar.biz.common.IdempotencyKeys;
 import com.wechar.biz.common.RequestIds;
 import com.wechar.biz.patient.dto.AttachmentData;
+import com.wechar.biz.patient.dto.FamilyInvitationAcceptRequest;
 import com.wechar.biz.patient.dto.FamilyInvitationCreateRequest;
 import com.wechar.biz.patient.dto.FamilyInvitationData;
 import com.wechar.biz.patient.dto.FamilyInvitationSummaryData;
@@ -208,6 +209,22 @@ public class PatientController {
         IdempotencyKeys.require(idempotencyKey);
         return ResponseEntity.ok(Envelope.ok(RequestIds.current(), patientService.createInvitation(
                 userId(), request.relation(), request.channel(), request.phone())));
+    }
+
+    /**
+     * 接受邀请（DEF-04）：核销一次性令牌并把目标成员的 proxyStatus 置 GRANTED。
+     *
+     * 这是「添加家人 ≠ 获得授权」这条红线唯一的**放行入口**——没有它，
+     * proxyStatus 永远停在 NONE，代管档案与代挂号（DEF-01 修好后）在真实用户手上走不通。
+     * 返回成员最新视图，前端据此刷新列表、放开「管理健康档案」。
+     */
+    @PostMapping("/family-members/invitations/accept")
+    public ResponseEntity<Envelope<FamilyMemberData>> acceptInvitation(
+            @RequestHeader(value = IdempotencyKeys.HEADER, required = false) String idempotencyKey,
+            @Valid @RequestBody FamilyInvitationAcceptRequest request) {
+        IdempotencyKeys.require(idempotencyKey);
+        return ResponseEntity.ok(Envelope.ok(RequestIds.current(),
+                patientService.acceptInvitation(request.token(), request.memberId())));
     }
 
     /** PATCH 成员请求（契约外补充路径的请求体；宽松收未知字段，见 JacksonStrictConfig）。 */

@@ -52,6 +52,12 @@ public class AvatarStorage {
         } catch (IOException e) {
             throw new ApiException("AVATAR_READ_FAILED", HttpStatus.BAD_REQUEST, "头像读取失败，请重试");
         }
+        // 内容嗅探（与 AttachmentStorage 同一条红线，DEF-05 同类面）：扩展名可伪造，
+        // 头像端点同样会被 <image> 直接读取，不能成为伪装文件的落点。
+        if (!com.wechar.biz.common.FileMagic.matches(ext, bytes)) {
+            throw new ApiException("AVATAR_FORMAT", HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                    "文件内容与扩展名不符，请上传真实的 jpg/png/webp 图片");
+        }
         String name = newName(ext);
         try {
             Files.createDirectories(avatarsDir);

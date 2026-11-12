@@ -298,6 +298,7 @@
       confirm-type="send"
       bindconfirm="onSend"
       disabled="{{status !== 'IDLE'}}"
+      maxlength="{{inputMax}}"
     />
     <view class="send-fab {{status !== 'IDLE' ? 'send-fab-disabled' : ''}}" bindtap="onSend">
       <image class="send-icon" src="/assets/icons/send_white.png" />

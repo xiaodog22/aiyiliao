@@ -47,6 +47,11 @@ class GateSettings:
     rate_limit_enabled: bool = False
     rate_limit_per_minute: int = 300
     rate_limit_window_seconds: int = 60
+    # 是否信任 X-Forwarded-For 作为限流键（DEF-13）。
+    # 默认 True = 保持既有行为（网关跑在 frp/反代之后，直连地址恒为 127.0.0.1）。
+    # ⚠️ XFF 可被客户端伪造 → 开启限流时若前面**没有**可信反代，务必置 False，
+    #    否则每次换个 XFF 值就是一个新桶，"防绕过"形同虚设。
+    rate_limit_trust_forwarded_for: bool = True
     # ---- 受控 CORS（本地调试台跨域调用；生产应置 false）----
     cors_enabled: bool = True
     # 允许的跨域来源（安全默认：空 = 不开放任何来源，绝不回落通配 "*"）。
@@ -111,6 +116,8 @@ class GateSettings:
                     settings.rate_limit_per_minute = int(rate_limit["perMinute"])
                 if rate_limit.get("windowSeconds"):
                     settings.rate_limit_window_seconds = int(rate_limit["windowSeconds"])
+                if rate_limit.get("trustForwardedFor") is not None:
+                    settings.rate_limit_trust_forwarded_for = bool(rate_limit["trustForwardedFor"])
                 # 受控 CORS
                 cors = raw.get("cors") or {}
                 if cors.get("enabled") is not None:
@@ -156,6 +163,8 @@ class GateSettings:
             settings.rate_limit_per_minute = int(_env("GW_RATE_LIMIT_PER_MINUTE"))  # type: ignore[arg-type]
         if _env("GW_RATE_LIMIT_WINDOW_SECONDS"):
             settings.rate_limit_window_seconds = int(_env("GW_RATE_LIMIT_WINDOW_SECONDS"))  # type: ignore[arg-type]
+        if _env("GW_RATE_LIMIT_TRUST_XFF"):
+            settings.rate_limit_trust_forwarded_for = _env("GW_RATE_LIMIT_TRUST_XFF").lower() in ("1", "true", "yes", "on")  # type: ignore[union-attr]
         if _env("GW_CORS_ENABLED"):
             settings.cors_enabled = _env("GW_CORS_ENABLED").lower() in ("1", "true", "yes", "on")
         if _env("GW_CORS_ALLOW_ORIGINS"):

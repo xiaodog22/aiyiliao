@@ -505,6 +505,18 @@ Page({
         // 明确的业务失败（400/403/409/429）必须作废，否则用户改完信息再提交会撞 409。
         if (!(code === 'TIMEOUT' || code === 'NETWORK_ERROR' || httpCode >= 500)) this._dropSubmitKey()
         if (httpCode === 409) {
+          // 409 有两种业务含义（DEF-03 新增 DUPLICATE_APPOINTMENT）：不能一律说成"号源已满"，
+          // 否则用户会一直换时段重试，而真正的问题是"这个号您已经约过了"。
+          if (code === 'DUPLICATE_APPOINTMENT') {
+            wx.showModal({
+              title: '请勿重复挂号',
+              content: '您在该时段已有一笔有效预约。可在「我的 · 挂号记录」查看，无需再次挂号。',
+              showCancel: false,
+              confirmText: '查看挂号记录',
+              success: () => wx.navigateTo({ url: '/pages/profile/records/records' })
+            })
+            return
+          }
           // 号源已满：按契约要求回退号源列表重新选择（不使用旧快照）
           wx.showModal({
             title: '号源已满',

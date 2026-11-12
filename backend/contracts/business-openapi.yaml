@@ -961,7 +961,14 @@ paths:
                 reason: {type: string, maxLength: 200}
       responses:
         '200':
-          description: 取消后的预约。
+          description: |
+            取消后的预约。**是否真正改变了状态由 `Idempotency-Replayed` 头区分**（DEF-11）：
+            `false` = 本次调用完成了取消（号源已回补）；`true` = 早已是 CANCELLED，本次未改状态。
+            并发取消时后者可能有多个（都返回 200 同一终态），调用方据此实现"只提示一次取消成功"。
+          headers:
+            Idempotency-Replayed:
+              description: '`false` = 本次取消生效；`true` = 幂等回放（重复/并发落后者，状态未变）。'
+              schema: {type: string, enum: ['true', 'false']}
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OkAppointment'}
@@ -970,6 +977,38 @@ paths:
         '409': {$ref: '#/components/responses/Conflict'}
 
   /api/v1/appointments/{appointmentId}:
+    patch:
+      operationId: updateAppointment
+      tags: [appointment]
+      summary: 修改预约（症状摘要 / 就诊人 / 联系方式）
+      description: |
+        `version` 必填（乐观锁）；仅 `PENDING`/`CONFIRMED` 可改，终态 → `409 APPOINTMENT_STATE_FINAL`。
+        带 `familyMemberId` 时与档案同口径：该成员必须 `proxyStatus=GRANTED`，否则 `404`
+        （添加家人不等于获得授权，换就诊人这条路径同样不能绕过）。
+        并发控制由 `version` 承担，不需要幂等键。
+      x-idempotency: not-required
+      parameters:
+        - name: appointmentId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AppointmentUpdate'}
+      responses:
+        '200':
+          description: 修改后的预约。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkAppointment'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
     delete:
       operationId: deleteAppointment
       tags: [appointment]
@@ -1203,6 +1242,84 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ApiError'}
+
+  # ---------- 健康档案条目（GET/PUT/DELETE · 2026-11-12 补登记，DEF-14）----------
+  # 这三条一直已实现（PatientController），但契约只声明了集合路径 —— 按契约开发会漏能力，
+  # 按契约写用例会写错方法（实测用例把 DELETE 写成了 GET）。路径参数一律 404 不区分
+  # 「不存在」与「无权限」，与集合查询同口径（防枚举）。
+  /api/v1/health-records/{recordId}:
+    get:
+      operationId: getHealthRecord
+      tags: [patient]
+      summary: 健康档案详情
+      description: 仅本人档案或已获 `GRANTED` 代理授权的成员档案；越权与不存在一律 `404`。
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 档案详情（含附件短期签名 URL）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkHealthRecord'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      operationId: updateHealthRecord
+      tags: [patient]
+      summary: 修改健康档案
+      description: |
+        `version` 必填（乐观锁，与预约/资料同口径）；缺省字段保留原值。
+        版本不匹配 → `409 VERSION_CONFLICT`；越权/不存在 → `404`。
+        并发控制由 `version` 承担，不需要幂等键：同一载荷重复提交第二次必然版本冲突。
+      x-idempotency: not-required
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/HealthRecordUpdate'}
+      responses:
+        '200':
+          description: 修改后的档案。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkHealthRecord'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+    delete:
+      operationId: deleteHealthRecord
+      tags: [patient]
+      summary: 删除健康档案
+      description: |
+        删除本人（或已授权成员）的档案及其附件挂载记录；文件物理清理由运维按孤儿回收。
+        越权/不存在 → `404`（不泄露存在性）。删除是终态操作，重复调用第二次即 404，不需要幂等键。
+      x-idempotency: not-required
+      parameters:
+        - name: recordId
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 删除成功（`data` 为 null）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkEmpty'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
 
   /api/v1/health-records/{recordId}/attachments:
     get:
@@ -1490,6 +1607,44 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
         '429': {$ref: '#/components/responses/TooManyRequests'}
+
+  /api/v1/family-members/invitations/accept:
+    post:
+      operationId: acceptFamilyInvitation
+      tags: [patient]
+      summary: 接受家庭成员绑定邀请（授予代理权限）
+      description: |
+        核销一次性令牌，并把指定成员的 `proxyStatus` 置为 `GRANTED` —— 这是
+        「添加家人 ≠ 获得授权」这条红线的**唯一放行入口**。返回成员最新视图。
+        - `token` 一次性：重复提交 → `409 INVITATION_EXPIRED`（不是幂等重放）；
+        - 成员不属于当前用户 → `404`（不泄露存在性）；
+        - 令牌在创建邀请的响应中出现一次，库内只存 SHA-256。
+        ⚠️ 联调档由邀请人本人确认；真实上线应由家人在自己的账号内接受邀请。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, memberId]
+              additionalProperties: false
+              properties:
+                token: {type: string, maxLength: 128, description: 创建邀请时返回的一次性令牌。}
+                memberId: {type: string, maxLength: 64, description: 目标家庭成员 id。}
+      responses:
+        '200':
+          description: 授权已生效，返回成员最新视图（`proxyStatus=GRANTED`）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkFamilyMember'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
 
   # ==========================================================================
   # consultation
@@ -4666,6 +4821,37 @@ components:
 
     OkEmpty:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: 'null'}}}]
+
+    # ---------- 健康档案修改（条目级 PUT，2026-11-12 补登记）----------
+
+    HealthRecordUpdate:
+      type: object
+      description: |
+        `version` 必填（乐观锁）。其余字段缺省即保留原值（不是置 null）。
+        不含 `attachmentKeys`：附件走独立的挂载/删除端点，避免一次 PUT 重建整份附件关系。
+        后端 `HealthRecordUpdateRequest` 标注 `ignoreUnknown = true`，故不声明
+        `additionalProperties: false`（未知字段被忽略而非 422）。
+      required: [version]
+      properties:
+        version: {type: integer, minimum: 1, description: 乐观锁版本；不匹配 → `409 VERSION_CONFLICT`。}
+        category: {type: string, enum: [VITALS, ALLERGY, MEDICATION, HISTORY, EXAM, OTHER]}
+        title: {type: string, maxLength: 80}
+        summary: {type: [string, 'null'], maxLength: 500}
+        recordedAt: {type: string, format: date-time}
+
+    # ---------- 预约修改（条目级 PATCH，2026-11-12 补登记）----------
+
+    AppointmentUpdate:
+      type: object
+      description: |
+        `version` 必填（乐观锁）。仅 `PENDING`/`CONFIRMED` 可改；终态 → `409`。
+        带 `familyMemberId` 时要求该成员已获 `GRANTED` 代理授权（与档案同口径）。
+      required: [version]
+      properties:
+        version: {type: integer, minimum: 1}
+        symptomSummary: {type: [string, 'null'], maxLength: 300}
+        familyMemberId: {type: [string, 'null'], maxLength: 64}
+        contactPhone: {type: [string, 'null'], maxLength: 20, description: 明文入参，服务端加密存储；响应只回脱敏值。}
 
     # ---------- 家庭成员更新（契约外补充路径，后端宽松接收未知字段）----------
 

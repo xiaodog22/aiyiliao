@@ -86,6 +86,24 @@ public class AppointmentRepository {
                 AppointmentRepository::mapSlot, slotId).stream().findFirst();
     }
 
+    /**
+     * 该用户在该号源上是否已有「在办」预约（DEF-03 业务唯一性）。
+     *
+     * 在办 = PENDING / CONFIRMED / CHECKED_IN：这三态都占用号源，取消或结束后才允许重约。
+     * CANCELLED / COMPLETED / EXPIRED / NO_SHOW 属终态（COMPLETED、NO_SHOW 的号源也已消耗），不再拦。
+     *
+     * ⚠️ 这是**应用层**校验，与扣号同一事务；并发双发（两个不同的幂等键）仍可能同时通过 ——
+     *    彻底互斥需要 DB 唯一约束，见 docs 缺陷修复记录里的遗留项（MySQL 无部分唯一索引，
+     *    需 generated column + 先清理历史重复数据）。
+     */
+    public boolean hasActiveAppointment(String userId, String slotId) {
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM appointments WHERE user_id = ? AND slot_id = ? "
+                        + "AND status IN ('PENDING','CONFIRMED','CHECKED_IN')",
+                Integer.class, userId, slotId);
+        return count != null && count > 0;
+    }
+
     /** 原子扣号（唯一防线）：影响 0 行 = 号源已满。 */
     public boolean decrementSlotRemaining(String slotId) {
         int updated = jdbc.update("UPDATE doctor_slots SET remaining = remaining - 1, updated_at = ? "

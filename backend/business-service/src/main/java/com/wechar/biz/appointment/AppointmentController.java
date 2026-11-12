@@ -139,8 +139,12 @@ public class AppointmentController {
         String key = IdempotencyKeys.require(idempotencyKey);
         String userId = authService.ensureUser(currentUserContext.currentUserId());
         String reason = request == null ? null : request.reason();
-        return ResponseEntity.ok(Envelope.ok(RequestIds.current(),
-                appointmentService.cancel(userId, appointmentId, key, reason)));
+        var result = appointmentService.cancel(userId, appointmentId, key, reason);
+        return ResponseEntity.ok()
+                // DEF-11：200 不再歧义 —— cancelled=false → Idempotency-Replayed: true（本次未改状态）。
+                // 复用创建接口已有语义（同键重放置 true），不新增响应头、不破坏 OkAppointment 形状。
+                .header(IdempotencyKeys.REPLAY_HEADER, String.valueOf(!result.cancelled()))
+                .body(Envelope.ok(RequestIds.current(), result.appointment()));
     }
 
     /**
@@ -156,8 +160,10 @@ public class AppointmentController {
             @RequestParam(required = false) String reason) {
         String userId = authService.ensureUser(currentUserContext.currentUserId());
         String key = "del-" + appointmentId; // 仅服务内占位：cancel 不按键重放，只按终态判定
-        return ResponseEntity.ok(Envelope.ok(RequestIds.current(),
-                appointmentService.cancel(userId, appointmentId, key, reason)));
+        var result = appointmentService.cancel(userId, appointmentId, key, reason);
+        return ResponseEntity.ok()
+                .header(IdempotencyKeys.REPLAY_HEADER, String.valueOf(!result.cancelled()))
+                .body(Envelope.ok(RequestIds.current(), result.appointment()));
     }
 
     /**

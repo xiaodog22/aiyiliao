@@ -77,12 +77,28 @@ class M9AttachmentTest {
         return extractId(body(r), "hr-");
     }
 
+    /**
+     * 构造带**真实 PNG 文件头**的测试文件。
+     * DEF-05 起服务端会比对魔数（扩展名可伪造），纯 `i%251` 的假字节会被 415 拒绝 ——
+     * 这正是原测试跑绿却掩盖了「只验扩展名」的原因。
+     */
     private static MockMultipartFile png(String name, int size) {
         byte[] bytes = new byte[size];
         for (int i = 0; i < size; i++) {
             bytes[i] = (byte) (i % 251);
         }
+        byte[] magic = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
+        System.arraycopy(magic, 0, bytes, 0, magic.length);
         return new MockMultipartFile("file", name, "image/png", bytes);
+    }
+
+    /** 伪装文件：扩展名与 Content-Type 都是图片，内容却是任意二进制（DEF-05 的原始复现）。 */
+    private static MockMultipartFile fakeImage(String name, String contentType) {
+        byte[] bytes = new byte[2048];
+        // PE 可执行文件头 4D 5A 90 00 ...（改名 a.jpg 上传即可绕过"只验扩展名"）
+        byte[] pe = {(byte) 0x4D, (byte) 0x5A, (byte) 0x90, (byte) 0x00, 0x03, 0x00, 0x00, 0x00};
+        System.arraycopy(pe, 0, bytes, 0, pe.length);
+        return new MockMultipartFile("file", name, contentType, bytes);
     }
 
     // ---------------------------------------------------------------- 主链路
@@ -170,6 +186,18 @@ class M9AttachmentTest {
     }
 
     // ---------------------------------------------------------------- 边界
+
+    @Test
+    void 伪装文件_扩展名jpg内容不是图片_415拒绝() throws Exception {
+        String recordId = createRecord("m9-key-fake-01", "伪装文件");
+        // 期望 415 ATTACHMENT_FORMAT：文件内容与扩展名不符，不落盘
+        mockMvc.perform(multipart("/api/v1/health-records/" + recordId + "/attachments")
+                        .file(fakeImage("a.jpg", "image/jpeg"))
+                        .header("X-User-Id", USER)
+                        .header("Idempotency-Key", "m9-upload-fake-01"))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.code").value("ATTACHMENT_FORMAT"));
+    }
 
     @Test
     void 暂存上传_建档挂载attachmentKeys() throws Exception {

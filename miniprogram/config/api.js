@@ -72,6 +72,8 @@ const HEALTH_RECORDS      = { base: 'java', path: '/api/v1/health-records' }
 const FAMILY_MEMBERS      = { base: 'java', path: '/api/v1/family-members' }
 const FAMILY_MEMBER_BY_ID = { base: 'java', path: '/api/v1/family-members/{id}' }
 const FAMILY_INVITATIONS  = { base: 'java', path: '/api/v1/family-members/invitations' }
+// 接受邀请（DEF-04）：核销一次性 token 并把成员 proxyStatus 置 GRANTED（唯一的授权放行入口）
+const FAMILY_INVITE_ACCEPT = { base: 'java', path: '/api/v1/family-members/invitations/accept' }
 // 健康档案检查资料附件（V9）：上传（multipart file）/列表/删除/匿名签名读取
 const HR_ATTACHMENTS      = { base: 'java', path: '/api/v1/health-records/{recordId}/attachments' }
 // 报告 AI 解读（契约已实现，2026-10-19：business-service 承接，同步返回）
@@ -158,6 +160,7 @@ module.exports = {
   DOCTOR_CONSULTATIONS, DOCTOR_CONSULT_MESSAGES, DOCTOR_ACCEPT, DOCTOR_CONSULT_CLOSE, DOCTOR_REPLY,
   DOCTOR_SCHEDULE, DOCTOR_ONLINE_STATUS, DOCTOR_AVAILABILITY,
   BED_LIST, BED_UPDATE, BED_ASSIGNMENT, HEALTH_RECORDS, FAMILY_MEMBERS, FAMILY_MEMBER_BY_ID, FAMILY_INVITATIONS,
+  FAMILY_INVITE_ACCEPT,
   HR_ATTACHMENTS, HR_ATTACHMENT_BY_ID, ATTACHMENT_UPLOAD, ATTACHMENT_FILE, HR_INTERPRET,
   REPORT_LIST, REPORT_DETAIL,
   HEALTH_ARTICLE_DETAIL,

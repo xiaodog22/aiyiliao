@@ -394,6 +394,15 @@ function analyze(text, opts) {
   const stopAsk = level.key === 'emergency' || level.key === 'urgent' || matched
   const question = stopAsk ? null : nextQuestion(slots, o.asked, o.rounds)
 
+  // 兜底科室不是"结论"（DEF-16）：只要主推荐落回 `全科医学科`，就说明**没有识别出系统归属**
+  // （追问轮数用尽、或用户点「直接出结果」时最容易被渲染成"确定科室 + 去挂号"）。
+  //
+  // ⚠️ 为什么不用分数阈值（缺陷单建议的 `score < 4`）：实测「就是不舒服」score=7、
+  //    「最近有点低热」score=4 —— 阈值 4 既挡不住这两条，又会把「乏力」(w=5) 这类
+  //    「未分化但确实该看全科」的真实诉求一起杀掉。判据改成**科室本身**最稳定：
+  //    兜底科室 = 没识别出归属，页面改为「暂无法判断，建议导诊台」并保留全科去处即可。
+  const noConclusion = redFlags.length === 0 && primary.dept === FALLBACK_DEPT
+
   const info = DEPARTMENT_INFO[primary.dept] || null
   return {
     level: level.key,
@@ -411,7 +420,9 @@ function analyze(text, opts) {
     question: question,
     // 只要还在追问，就说明信息不足（供页面显示"我想再了解一点"）
     needMoreInfo: !!(question || needMoreInfo),
-    navigable: !!(info && info.navigable),
+    // true = 页面**不得**渲染科室卡与「去预约」入口，改为「暂无法判断科室，建议到院咨询导诊台」
+    noConclusion: noConclusion,
+    navigable: !!(info && info.navigable) && !noConclusion,
     departmentInfo: info,
     // 合规口径统一在这里产出，页面照抄即可
     disclaimer: '本结果为 AI 分诊建议，仅供参考，不能替代医生面诊与检查；急危重症请直接拨打 120。'
@@ -500,6 +511,8 @@ function mergeRemote(local, remote) {
     out.primary = aiPrimary
     out.navigable = !!(info && info.navigable)
     out.departmentInfo = info
+    // AI 已给出具体科室（后端从不返回兜底科室）→ 不再走「暂无法判断」分支（DEF-16）
+    out.noConclusion = false
     out.alternates = [].concat(
       same ? [] : [{ dept: localTop, score: out.primary ? 0 : 0, confidence: { text: '本地规则建议' }, info: DEPARTMENT_INFO[localTop] || null, reasons: [] }],
       out.alternates || []

@@ -36,8 +36,16 @@ function safeDecode(v) {
   try { return decodeURIComponent(v || '').trim() } catch (e) { return String(v || '').trim() }
 }
 const { errText } = require('../../utils/err-text.js')
+const { hasContent } = require('../../utils/input-guard.js')
 // 时间展示统一走 utils/datetime.js（ISO Instant → 设备本地 'YYYY-MM-DD' / 'HH:mm'）
 const { fmtLocalDateTime, dayLabel } = require('../../utils/datetime.js')
+
+/**
+ * 输入字数上限（DEF-08）：微信 `<input>` 默认 maxlength=140，不写就静默截断；
+ * 后端问诊消息上限 2000。到顶时提示一次，不做"静默吞字"。
+ */
+const INPUT_MAX = 2000
+const INPUT_MAX_TIP = '已达字数上限，可先发送再补充'
 
 const POLL_INTERVAL = 4000   // 等待医生/AI 回复的轮询间隔
 const POLL_MAX = 12          // 最多 12 次（≈48s），超时不再打扰服务端
@@ -79,6 +87,7 @@ Page({
 
     // 输入区
     input: '',
+    inputMax: INPUT_MAX,
     sending: false,
     uploading: false,
     recording: false,
@@ -402,7 +411,14 @@ Page({
 
   // ============ 输入 / 发送 ============
   onInput(e) {
-    this.setData({ input: (e && e.detail && e.detail.value) || '' })
+    const v = (e && e.detail && e.detail.value) || ''
+    // 到上限才提示一次（DEF-08）：到顶后键盘输入不再进框，不说明会像"键盘坏了"
+    if (v.length >= INPUT_MAX && !this._maxTipShown) {
+      this._maxTipShown = true
+      wx.showToast({ title: INPUT_MAX_TIP, icon: 'none' })
+    }
+    if (v.length < INPUT_MAX) this._maxTipShown = false
+    this.setData({ input: v })
   },
 
   onSend() {
@@ -413,6 +429,11 @@ Page({
     }
     const text = (this.data.input || '').trim()
     if (!text) return   // 空输入静默返回：设计稿发送键常亮，不弹提示打扰
+    // 纯标点/空白不算一条消息（DEF-09 同类面）：医生端不该收到"。。。"（发送键常亮易误触）
+    if (!hasContent(text)) {
+      wx.showToast({ title: '请输入消息内容', icon: 'none' })
+      return
+    }
     this.onSendText(text)
   },
 

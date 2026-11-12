@@ -33,6 +33,24 @@ HOP_BY_HOP = {
 STREAM_BODY_THRESHOLD = 1 << 20  # 1 MiB
 
 
+def _ensure_headers_ascii(headers: dict[str, str], path: str) -> None:
+    """出站请求头值必须是 ASCII，否则 400（而不是 500）。
+
+    httpx 在 `build_request` 里执行 `value.encode("ascii")`；头值含中文会抛
+    UnicodeEncodeError。该异常不在原 forward() 的捕获清单里 → 冒泡到全局兜底 →
+    500 INTERNAL_ERROR「网关内部错误」。客户端传非 ASCII 头本身不合规，但服务端
+    应回 400 VALIDATION_FAILED 并指明字段名，方便调用方自查（DEF-10）。
+    """
+    for name, value in headers.items():
+        if value is None:
+            continue
+        try:
+            str(value).encode("ascii")
+        except UnicodeEncodeError:
+            logger.warning("请求头含非 ASCII 字符，已拒绝 %s header=%s", path, name)
+            raise ApiError(400, "VALIDATION_FAILED", f"请求头 {name} 含非法字符（仅允许 ASCII）")
+
+
 def _reject_path_traversal(path: str) -> None:
     """拒绝含 `..` 段的转发路径（路径混淆 / 请求走私的经典形态）。
 
@@ -87,6 +105,12 @@ async def forward(
         for key, value in header_overrides.items():
             if value is not None:
                 headers[key.lower()] = value
+
+    # 出站头值必须是 ASCII：httpx 在 build_request 阶段 `value.encode("ascii")`，
+    # 非 ASCII（例如把中文塞进 Idempotency-Key）会抛 UnicodeEncodeError，而 forward() 此前
+    # 没有兜底 → 网关回 500 INTERNAL_ERROR「网关内部错误」（DEF-10）。客户端传非法头本身不合规，
+    # 但服务端必须回 400 并指明字段，而不是伪装成内部故障。
+    _ensure_headers_ascii(headers, path)
 
     # ---- 请求体：小请求整读，大上传改流式（2026-11-04 云托管核查）----
     # 原实现一律 `await request.body()`：一次 50MB 视频上传会先让网关在内存里攒一份完整副本，
