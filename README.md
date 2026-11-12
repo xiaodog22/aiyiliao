@@ -190,6 +190,7 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 | **小程序逻辑层（并发）** | `miniprogram/tests/` + `tools/test-fe.js` | **14 项**（零依赖 `node:test`） |
 | **前后端契约快照** | `tools/contract-snapshot.js` + `contracts/snapshots/` | **5 端点**结构快照 |
 | 性能回归门禁 | `tools/perf-gate.js` | 25VU/20s，支持 `--rounds=N` + 配置指纹 |
+| **真库验证（MySQL）** | `tools/db-verify.js` | **37 项**（连接/Schema/约束/原子性/时区/Flyway/索引/权限），报告 `backend/deploy/DB_VERIFY_20261112.md` |
 
 - 分层现状、技术选型取舍（为什么 Pact / MSW 在本项目用不了）与补齐顺序：`docs/测试体系_分层现状与补齐计划_20261101.md`。
 - 日常门禁：`node tools/check-project.js`（路径/禁址/图标/类名）+ `mvnw -o test` + `pytest tests` + `node tools/test-fe.js` + `node tools/contract-snapshot.js --token=…`
