@@ -6,7 +6,7 @@
  */
 const MOCK = require('./utils/mock-data.js')
 const session = require('./services/session.js')
-const { ensureAccessToken, revokeSession } = require('./services/request.js')
+const { ensureAccessToken, revokeSession, clearGetCache } = require('./services/request.js')
 const resource = require('./services/resource.js')
 
 // 登录会话有效期：72 小时（毫秒）。超过则需重新登录。
@@ -16,7 +16,8 @@ App({
   globalData: {
     role: '',           // '' | 'patient' | 'doctor'
     user: null,         // 患者/医生信息
-    theme: 'standard'   // standard | large | xlarge
+    theme: 'standard',  // standard | large | xlarge
+    highContrast: false // 无障碍高对比（D-10：原来只作用于设置页自身，等于开关没效果）
   },
 
   onLaunch() {
@@ -35,6 +36,8 @@ App({
     }
     const theme = wx.getStorageSync('wb_theme') || 'standard'
     this.globalData.theme = theme
+    // 无障碍高对比：冷启动读回（页面 onShow 会把它写到根节点 class 上）
+    this.globalData.highContrast = !!wx.getStorageSync('wb_high_contrast')
 
     // 冷启动会话预热：access token 只驻留内存（重启即丢），这里用持久化的 refresh 先换回 access，
     // 避免首个受保护请求"先吃一个 401 再刷新"。失败静默：无会话 / refresh 过期时由页面守卫引导重登。
@@ -99,6 +102,8 @@ App({
     session.clear()
     // 上一用户的资料缓存不属于"登录态"，但留着会被下一个登录者读到（审查 AUTH-23）。
     // 所有退出入口（我的 / 设置 / 医生个人 / 账号安全）都走这里，集中清理避免漏项。
+    // GET 短缓存同理必须清（否则下个账号 15s 内会读到上个账号的 /me、列表数据）。
+    try { clearGetCache() } catch (e) {}
     try { require('./services/user.js').logout() } catch (e) {}
     try { require('./services/doctor.js').logout() } catch (e) {}
     return revoking || Promise.resolve(false)
@@ -108,6 +113,20 @@ App({
   setTheme(theme) {
     this.globalData.theme = theme
     wx.setStorageSync('wb_theme', theme)
+  },
+
+  /**
+   * 无障碍高对比开关（D-10）。
+   * 语义：**只提高对比度，不改色相** —— 文字加深、分割线加深，品牌蓝/状态绿保持原样，
+   *       否则用户会以为开了"黑白模式"，颜色承载的状态语义全部丢失。
+   * 落地：写 globalData + 本地存储，各页 onShow 会把它映射成根节点 `.high-contrast`，
+   *       由 app.wxss 里的变量覆盖生效（设置页自身即时生效，无需回退）。
+   */
+  setHighContrast(on) {
+    const v = !!on
+    this.globalData.highContrast = v
+    try { wx.setStorageSync('wb_high_contrast', v) } catch (e) {}
+    return v
   },
 
   // 获取当前角色对应首页路由

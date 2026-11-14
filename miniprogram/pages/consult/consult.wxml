@@ -6,7 +6,7 @@
   ⚠️ 不伪造：医生姓名/职称/科室/接诊态全部来自服务端（契约 Consultation），缺失时走中性占位；
      历史消息接口不可用时给可见降级提示，绝不用本地假数据冒充医生回复。
 -->
-<view class="page theme-{{theme}} cs-page" style="padding-top: {{navH}}px;">
+<view class="page theme-{{theme}} {{hc ? 'high-contrast' : ''}} cs-page" style="padding-top: {{navH}}px;">
 
   <!-- ① 自定义导航栏（吸顶）：返回 + 居中标题（右侧微信胶囊自绘，不重复画） -->
   <view class="cs-nav" style="padding-top: {{statusBarHeight}}px;">

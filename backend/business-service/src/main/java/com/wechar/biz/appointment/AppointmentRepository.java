@@ -104,6 +104,17 @@ public class AppointmentRepository {
         return count != null && count > 0;
     }
 
+    /**
+     * 该号源已建单数量（含已取消/过期）：用于分配「取号序号」。
+     * ⚠️ 序号仅用于叫号展示，不做唯一约束（并发下可能重号，业务可接受：
+     *    前台按 时段 + 姓名 叫号，序号只是辅助）。真正的互斥由号源余量原子扣减保证。
+     */
+    public int countBySlot(String slotId) {
+        Integer c = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM appointments WHERE slot_id = ?", Integer.class, slotId);
+        return c == null ? 0 : c;
+    }
+
     /** 原子扣号（唯一防线）：影响 0 行 = 号源已满。 */
     public boolean decrementSlotRemaining(String slotId) {
         int updated = jdbc.update("UPDATE doctor_slots SET remaining = remaining - 1, updated_at = ? "
@@ -134,9 +145,12 @@ public class AppointmentRepository {
         jdbc.update("INSERT INTO appointments (id, user_id, family_member_id, slot_id, doctor_id, department_id, "
                         + "patient_name, contact_phone_cipher, symptom_summary, status, queue_number, cancel_reason, "
                         + "location, hospital_name, idempotency_key, request_digest, version, created_at) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, 1, ?)",
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 1, ?)",
                 row.id(), row.userId(), row.familyMemberId(), row.slotId(), row.doctorId(), row.departmentId(),
                 row.patientName(), row.contactPhoneCipher(), row.symptomSummary(), row.status(),
+                // D-07：queue_number 原先写死 NULL，成功页只能拿 UUID 当预约号（难念难抄）。
+                // 现由 Service 按号源已建单数分配「取号序号」，这里如实落库。
+                row.queueNumber(),
                 location, hospitalName, row.idempotencyKey(), row.requestDigest(),
                 Timestamp.from(row.createdAt()));
     }

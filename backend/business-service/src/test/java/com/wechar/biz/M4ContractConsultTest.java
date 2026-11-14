@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
@@ -45,7 +46,12 @@ import org.springframework.test.web.servlet.MvcResult;
         "spring.sql.init.encoding=UTF-8",
         "spring.sql.init.data-locations=classpath:db/test-m2-seed.sql"
 })
-@AutoConfigureMockMvc
+// 关闭 MockMvc 的诊断打印（2026-11-13 全量回归偶发 ConcurrentModificationException 修复）：
+// SSE 端点由 daemon 工作线程异步写响应，而 SpringBootMockMvcBuilderCustomizer 的默认
+// PrintingResultHandler 会在每次 perform 后遍历响应头 —— 两者并发时 LinkedCaseInsensitiveMap
+// 迭代器抛 CME。这是测试框架的诊断输出与异步响应的竞态，不是业务错误；关掉打印即消除竞态，
+// 状态码/契约断言完全保留（其它测试类的打印行为不变）。
+@AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 class M4ContractConsultTest {
 
     @Autowired

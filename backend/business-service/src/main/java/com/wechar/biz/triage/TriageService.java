@@ -40,7 +40,7 @@ public class TriageService {
                 outcome.emergency(),
                 outcome.level(),
                 outcome.emergency()
-                        ? "命中急症红旗：" + String.join("、", outcome.matchedRules()) + "。" + TriageRuleEngine.emergencyAdvice()
+                        ? "命中急症红旗：" + TriageRuleEngine.describe(outcome.matchedRules()) + "。" + TriageRuleEngine.emergencyAdvice()
                         : "未命中急症红旗规则。",
                 "RULE_RESULT",
                 TriageRuleEngine.RULESET_VERSION);
@@ -54,7 +54,7 @@ public class TriageService {
             // 急诊科不在 departments 只读目录内（§1 禁止改目录）→ 按合成条目下发，
             // id 取前端导航字典同名键（miniprogram/utils/triage-kb.js → 'emergency'）。
             departments = List.of(new RecommendedDepartment("emergency", "急诊科",
-                    "命中急症红旗：" + String.join("、", outcome.matchedRules()),
+                    "命中急症红旗：" + TriageRuleEngine.describe(outcome.matchedRules()),
                     "RULE_RESULT", 1.0));
         } else {
             departments = mapDepartments(request.symptoms());

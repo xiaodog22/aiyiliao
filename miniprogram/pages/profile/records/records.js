@@ -12,7 +12,7 @@ const { withFallback } = require('../../../services/request.js')
 const userService = require('../../../services/user.js')
 const { paginate } = require('../../../utils/paginate.js')
 const { errText } = require('../../../utils/err-text.js')
-const { aptStatusText } = require('../../../utils/apt-status.js')
+const { aptDisplayStatus } = require('../../../utils/apt-status.js')
 const { fmtLocalDateTime } = require('../../../utils/datetime.js')
 const icons = require('../../../utils/icons.js')
 
@@ -68,6 +68,16 @@ function decorate(it) {
   })
 }
 
+/**
+ * 是否属于「历史单」（已完成 / 已过期 / 已取消）。
+ * D-06：过期单既不属于「待就诊」也不属于「已完成」会造成两个分段都看不到，
+ * 这里把它并入历史分段，与「已完成」角标同口径。
+ */
+function isHistory(it) {
+  const t = String((it && it.status) || '')
+  return t.indexOf('已完成') >= 0 || t.indexOf('过期') >= 0 || t.indexOf('取消') >= 0 || t.indexOf('未到') >= 0
+}
+
 
 Page({
   data: {
@@ -101,8 +111,8 @@ Page({
   /** 按当前分段筛选过滤全部记录（纯前端；服务端列表已是权威全集） */
   _filtered() {
     const f = this.data.filter
-    if (f === '待就诊') return this.data.all.filter((it) => it.status.indexOf('已完成') < 0 && it.status.indexOf('取消') < 0 && it.status.indexOf('过期') < 0)
-    if (f === '已完成') return this.data.all.filter((it) => it.status.indexOf('已完成') >= 0)
+    if (f === '待就诊') return this.data.all.filter((it) => !isHistory(it))
+    if (f === '已完成') return this.data.all.filter((it) => isHistory(it))
     return this.data.all
   },
 
@@ -144,20 +154,22 @@ Page({
             date: when.date,
             time: when.time,
             place: it.location || '',
-            status: aptStatusText(it.status) || '待就诊',
+            // D-06：过期单的后端状态可能还停在 CONFIRMED，展示层按时间纠正为「已过期」
+            status: aptDisplayStatus(it.status, it.startTime, it.endTime) || '待就诊',
             // 契约 AppointmentData 无 description；保留字段以兼容本地缓存与非契约补充端点
             desc: it.description || ''
           }
         })
         // 服务端列表是权威数据源；请求成功时不再混入历史本地缓存，避免同一预约重复展示。
         const all = remote.map(decorate)
+        const doneCount = all.filter(isHistory).length
         this.setData({
           all,
           loading: false,
           counts: {
             all: all.length,
-            active: all.filter((it) => it.isActive).length,
-            done: all.filter((it) => it.isDone).length
+            active: all.length - doneCount,
+            done: doneCount
           }
         })
         const p = paginate(this._filtered(), 1)
@@ -242,8 +254,19 @@ Page({
     wx.navigateTo({ url: '/pages/profile/health-records/health-records' })
   },
 
-  /** 再次预约：跳转预约挂号页（tabBar 页，须 switchTab） */
-  onRebook() {
+  /**
+   * 再次预约：跳转预约挂号页（tabBar 页，须 switchTab）。
+   * D-15：switchTab 不带 query，原实现只跳转不预选，用户每次都要重选科室。
+   * 这里把原科室名写进 `wb_appoint_dept`（与导诊/问诊/首页同一条跨页缓存），
+   * 由 appointment.onShow 的 _takePendingDept() 消费一次后立即删除。
+   */
+  onRebook(e) {
+    const idx = Number((e.currentTarget.dataset || {}).index)
+    const it = this.data.displayed[idx]
+    const dept = (it && it.dept) || ''
+    if (dept) {
+      try { wx.setStorageSync('wb_appoint_dept', dept) } catch (err) { /* 缓存不可用则退化为不预选 */ }
+    }
     wx.switchTab({ url: '/pages/appointment/appointment' })
   },
 

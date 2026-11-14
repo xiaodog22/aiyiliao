@@ -1,0 +1,27 @@
+{
+  "_warning": "可选片段：全部含占位符或需联网安装，不要整体导入。按 README 逐项确认后再把单个 server 加进 mcpServers。",
+  "mcpServers": {
+    "wechat-devtools": {
+      "command": "wechatide",
+      "args": ["mcp", "--token", "<设置→安全→复制 MCP 配置 中的 Token>"],
+      "_requires": "微信开发者工具 >= Nightly Electron 2.02.2607032，已登录，服务端口已开启；Token 刷新后旧配置失效"
+    },
+    "jmeter": {
+      "command": "npx",
+      "args": ["-y", "jmeter-mcp-server"],
+      "env": { "JMETER_HOME": "D:/apache-jmeter-5.4.1" },
+      "_requires": "需联网安装 npm 包；第三方 MCP 多按 JMeter 5.6.x 验证，5.4.1 兼容性须实测；功能与本地 server.js 重叠"
+    },
+    "postman-local": {
+      "command": "npx",
+      "args": ["-y", "@postman/postman-mcp-server", "--full"],
+      "env": { "POSTMAN_API_KEY": "<你的 Postman API Key>" },
+      "_requires": "需联网安装 + Postman API Key；只有本地模式能访问本机网关 localhost"
+    },
+    "postman-remote": {
+      "type": "http",
+      "url": "https://mcp.postman.com/minimal",
+      "_requires": "OAuth 登录；远端无法访问本机/内网网关，只适合测公网 API；工具调用计入 Postman 套餐额度"
+    }
+  }
+}

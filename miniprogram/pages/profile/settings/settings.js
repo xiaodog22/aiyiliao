@@ -178,11 +178,11 @@ Page({
     wx.showToast({ title: '已切换为' + label, icon: 'none' })
   },
 
-  // 高对比模式：落本地并即时作用于本页根节点（.high-contrast 覆盖文字/底色令牌）
+  // 高对比模式：落本地 + 写全局态（D-10：原来只 setData 本页，导致其它页开了一点反应都没有）
   onContrast(e) {
     const on = !!e.detail.value
     this.setData({ highContrast: on })
-    try { wx.setStorageSync(HC_KEY, on) } catch (err) {}
+    try { app.setHighContrast(on) } catch (err) { try { wx.setStorageSync(HC_KEY, on) } catch (e2) {} }
   },
 
   // 语音朗读开关：写入 storage（wb_voice_read），问诊自动朗读全局生效

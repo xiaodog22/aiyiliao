@@ -282,7 +282,9 @@
 .bubble-user::after {
   content: '';
   position: absolute;
-  right: -10rpx;
+  /* D-11：原为 right:-10rpx，尾巴凸到气泡外，加上 24rpx 页边距后视觉上几乎贴屏边。
+     改为贴气泡内缘（right:0），给右侧留出稳定呼吸位。 */
+  right: 0;
   bottom: 0;
   width: 0;
   height: 0;
@@ -943,7 +945,7 @@
   .ai-avatar text { font-size: 10px; letter-spacing: 0.5px; }
   .msg-bubble { padding: 11px 14px; }
   .bubble-user::after {
-    right: -5px;
+    right: 0;
     border-left: 7px solid var(--primary);
     border-top: 7px solid transparent;
   }

@@ -7,7 +7,7 @@
   ⚠️ 业务逻辑不变：step 状态机（dept → doctor → time → confirm → done）与
      services/appointment.js 的调用方式保持原样，这里只重排**视图层**。
 -->
-<view class="page theme-{{theme}} page-shell apt-page">
+<view class="page theme-{{theme}} {{hc ? 'high-contrast' : ''}} page-shell apt-page">
 
   <view class="shell-cols">
 
@@ -237,7 +237,7 @@
       <view class="success-title">挂号成功</view>
       <view class="success-line">{{selDept}} · {{selDoctor}}</view>
       <view class="success-line">{{selDateText || selDate}} {{selTime}}</view>
-      <view wx:if="{{orderNo}}" class="success-no">预约号 {{orderNo}}</view>
+      <view wx:if="{{orderNo}}" class="success-no">{{orderLabel}} {{orderNo}}</view>
     </view>
     <view class="btn btn-outline act-btn" bindtap="goNav">
       <image class="ic-sm" src="{{icons.mapPin}}" /> 查看院内路线

@@ -31,6 +31,20 @@ const KB = require('../../../utils/triage-kb.js')
 const DEPT_INFO = (KB && KB.DEPARTMENT_INFO) || {}
 
 /**
+ * 安全解码（D-14）：深链参数可能被手改成畸形 `%` 序列。
+ * decodeURIComponent 遇到非法转义会抛 URIError，若在 onLoad 里裸调会让整页白屏；
+ * 这里解码失败一律退回原始字符串（后续科室匹配自然落空，不崩）。
+ */
+function safeDecode(v) {
+  const s = String(v == null ? '' : v)
+  try {
+    return decodeURIComponent(s)
+  } catch (e) {
+    return s
+  }
+}
+
+/**
  * 画布颜色。
  * ⚠️ canvas 不支持 CSS 变量（不能读 app.wxss 的 --primary），故在此集中一份，
  *    取值与 app.wxss 令牌**同值**：--primary / --text-main / --bg。
@@ -149,7 +163,9 @@ Page({
     }))
 
     this._view = { scale: 0.5, tx: 0, ty: 0 }
-    this._dept = (q && q.dept) ? decodeURIComponent(q.dept) : ''
+    // D-14：深链 ?dept= 可能被手改成畸形 % 序列，decodeURIComponent 抛 URIError 会让
+    // onLoad 中断（白屏）。解码失败退回原文，再交给下面的科室匹配兜底。
+    this._dept = (q && q.dept) ? safeDecode(q.dept) : ''
     this._watchWide()
     this.setData({ theme, list: this._all })
     this.loadDepartments()

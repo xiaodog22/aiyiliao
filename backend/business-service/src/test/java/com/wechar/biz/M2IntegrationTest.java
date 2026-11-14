@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -55,7 +56,9 @@ import org.springframework.test.web.servlet.MvcResult;
         "spring.sql.init.encoding=UTF-8",
         "spring.sql.init.data-locations=classpath:db/test-m2-seed.sql"
 })
-@AutoConfigureMockMvc
+// 同类竞态防护（2026-11-13）：本类也调用 SSE /events，daemon 工作线程与 MockMvc 默认打印处理器
+// 并发访问同一个 MockHttpServletResponse 响应头；关闭诊断打印，保留全部 header/状态断言。
+@AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 class M2IntegrationTest {
 
     @Autowired

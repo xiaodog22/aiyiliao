@@ -53,10 +53,21 @@ function normalizeLoose(text) {
   return normalize(text).replace(FILLER_RE, '')
 }
 
-/** 命中位置前 5 字窗口内是否出现否定词（否定识别，防误判） */
+/**
+ * 命中位置前 6 字窗口内是否出现否定词（否定识别，防误判）。
+ *
+ * 唯一的否定判定入口 —— 红旗匹配、症状抽取、科室推荐都走 findKey → 这里。
+ * 转折词（但/不过/却/后来…）之后重新起算，否则「没有发烧但胸痛」会把真阳性吞掉；
+ * 吞掉真阳性比多报一次急症危险得多，所以转折一律按"重新肯定"处理（DEF-19）。
+ */
+const NEG_CONTRASTS = ['但', '不过', '却', '而是', '后来', '随后']
 function isNegated(text, idx) {
-  const from = Math.max(0, idx - 5)
-  const window = text.slice(from, idx)
+  const from = Math.max(0, idx - 6)
+  let window = text.slice(from, idx)
+  NEG_CONTRASTS.forEach((c) => {
+    const i = window.lastIndexOf(c)
+    if (i >= 0) window = window.slice(i + c.length)
+  })
   for (let i = 0; i < NEGATIONS.length; i++) {
     if (window.indexOf(NEGATIONS[i]) >= 0) return true
   }
@@ -133,7 +144,8 @@ function matchRedFlags(text) {
   const t = normalize(text)
   const hit = []
   RED_FLAGS.forEach((flag) => {
-    const main = (flag.any || []).filter((k) => findKey(t, k) >= 0)
+    // 走 findKey：命中位置要被 isNegated 判过（"没有胸痛" 不算阳性，DEF-19）
+    const main = (flag.any || []).filter((k) => findKey(t, normalize(k)) >= 0)
     if (!main.length) return
     // all：除主词外还需命中其中至少一个（如"全身皮疹 + 呼吸困难"）
     if (flag.all && flag.all.length && !anyHit(t, flag.all)) return
@@ -429,12 +441,24 @@ function analyze(text, opts) {
   }
 }
 
+/**
+ * 严重程度 → 展示用短词。
+ * ⚠️ D-12：内部值为了规则判定保留「程度轻 / 程度重」前缀（triage-engine 的急诊判定
+ *    依赖 `severity === '程度重'`），但直接拼进「程度：」标签会出现
+ *    「程度：程度轻」这种标签与值重复的文案。展示层统一去掉前缀，内部值不动。
+ */
+const SEVERITY_TEXT = {
+  程度轻: '轻微',
+  程度重: '较重',
+  进行性加重: '逐渐加重'
+}
+
 /** 槽位 → 一句人话（用于"我理解到的信息"回执） */
 function describeSlots(slots) {
   const parts = []
   if (slots.part.length) parts.push('部位：' + slots.part.join('、'))
   if (slots.duration) parts.push('时长：' + slots.duration)
-  if (slots.severity) parts.push('程度：' + slots.severity)
+  if (slots.severity) parts.push('程度：' + (SEVERITY_TEXT[slots.severity] || slots.severity))
   if (slots.associated.length) parts.push('伴随：' + slots.associated.join('、'))
   if (slots.population) parts.push('人群：' + slots.population)
   return parts.join(' · ')

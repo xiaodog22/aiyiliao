@@ -48,7 +48,10 @@ Page({
       return
     }
     // 先用登录态立即可视（登录响应已含 displayName/avatarUrl），再拉 /me 刷新
-    this.setData({ theme: app.globalData.theme || 'standard' })
+    this.setData({
+      theme: app.globalData.theme || 'standard',
+      hc: !!app.globalData.highContrast   // D-10：高对比在设置页切换后回到本页立即生效
+    })
     this._apply(app.globalData.user)
     // 自绘 TabBar 高亮
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
@@ -172,10 +175,8 @@ Page({
   },
 
   /**
-   * 设计 07 里有行、但**暂无落地页**的两个入口（消息通知 / 账号安全）→ 显式降级，不伪造页面。
-   * ⚠️ 语音设置已从本页移除（设计稿 07 无此行）：入口仍在「设置」页，功能未丢。
+   * D-18：原「消息通知 / 账号安全」两行都绑在本方法上，点击只弹"暂未开放"，属死入口。
+   * 处理：消息通知行已移除（无订阅模板，做不出真实开关）；账号安全改跳系统设置页
+   * （退出登录 / 账号注销 / 撤回授权同意都在那里）。故本方法不再有调用方，一并删除。
    */
-  onTodo() {
-    wx.showToast({ title: '该功能暂未开放，敬请期待', icon: 'none' })
-  }
 })

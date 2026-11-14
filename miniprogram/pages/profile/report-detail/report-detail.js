@@ -120,7 +120,10 @@ Page({
   },
 
   onLoad(options) {
-    const id = (options && options.recordId) ? decodeURIComponent(options.recordId) : ''
+    // 同 D-14 口径：深链参数可能被手改成畸形 % 序列，裸 decodeURIComponent 会抛 URIError
+    // 直接把 onLoad 打断成白屏；非法转义按原文处理，后面还会走"报告编号无效"的兜底。
+    let id = (options && options.recordId) ? String(options.recordId) : ''
+    if (id) { try { id = decodeURIComponent(id) } catch (e) { /* 保留原文 */ } }
     this.setData({ theme: app.globalData.theme || 'standard', recordId: id })
     if (!id) {
       this.setData({ loading: false, error: '缺少报告编号，请从报告列表重新进入' })

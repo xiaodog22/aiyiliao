@@ -142,6 +142,10 @@ Page({
 
   /** 回到页面：恢复常驻同步（医生接诊 / 回复能实时出现在对话里，与微信聊天一致） */
   onShow() {
+    // D-10：设置页改完高对比 / 字号后回到本页要立刻生效（本页是 TabBar 页，onLoad 只走一次）
+    const theme = app.globalData.theme || 'standard'
+    const hc = !!app.globalData.highContrast
+    if (theme !== this.data.theme || hc !== this.data.hc) this.setData({ theme, hc })
     if (this.data.activeId) this._startLive()
   },
 

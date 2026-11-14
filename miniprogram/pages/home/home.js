@@ -9,7 +9,7 @@ const KB = require('../../utils/knowledge-kb.js')
 // 预约日期徽章解析（VF-11）：纯函数放 utils/ 才能被 tools/test-apt-date.js 单测
 const { parseAptDate } = require('../../utils/apt-date.js')
 // 预约状态枚举 → 中文（契约英文枚举，历史页面写死中文已失效）
-const { aptStatusText } = require('../../utils/apt-status.js')
+const { aptDisplayStatus } = require('../../utils/apt-status.js')
 // 时间展示：契约 ISO Instant → 设备本地日期/时间
 const { fmtLocalDateTime } = require('../../utils/datetime.js')
 // 首页汇总走后端契约（GET /api/v1/home/summary）；禁止再恒定展示 app.MOCK.HOME
@@ -125,6 +125,8 @@ Page({
     if (!patient.avatarText) patient.avatarText = (patient.name || '我').slice(0, 1)
     this.setData({
       theme,
+      // D-10：高对比开关映射到根节点 class（原来只在设置页生效，其它页无反应）
+      hc: !!app.globalData.highContrast,
       patient,
       // 主问候语：参考图为一句大号问候（「您好，今天感觉怎么样？」），
       // 本项目把「姓名 + 您好」作为主句、后端 greeting（早上好/下午好…）作为副句，
@@ -210,7 +212,8 @@ Page({
         date: when.date,
         time: when.time,
         place: a.location || '',
-        status: aptStatusText(a.status)
+        // D-06：过期单不能还写「待就诊」（首页是最高频入口，误导性最强）
+        status: aptDisplayStatus(a.status, a.startTime, a.endTime)
       }
     }
     const greeting = (summary && summary.greeting) || ''
@@ -280,11 +283,13 @@ Page({
         wx.navigateTo({ url: '/pages/consult/picker/picker' })
         break
       case 'reports':
-        wx.navigateTo({ url: '/pages/profile/health-records/health-records' })
+        // ⚠️ 口径统一（2026-11-14）：首页「报告查询」原跳健康档案页（health-records），
+        //    与「我的 → 报告查询」跳的电子检查报告列表（profile/reports）不是同一个页面，
+        //    同一入口名两处落地页不同。以「我的」页为准 —— 报告查询 = 报告列表（含状态/检验明细）。
+        wx.navigateTo({ url: '/pages/profile/reports/reports' })
         break
       case 'archive':
-        // 与同屏的「报告查询」保持一致：直达健康档案页。
-        // 原来 switchTab 到「我的」Tab，要用户再点一次才到档案（审查 P2-04）。
+        // 「健康档案」才是档案页（health-records）；与上面的「报告查询」区分开，不合并。
         wx.navigateTo({ url: '/pages/profile/health-records/health-records' })
         break
       case 'checkup':

@@ -80,14 +80,23 @@ public class VoiceRepository {
                 VoiceRepository::mapPreference, userId).stream().findFirst();
     }
 
-    /** upsert 偏好（同用户单行；version 自增用于乐观并发提示）。 */
+    /**
+     * upsert 偏好（同用户单行；version 自增用于乐观并发提示）。
+     *
+     * ⚠️ D-17 根因（2026-11-14）：auto_play 列是 NOT NULL，而契约 VoicePreferenceRequest.autoPlay
+     *    是可选字段 —— 前端保存音色只传 {voiceId, rate}，这里把 null 直接写进 NOT NULL 列，
+     *    MySQL 抛 "Column 'auto_play' cannot be null" → 接口 500，前端只看到"云端同步失败"。
+     *    修法：不传就不改（UPDATE 用 COALESCE 保留原值；INSERT 用 0 兜底），
+     *    而不是把列的 NOT NULL 放宽 —— 缺省语义应是"沿用"，不是"置空"。
+     */
     public void savePreference(String userId, String voiceId, BigDecimal rate, Boolean autoPlay, Instant now) {
-        int updated = jdbc.update("UPDATE voice_preferences SET voice_id = ?, rate = ?, auto_play = ?, "
+        int updated = jdbc.update("UPDATE voice_preferences SET voice_id = ?, rate = ?, "
+                        + "auto_play = COALESCE(?, auto_play), "
                         + "version = version + 1, updated_at = ? WHERE user_id = ?",
                 voiceId, rate, autoPlay, Timestamp.from(now), userId);
         if (updated == 0) {
             jdbc.update("INSERT INTO voice_preferences (user_id, voice_id, rate, auto_play, version, "
-                            + "created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
+                            + "created_at, updated_at) VALUES (?, ?, ?, COALESCE(?, 0), 1, ?, ?)",
                     userId, voiceId, rate, autoPlay, Timestamp.from(now), Timestamp.from(now));
         }
     }

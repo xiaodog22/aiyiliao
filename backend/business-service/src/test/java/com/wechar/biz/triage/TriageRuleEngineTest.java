@@ -100,6 +100,32 @@ class TriageRuleEngineTest {
                 engine.scanText("腹痛得厉害便血").emergency());
     }
 
+    /**
+     * 否定语义（DEF-19）：患者明确否认时不得判急症；转折后的阳性仍要命中。
+     *
+     * 实测来源：真机问诊「没有胸痛」被服务端判成 chest_pain，弹窗要求立即拨 120。
+     */
+    @Test
+    void 否定语义_否认不触发急症_转折后阳性仍触发() {
+        assertFalse(engine.scanText("没有胸痛").emergency(), "「没有胸痛」不应判急症");
+        assertFalse(engine.scanText("无胸痛，也没有呼吸困难").emergency(), "全否认不应判急症");
+        assertFalse(engine.scanText("否认咯血").emergency(), "「否认咯血」不应判急症");
+        assertFalse(engine.scanText("没有明显胸痛").emergency(), "否定词与关键词间隔 2 字仍算否认");
+
+        assertTrue(engine.scanText("胸痛").emergency(), "阳性必须命中");
+        assertTrue(engine.scanText("没有发烧但胸痛").emergency(), "转折后的胸痛不得被前面的否定吞掉");
+        assertTrue(engine.scanText("没有胸痛，后来胸痛加重").emergency(), "同句后段阳性仍命中");
+        assertTrue(engine.scanText("胸痛不缓解").emergency(), "「不」在关键词之后，不影响阳性判定");
+    }
+
+    @Test
+    void 规则码对外翻中文_不泄漏内部ID() {
+        assertEquals("急性胸痛", TriageRuleEngine.describe(List.of("chest_pain")));
+        assertEquals("急性胸痛、呼吸困难", TriageRuleEngine.describe(List.of("chest_pain", "dyspnea")));
+        assertEquals("危险信号", TriageRuleEngine.describe(List.of("unknown_rule")));
+        assertEquals("", TriageRuleEngine.describe(List.of()));
+    }
+
     /** d 类：幂等 + 兜底——归一稳定；「不舒服」不产生错误专科（回退客户端本地规则
      *  兜底，由前端 PART_PRIMARY 按部位拉正——服务端关键词表不含「不舒服」，不硬造结果）。 */
     @Test

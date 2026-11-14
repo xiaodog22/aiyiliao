@@ -25,7 +25,7 @@ const userService = require('../../services/user.js')
 const triageService = require('../../services/triage.js')
 const req = require('../../services/request.js')
 const { hasContent } = require('../../utils/input-guard.js')
-const { aptStatusText } = require('../../utils/apt-status.js')
+const { aptStatusText, isPastVisit } = require('../../utils/apt-status.js')
 
 const REPORT_KEY = 'wb_triage_report'
 
@@ -94,6 +94,7 @@ Page({
       hasFlow: false
     },
     messages: [],
+    scrollTop: 0,          // 递增计数：每次追加消息变大一次，值变化才会触发 scroll-view 滚动
     status: 'IDLE',
     thinkingText: 'AI 正在分析…',
     input: '',
@@ -128,7 +129,13 @@ Page({
     // 首页「一句话症状」入口带文本进来（?text=）→ 直接分析，省掉一次输入。
     // ⚠️ 必须在 _privacyCheck() 之后：隐私未确认时 _remoteAllowed 还是 false，
     //    此时 send() 只走本地分析、不发后端，这是我们要的顺序（不先斩后奏）。
-    const preset = options && options.text ? String(options.text).trim() : ''
+    // ⚠️ 首页快选词/搜索条用 encodeURIComponent 拼参（home.js→_route），这里必须解码。
+    //    漏解码时气泡原样显示 %E5%92%B3%E5%97%BD，本地槽位一个都抽不到、后端也判不出科室（D-01）。
+    let preset = options && options.text ? String(options.text) : ''
+    if (preset) {
+      try { preset = decodeURIComponent(preset) } catch (e) { /* 非法转义按原文处理，不阻断导诊 */ }
+    }
+    preset = preset.trim()
     if (preset) this.send(preset)
   },
 
@@ -195,7 +202,12 @@ Page({
           const prefix = dept ? (dept + '门诊 | ') : ''
           let step = 2
           let subtitle = ''
-          if (raw === 'CONFIRMED') {
+          // D-06：CONFIRMED 但时段已过 → 不能还显示「请按时到院取号」，否则用户白跑一趟。
+          // 判定先于状态分支，避免"过期单走进 CONFIRMED 正常分支"。
+          if ((raw === 'CONFIRMED' || raw === 'PENDING') && isPastVisit(latest.startTime, latest.endTime)) {
+            step = 1
+            subtitle = prefix + '上次预约已过期，可重新预约或继续咨询'
+          } else if (raw === 'CONFIRMED') {
             step = 2
             subtitle = prefix + '您好！您的预约已确认，请按时到院取号'
           } else if (raw === 'CHECKED_IN') {
@@ -356,6 +368,9 @@ Page({
 
     const msgId = this.data.msgId + 1
     this.setData({ input: '' })
+    // 症状一被接受就进 _history：原实现只在 _finish() 里 push，走"补问"分支时永远为空，
+    // 于是追问阶段点「生成结果」误报"请先描述症状"（D-02）。
+    this._history.push(t)
     this._appendMsg({ id: msgId, role: 'user', type: 'text', content: t, time: nowTime() })
 
     // ① 本地即时理解（0ms 出结果）→ 回执"我理解到了什么"，让用户能纠错
@@ -410,7 +425,7 @@ Page({
   },
 
   _finish(result, text) {
-    this._history.push(text)
+    // 症状已在 send() 受理时就入 _history（D-02），这里不再 push，否则同一句会被重复计入。
     // 兜底不是结论（DEF-16）：不落"全科医学科"的导诊记录、不提供完整报告，
     // 否则报告页会把一次"没判断出来"渲染成白纸黑字的科室建议。
     if (result && result.noConclusion) {
@@ -438,11 +453,15 @@ Page({
   _appendMsg(msg) {
     const list = this.data.messages
     const i = list.length
+    // 递增 10000：scroll-view 的 scroll-top 只有「值变化」才滚动，且超长值会被自动夹到最大滚动位，
+    // 因此不必先测量内容高度——新消息一进来就贴底（D-03）。
+    this._scrollTick = (this._scrollTick || 0) + 10000
+    const scrollTop = this._scrollTick
     if (i >= MSG_CAP) {
-      this.setData({ messages: list.slice(i - MSG_CAP + 1).concat(msg), msgId: msg.id }, () => this._persistSession())
+      this.setData({ messages: list.slice(i - MSG_CAP + 1).concat(msg), msgId: msg.id, scrollTop }, () => this._persistSession())
       return
     }
-    const patch = { msgId: msg.id }
+    const patch = { msgId: msg.id, scrollTop }
     patch['messages[' + i + ']'] = msg
     this.setData(patch, () => this._persistSession())
   },

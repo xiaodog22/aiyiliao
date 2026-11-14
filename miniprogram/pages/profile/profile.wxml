@@ -15,7 +15,7 @@
      有真实头像时仍渲染 <image> 覆盖占位。
   ⚠️ 设计稿没有的入口，本页不新增；设计稿里有但暂无落地页的两行（消息通知 / 账号安全）显式降级为提示。
 -->
-<view class="page theme-{{theme}} pf-page">
+<view class="page theme-{{theme}} {{hc ? 'high-contrast' : ''}} pf-page">
 
   <!-- ============ ① 用户信息头区（无卡片外壳：落在页底淡蓝渐变上）============ -->
   <view class="pf-hero anim-rise">
@@ -69,21 +69,20 @@
   </view>
 
   <!-- ============ ③ 通用（分组标题条在**卡片内顶部**，不是卡外浮动小字）============ -->
+  <!-- D-18：「消息通知」原为死入口（点击只弹"暂未开放"）。当前版本没有订阅消息模板，
+       做不出真实订阅开关，留入口等于骗点击 → 直接移除，等模板就位再加回并接真实落地页。 -->
   <view class="card pf-card pf-group anim-rise anim-d3">
     <view class="group-head">通用</view>
-    <view class="li-row pressable" bindtap="onTodo">
-      <image class="pf-row-ic" src="{{icons.bell}}" />
-      <view class="li-text"><view class="li-t">消息通知</view></view>
-      <image class="li-arrow" src="{{icons.chevronRight}}" />
-    </view>
     <view class="li-row pressable" bindtap="goSettings">
       <image class="pf-row-ic" src="{{icons.lock}}" />
       <view class="li-text"><view class="li-t">系统设置</view></view>
       <image class="li-arrow" src="{{icons.chevronRight}}" />
     </view>
-    <view class="li-row pressable" bindtap="onTodo">
+    <!-- 「账号安全」改为跳系统设置：设置页已承载退出登录 / 账号注销 / 撤回授权同意，
+         这才是账号安全的真实落地，不再弹"暂未开放"。 -->
+    <view class="li-row pressable" bindtap="goSettings">
       <image class="pf-row-ic" src="{{icons.shield}}" />
-      <view class="li-text"><view class="li-t">账号安全</view></view>
+      <view class="li-text"><view class="li-t">账号与安全</view></view>
       <image class="li-arrow" src="{{icons.chevronRight}}" />
     </view>
   </view>

@@ -15,10 +15,13 @@ const TABS_STANDARD = [
   { pagePath: '/pages/profile/profile', text: '我的',   icon: '/assets/icons/user_gray.png',  activeIcon: '/assets/icons/user.png' }
 ]
 
-// 适老模式 3 项配置：去掉 AI养生，问诊入口简化为"就医"
+// 适老模式 4 项配置：去掉 AI养生，问诊入口简化为"就医"
+// ⚠️ 必须包含预约挂号：它是 app.json 的 tabBar 页面，适老档从首页快捷入口 switchTab 进去时
+//    没有对应项 → selectByPath 返回 -1、selected 保留上一项，底部会错亮"首页"（D-04）。
 const TABS_ELDER = [
   { pagePath: '/pages/home/home',       text: '首页', icon: '/assets/icons/home_gray.png',  activeIcon: '/assets/icons/home.png' },
   { pagePath: '/pages/consultation/consultation', text: '就医', icon: '/assets/icons/chat_gray.png', activeIcon: '/assets/icons/chat.png' },
+  { pagePath: '/pages/appointment/appointment', text: '预约挂号', icon: '/assets/icons/calendar_gray.png', activeIcon: '/assets/icons/calendar.png' },
   { pagePath: '/pages/profile/profile', text: '我的', icon: '/assets/icons/user_gray.png',  activeIcon: '/assets/icons/user.png' }
 ]
 

@@ -106,6 +106,12 @@ async def generate(
     第三项为空串表示流式成功；非空表示"流式不可用，已回退非流式"，由调用方记录。
     失败一律 TaskFailure（可识别码 + provider 归因）。
     """
+    # 模型常驻（2026-11-14，响应速度）：Ollama 默认 5 分钟无请求就卸载模型，
+    # 7B 在 CPU 上重新加载要 10~30s，"隔一会儿再问一次"会突然很慢。
+    # 执行器未显式指定 keep_alive 时，统一用配置值（默认 30m）。
+    if not payload.get("keep_alive"):
+        payload = {**payload, "keep_alive": settings.ollama_keep_alive}
+
     if not force_stream:
         text, model = await _generate_nonstream(settings, payload, timeout_s=timeout_s, transport=transport)
         return text, model, "forced-nonstream"

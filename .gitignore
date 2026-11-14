@@ -151,5 +151,11 @@ miniprogram/tools/_assets_src/
 # 属外部工作根而非本项目源码；先按外部根处理，不随仓库发布。
 /.code/
 
+# ===== 小程序联调测试套件（2026-11-13）=====
+# 可选依赖（miniprogram-automator）与 JMeter HTML Dashboard 产物，不随仓库提交；
+# 报告 .md / .jtl / 日志保留，便于回看。
+/tools/e2e-weapp/node_modules/
+/artifacts/e2e-weapp/jmeter-*/html/
+
 
 

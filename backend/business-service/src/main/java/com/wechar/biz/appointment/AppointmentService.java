@@ -130,10 +130,14 @@ public class AppointmentService {
         }
 
         String id = "ap-" + UUID.randomUUID();
+        // D-07：成功页原先把裸 UUID 当「预约号」（ap-04c6a996-…，两行还抄不全）。
+        // 这里分配「取号序号」= 该号源已建单数 + 1，前端展示「第 003 号」供报号/叫号；
+        // 内部主键仍是 UUID，不对外当业务号使用。
+        int queueNo = repository.countBySlot(request.slotId()) + 1;
         repository.insertAppointment(new AppointmentRepository.AppointmentRow(
                 id, userId, request.familyMemberId(), request.slotId(), slot.doctorId(), doctor.departmentId(),
                 request.patientName(), phoneCipher, request.symptomSummary(), "PENDING",
-                null, null, idempotencyKey, digest, 1, now, null), location, hospitalName);
+                queueNo, null, idempotencyKey, digest, 1, now, null), location, hospitalName);
 
         var view = repository.findViewById(id)
                 .orElseThrow(() -> new ApiException("INTERNAL_ERROR", HttpStatus.INTERNAL_SERVER_ERROR,

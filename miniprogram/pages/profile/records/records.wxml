@@ -45,7 +45,7 @@
         <view wx:if="{{item.isActive}}" class="rc-btn rc-btn-mint" data-index="{{index}}" catchtap="onDetail">查看详情</view>
         <block wx:elif="{{item.isDone}}">
           <view class="rc-btn rc-btn-outline" catchtap="onViewReport">查看报告</view>
-          <view class="rc-btn rc-btn-blue" catchtap="onRebook">再次预约</view>
+          <view class="rc-btn rc-btn-blue" data-index="{{index}}" catchtap="onRebook">再次预约</view>
         </block>
         <view wx:else class="rc-btn rc-btn-outline" data-index="{{index}}" catchtap="onDetail">查看详情</view>
       </view>

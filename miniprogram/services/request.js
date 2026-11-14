@@ -261,6 +261,74 @@ function inflightKeyOf(full, data, rawEnvelope) {
   return full + '|' + payload + (rawEnvelope ? '|raw' : '')
 }
 
+/* ============ GET 短 TTL 缓存（响应速度，2026-11-14） ============
+   背景：真机走隧道时单次 RTT 1~3s，TabBar 来回切一次就有 3~4 个 GET 重发
+   （我的页 /me + 健康档案 + 问诊列表），每次都把骨架屏重新拉一遍。
+   策略：
+     · 只缓存 **GET 成功结果**，默认 15s（页面需要更新鲜可传 cacheTtl: 0 关掉）；
+     · **任何写操作成功后整体失效**（下单/改资料/删附件后立刻能读到新数据）；
+     · 退出登录/切换账号时由 clearGetCache() 强制清空（避免下个账号读到上个账号的数据）；
+     · 失败结果永不缓存（下次必须重发）。
+   合规：只存内存、不落 storage，小程序进程结束即消失；健康类接口同样受益于"写后失效"，
+   不会出现"改完还看到旧病历"的情况。 */
+const GET_CACHE_TTL_MS = 15000
+const getCache = new Map()
+
+/**
+ * 只对这些**列表/目录类** GET 路径开缓存（白名单，不是全局默认）。
+ * 为什么不用全局默认：/me、/auth/*、/voice/* 这类"改完必须立刻看到"的接口
+ * 一旦被缓存，写后失效再快也会有窗口期；而列表页来回切 tab 才是真正的重复流量源。
+ * 需要新增时在这里加路径（前缀匹配子路径，如 /api/v1/reports/{id}）。
+ */
+const GET_CACHE_PATHS = [
+  '/api/v1/health-records',
+  '/api/v1/appointments/me',
+  '/api/v1/reports',
+  '/api/v1/family-members',
+  '/api/v1/consultations',
+  '/api/v1/departments',
+  '/api/v1/doctors',
+  '/api/v1/messages'
+]
+
+function cacheablePath(path) {
+  const p = String(path || '').split('?')[0]
+  if (!p) return false
+  return GET_CACHE_PATHS.some((base) => p === base || p.indexOf(base + '/') === 0)
+}
+
+function cacheTtlOf(options) {
+  if (options && options.cacheTtl === 0) return 0
+  if (options && typeof options.cacheTtl === 'number') return options.cacheTtl
+  return GET_CACHE_TTL_MS
+}
+
+function getCached(key) {
+  if (!key) return null
+  const hit = getCache.get(key)
+  if (!hit) return null
+  if (Date.now() - hit.at > hit.ttl) {
+    getCache.delete(key)
+    return null
+  }
+  return hit
+}
+
+function putGetCache(key, value, ttl) {
+  if (!key || !ttl) return
+  getCache.set(key, { at: Date.now(), ttl, value })
+  // 极简容量保护：超过 200 条先清一半（列表页长期驻留也不会无限涨）
+  if (getCache.size > 200) {
+    const keys = Array.from(getCache.keys()).slice(0, 100)
+    keys.forEach((k) => getCache.delete(k))
+  }
+}
+
+/** 清空 GET 缓存（写操作后自动调用；退出登录也需显式调用） */
+function clearGetCache() {
+  getCache.clear()
+}
+
 // ============ 会话失效全局出口（审查报告 P1-9）============
 /**
  * 只有"服务端明确拒绝 refresh"（AUTH_EXPIRED）才走这里。
@@ -552,6 +620,16 @@ function request(options) {
   // GET 单飞：并发相同请求共享同一次网络往返（写操作永不合并）
   const canShare = method === 'GET' && !options._authRetried && !options.noShare
   const shareKey = canShare ? inflightKeyOf(full, data, rawEnvelope) : ''
+  // 缓存键与单飞键分开：noShare 的 GET 也要能命中/写入缓存（否则缓存键为空会串结果）
+  // 仅白名单路径进缓存（见 GET_CACHE_PATHS），其余路径 cacheKey 为空 = 不缓存
+  const cacheKey = (method === 'GET' && cacheablePath(finalSpec.path))
+    ? inflightKeyOf(full, data, rawEnvelope)
+    : ''
+  if (method === 'GET' && !options._authRetried) {
+    // 401 重试后的那次读缓存无意义（服务端刚判定过期），其余 GET 先看短缓存
+    const cached = getCached(cacheKey)
+    if (cached) return Promise.resolve(cached.value)
+  }
   if (canShare) {
     const hit = inflightGet.get(shareKey)
     if (hit) return hit
@@ -585,7 +663,14 @@ function request(options) {
           if (res.statusCode >= 200 && res.statusCode < 300) {
             // rawEnvelope：不脱壳，返回完整 { code, message, data, ... } 用于
             // 同级字段共存的极端场景（信封里 data 之外还有并列状态字段）
-            resolve(rawEnvelope ? res.data : unwrap(res.data))
+            const value = rawEnvelope ? res.data : unwrap(res.data)
+            // 响应速度（2026-11-14）：GET 成功结果进短 TTL 缓存；写操作成功后整体失效。
+            if (method === 'GET') {
+              putGetCache(cacheKey, value, cacheTtlOf(options))
+            } else {
+              clearGetCache()
+            }
+            resolve(value)
           } else {
             reject(makeError('HTTP_ERROR', extractBizMsg(res.data) || ('请求失败（' + res.statusCode + '）'),
               { httpCode: res.statusCode, data: res.data }))
@@ -808,5 +893,7 @@ module.exports = {
   ensureSessionReady,
   revokeSession,
   isAnonymous,
-  newIdempotencyKey
+  newIdempotencyKey,
+  // GET 短缓存手动失效（退出登录/切换账号时必须调用，避免串账号数据）
+  clearGetCache
 }

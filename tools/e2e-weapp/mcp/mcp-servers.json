@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "wechar-unified-test": {
+      "command": "node",
+      "args": [
+        "D:/asr_chaoshanhua/asr_chaoshanhua_V01/_V01/wechar/tools/e2e-weapp/mcp/server.js"
+      ],
+      "cwd": "D:/asr_chaoshanhua/asr_chaoshanhua_V01/_V01/wechar"
+    }
+  }
+}

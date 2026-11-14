@@ -394,7 +394,7 @@ public class ConsultationService {
         TriageRuleEngine.RuleOutcome outcome = triageRuleEngine.scanText(text);
         return new SafetyData(outcome.emergency(), outcome.level(),
                 outcome.emergency()
-                        ? "命中急症红旗：" + String.join("、", outcome.matchedRules()) + "。"
+                        ? "命中急症红旗：" + TriageRuleEngine.describe(outcome.matchedRules()) + "。"
                                 + TriageRuleEngine.emergencyAdvice()
                         : "未命中急症红线，AI 回复仅供参考，不构成诊断。",
                 "RULE_RESULT", TriageRuleEngine.RULESET_VERSION);

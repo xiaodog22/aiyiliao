@@ -85,13 +85,17 @@ function buildDates(size) {
 /**
  * 医生号源状态（复刻文档 §四.3-⑤ 三态之二）：
  * 契约 Doctor 只有 `hasAvailableSlot`（布尔，且**缺省不代表约满**），因此
- *   true  → 今日可预约（薄荷绿字）
+ *   true  → 近期可约（薄荷绿字）
  *   false → 约满（灰字 + 灰禁用按钮）
  *   其它  → 未知：不写状态、按钮照常可点（点进去由号源面板给出真实结论）
  * 「今日号源紧张」需要每医生余号总量，列表接口没有该字段 → 不臆造（见交付说明的偏离 2）。
+ *
+ * ⚠️ D-09：原文案是「今日可预约」，但 hasAvailableSlot 的语义是「存在可约号源」，
+ *    不限定日期。用户按"今日"预期点进去、选了今天却看到「该时段暂无号源」，
+ *    文案与事实冲突。这里改成不承诺具体日期的「近期可约」。
  */
 function docState(hasSlot) {
-  if (hasSlot === true) return { statusText: '今日可预约', statusCls: 'doc-ok', bookable: true }
+  if (hasSlot === true) return { statusText: '近期可约', statusCls: 'doc-ok', bookable: true }
   if (hasSlot === false) return { statusText: '约满', statusCls: 'doc-full', bookable: false }
   return { statusText: '', statusCls: '', bookable: true }
 }
@@ -129,6 +133,8 @@ Page({
     selSlotId: '',
     patient: {},
     orderNo: '',
+    // 「取号」/「预约单号」：queueNumber 缺失时文案要跟着变，不能把内部单号也叫预约号（D-07）
+    orderLabel: '取号',
     // 加载/错误态
     loadingDept: false,
     deptError: '',
@@ -142,6 +148,10 @@ Page({
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       this.getTabBar().selectByPath('/pages/appointment/appointment')
     }
+    // D-10：高对比 / 字号在设置页改完后，回到本页要立刻生效
+    const theme = app.globalData.theme || 'standard'
+    const hc = !!app.globalData.highContrast
+    if (theme !== this.data.theme || hc !== this.data.hc) this.setData({ theme, hc })
     // switchTab 进本页不带 query：导诊/问诊/结果页的预选科室走缓存传递，
     // tab 页常驻（onLoad 只触发一次），必须在 onShow 消费，否则再次跳转不生效。
     const pending = this._takePendingDept()
@@ -493,9 +503,14 @@ Page({
     }, { idempotencyKey: this._submitKey })
       .then((res) => {
         this._dropSubmitKey()   // 成功即作废：下一次挂号是全新一笔
-        // 契约 Appointment：预约号取 id；未返回不编造
-        const orderNo = (res && res.id) || ''
-        this.setData({ orderNo, step: 'done', stepIndex: 4, submitting: false })
+        // D-07：原先把裸 UUID（ap-04c6a996-…，换行两排）当「预约号」展示，用户没法念、没法抄。
+        // 现在优先用后端分配的取号序号（queueNumber）→「第 003 号」；
+        // 只有后端未给序号时，才退回内部单号（并明确标成「预约单号」而非「取号」）。
+        const qn = res && res.queueNumber
+        const orderNo = (qn === 0 || qn) ? String(qn).padStart(3, '0') : ''
+        const orderLabel = orderNo ? '取号' : '预约单号'
+        const orderText = orderNo || ((res && res.id) || '').slice(-8)
+        this.setData({ orderNo: orderText, orderLabel, step: 'done', stepIndex: 4, submitting: false })
       })
       .catch((err) => {
         this.setData({ submitting: false })

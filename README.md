@@ -191,6 +191,7 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 | **前后端契约快照** | `tools/contract-snapshot.js` + `contracts/snapshots/` | **5 端点**结构快照 |
 | 性能回归门禁 | `tools/perf-gate.js` | 25VU/20s，支持 `--rounds=N` + 配置指纹 |
 | **真库验证（MySQL）** | `tools/db-verify.js` | **37 项**（连接/Schema/约束/原子性/时区/Flyway/索引/权限），报告 `backend/deploy/DB_VERIFY_20261112.md` |
+| **站点首页合规回归** | `tools/test-site-index.js` | **16 项**（免责声明原样展示 / 手机号·验证码控件缺失 / 原有结构交互 / 静态服务），报告 `docs/回归测试_站点首页_20261113.md` |
 
 - 分层现状、技术选型取舍（为什么 Pact / MSW 在本项目用不了）与补齐顺序：`docs/测试体系_分层现状与补齐计划_20261101.md`。
 - 日常门禁：`node tools/check-project.js`（路径/禁址/图标/类名）+ `mvnw -o test` + `pytest tests` + `node tools/test-fe.js` + `node tools/contract-snapshot.js --token=…`
@@ -200,6 +201,14 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 - AI 链路（分诊 / 问诊 / care-plan / TTS）**未做压测**：本机内存余量不足驻留 7B 模型。
 
 ## 开发记录
+
+### 2026-11-13 全量回归实测 + V1.20 规划文档批（零代码改动）
+
+一轮全量实跑：前端全部门禁与排版终判（NAV_PREVIEW_OK / PAD_LAYOUT_OK 16/16，主包实测 **1.363MB**）、
+Java **322/0**、网关 **132**、ai-service **213** 全绿；1 项新失败完整归因（音色「设默认」被迟到的远端目录响应覆盖，
+voice.js:156-158 → 101-104 连锁复位，登记 V1.20 T1-1）；3 项登记在案失败（profile 断言① / v4-docs 11 条路由 / v4-prototypes）复测确认，列 T1-2 收口。
+联调档（contract-snapshot / perf-gate / resource-links）因三服务未在线 SKIP。全部规划文档归档 **[docs/下一阶段_20261113/](docs/下一阶段_20261113/INDEX.md)**：
+测试报告与测试计划、页面 UI 与代码功能两份改进计划、V1.20 迭代计划（四批次 + 里程碑验收门 + 明确不做清单）。
 
 ### 2026-11-12 缺陷清单（17 条）修复批次
 
@@ -240,6 +249,16 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 - 架构与契约：[`docs/v4/`](docs/v4/)、[`backend/contracts/business-openapi.yaml`](backend/contracts/business-openapi.yaml)
 - 数据库：[`数据库表结构总览`](docs/交付文档/数据库表结构总览_20261022.md)、[`DATA_GOVERNANCE.md`](backend/deploy/DATA_GOVERNANCE.md)、[检查报告体系交付报告](backend/deploy/REPORT_DELIVERY_20261105.md)
 - 协作规范：[`AGENTS.md`](AGENTS.md)、[`WORKBODY_AGENT_RULES.md`](WORKBODY_AGENT_RULES.md)
+
+## 小程序联调测试（E2E + JMeter）
+
+一键编排与完整说明见 **[tools/e2e-weapp/README.md](tools/e2e-weapp/README.md)**。
+
+- `node tools/e2e-weapp/run-all.js`：环境自检 → 小程序 UI E2E（首页→导诊、预约挂号两条旅程）→ JMeter 5.4.1 网关冒烟，产出 `artifacts/e2e-weapp/report-latest.md`。
+- 后端离线时自动切换「离线自检」：只验证 JMX / JTL 链路，不自造连接失败样本、不伪造性能数据；开发者工具或 automator SDK 缺失时明确 SKIP 并列出具体原因。
+- 测试套件零业务代码改动；网关地址取自 `config/env.js`、健康路径取自 `config/api.js`，JMX 只用内置组件、不依赖第三方插件。`check-project` 门禁全绿，主包 1.363MB 不变。
+- USB 真机实测（2026-11-14，Xiaomi M2007J17C / Android 16）报告见 **[artifacts/e2e-weapp/device-20261114-1737/device-test-report.md](artifacts/e2e-weapp/device-20261114-1737/device-test-report.md)**：42 项 PASS 34 / FAIL 2 / BLOCKED 2 / 观察 4，含逐项预期与实际、复现步骤、日志线索与问题清单。
+- 已接入 Postman CLI / Newman 适配器与统一结果 `artifacts/e2e-weapp/report-latest.json`（ui / api / load 三段 schema）；DSH NEXT 集成见 `.agents/skills/wechar-unified-test/SKILL.md`（工作区级 skill）与 `tools/e2e-weapp/mcp/`（零依赖 stdio MCP server）。
 
 ## 贡献
 

@@ -113,6 +113,13 @@ h1,h2,h3,h4,p{margin:0;}
 h1{font-size:clamp(38px,4.9vw,66px);line-height:1.08;letter-spacing:-.03em;font-weight:700;color:var(--ink);margin-top:20px;text-wrap:balance;}
 h1 .grad{background:linear-gradient(100deg,#0B6EF8 4%,#3E8CFF 56%,#54C8A7 100%);-webkit-background-clip:text;background-clip:text;color:transparent;}
 .hero-lead{font-size:clamp(14.5px,1.25vw,17px);line-height:1.85;color:var(--sub);margin-top:22px;max-width:30em;}
+/* 2026-11-13 合规免责声明：首屏显著位置。沿用现有色板令牌，静态展示，无动画/无交互、不影响滚动渲染。 */
+.hero-notice{
+  display:inline-block;max-width:100%;margin-top:18px;padding:8px 14px;
+  border:1px solid rgba(11,110,248,.22);border-radius:999px;
+  background:var(--bg-soft);color:var(--ink-2);
+  font-size:12.5px;font-weight:600;line-height:1.55;letter-spacing:.01em;
+}
 .hero-actions{display:flex;flex-wrap:wrap;gap:11px;margin-top:30px;}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:48px;padding:0 24px;border-radius:999px;font-size:14.5px;font-weight:600;border:1px solid transparent;cursor:pointer;transition:transform .22s var(--ease),box-shadow .22s var(--ease),background .22s var(--ease),border-color .22s var(--ease),color .22s var(--ease);}
 .btn svg{width:16px;height:16px;flex:0 0 auto;}
@@ -263,6 +270,8 @@ h1 .grad{background:linear-gradient(100deg,#0B6EF8 4%,#3E8CFF 56%,#54C8A7 100%);
   .device{top:62%;border-radius:34px;box-shadow:0 0 0 7px #0b1220,0 0 0 8px rgba(255,255,255,.14),0 40px 70px -20px rgba(14,30,69,.4);}
   .device::after{border-radius:34px;}
   .hero-lead{display:none;}
+  /* 免责声明在窄屏同样保留（不能随 .hero-lead 一起隐藏） */
+  .hero-notice{margin-top:14px;padding:7px 12px;font-size:11.5px;}
   .features{grid-template-columns:1fr;}
   .tech-row{grid-template-columns:1fr;}
   .tech-item{border-left:0;padding-left:0;}
@@ -343,6 +352,7 @@ h1 .grad{background:linear-gradient(100deg,#0B6EF8 4%,#3E8CFF 56%,#54C8A7 100%);
       <span class="eyebrow">开源 · 原生微信小程序</span>
       <h1>看病这件事，<br>从<span class="grad">一句话</span>开始。</h1>
       <p class="hero-lead">面向中老年患者的医疗健康 AI 小程序。说一句不舒服，它给出科室、紧急程度和院内路线。</p>
+      <p class="hero-notice" role="note">本页面为开源项目演示，不提供医疗服务，不构成诊断依据</p>
       <div class="hero-actions">
         <a class="btn btn-primary" href="https://github.com/xiaodog22/aiyiliao" target="_blank" rel="noopener noreferrer">
           <svg><use href="#github"/></svg>查看源码

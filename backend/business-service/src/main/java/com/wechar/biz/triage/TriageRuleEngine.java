@@ -53,6 +53,71 @@ public class TriageRuleEngine {
     /** 客户端本地命中项的严重级别：非空即视为急症（不降级规则的默认最高级）。 */
     public static final String EMERGENCY_LEVEL = "EMERGENCY";
 
+    /**
+     * 规则 ID → 用户可读名称。
+     *
+     * ⚠️ 对外文案只能用这张表里的中文：原实现把 chest_pain / dyspnea 这类内部规则码
+     *    直接拼进急症弹窗（"命中急症红旗：chest_pain"），患者看不懂，也泄漏了实现细节。
+     */
+    private static final Map<String, String> RULE_LABELS = Map.of(
+            "chest_pain", "急性胸痛",
+            "dyspnea", "呼吸困难",
+            "consciousness", "意识障碍",
+            "hemoptysis", "咯血",
+            "coma", "昏迷",
+            "severe_bleeding", "活动性出血",
+            "stroke_signs", "疑似卒中表现");
+
+    /** 否定词：出现在红旗词之前的小窗口内，视为患者明确否认该症状。 */
+    private static final List<String> NEGATIONS =
+            List.of("没有", "没", "无", "否认", "不是", "未见", "未出现", "没出现", "不伴", "不伴有", "无伴");
+
+    /** 转折词：其后出现的关键词不受前面的否定词约束（"没有发烧但胸痛" 的胸痛仍算阳性）。 */
+    private static final List<String> CONTRASTS = List.of("但", "不过", "却", "而是", "后来", "随后");
+
+    /** 否定词与关键词之间允许的最大间隔字数（"没有明显胸痛""无任何胸痛"）。 */
+    private static final int NEGATION_GAP = 2;
+
+    /**
+     * 该位置的关键词是否被前置否定词否决。
+     *
+     * 只在「关键词前 6 个字」的小窗口内判定，并且：
+     *  ① 遇到转折词就重新起算——"没有发烧但胸痛"不能因为前面有"没有"就吞掉胸痛；
+     *  ② 否定词与关键词之间最多隔 2 个字——"胸痛不适伴胸闷"里的"不"不会误伤"胸闷"。
+     * 宁可漏判否定，也不误吞阳性：吞掉真阳性比多报一次更危险。
+     */
+    private static boolean denied(String text, int idx) {
+        int from = Math.max(0, idx - 6);
+        String pre = text.substring(from, idx);
+        int cut = 0;
+        for (String c : CONTRASTS) {
+            int i = pre.lastIndexOf(c);
+            if (i >= 0) {
+                cut = Math.max(cut, i + c.length());
+            }
+        }
+        String win = pre.substring(cut);
+        for (String n : NEGATIONS) {
+            int i = win.lastIndexOf(n);
+            if (i >= 0 && win.length() - (i + n.length()) <= NEGATION_GAP) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 把规则 ID 列表翻成中文名称（对外文案用）。 */
+    public static String describe(List<String> ruleIds) {
+        if (ruleIds == null || ruleIds.isEmpty()) {
+            return "";
+        }
+        List<String> labels = new ArrayList<>();
+        for (String id : ruleIds) {
+            labels.add(RULE_LABELS.getOrDefault(id, "危险信号"));
+        }
+        return String.join("、", labels);
+    }
+
     public record RuleOutcome(boolean emergency, String level, List<String> matchedRules, String advice) {
     }
 
@@ -62,7 +127,12 @@ public class TriageRuleEngine {
         List<String> matched = new ArrayList<>();
         for (var entry : RED_FLAGS.entrySet()) {
             for (String keyword : entry.getValue()) {
-                if (t.contains(keyword)) {
+                // 逐个出现位置判否定：同一段话里"没有胸痛……后来胸痛加重"仍要命中。
+                int idx = t.indexOf(keyword);
+                while (idx >= 0 && denied(t, idx)) {
+                    idx = t.indexOf(keyword, idx + keyword.length());
+                }
+                if (idx >= 0) {
                     matched.add(entry.getKey());
                     break;
                 }

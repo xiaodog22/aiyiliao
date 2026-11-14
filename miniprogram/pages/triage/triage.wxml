@@ -16,7 +16,9 @@
     <view class="emg-bar-call" catchtap="onCall120">拨打120</view>
   </view>
 
-  <scroll-view class="body-scroll" scroll-y scroll-into-view="bottom-anchor" scroll-with-animation>
+  <!-- scroll-top 用递增计数驱动：scroll-into-view 只在属性值变化时触发一次，
+       固定锚点会让第 2 条之后的新消息不再滚到底（D-03）。 -->
+  <scroll-view class="body-scroll" scroll-y scroll-top="{{scrollTop}}" scroll-with-animation>
 
     <!-- ============ ① 导诊 hero（参考图 02：白色卡 + 左标题/说明 + 右侧浅蓝**圆形**图标底板）
          参考图实测：底板为圆形（不是圆角方形），底径明显大于图标（图标约占底板 40%）。

@@ -48,6 +48,12 @@ class Settings:
     # 顺序：ollama（本地内网穿透）→ deepseek（OpenAI 兼容 API）→ 兜底。
     # `rule` 不是 provider（由 business TriageRuleEngine 承载），写在配置里也不会被 ai-service 调用。
     provider_order: str = field(default_factory=lambda: _env("AI_PROVIDER_ORDER", "ollama,deepseek"))
+    # Ollama 模型常驻时长（2026-11-14，响应速度）。
+    # Ollama 默认 5 分钟无请求就卸载模型，7B 在 CPU 上重新加载要 10~30s ——
+    # 用户"隔几分钟再问一次"时会突然变慢，且首 token 超时也更容易被触发。
+    # 这里统一在 provider 层注入 keep_alive（生成请求里未显式指定时生效），默认 30 分钟。
+    # 显存/内存吃紧的机器可调小（如 5m）或设 0 用完即卸。
+    ollama_keep_alive: str = field(default_factory=lambda: _env("AI_OLLAMA_KEEP_ALIVE", "30m"))
     # Ollama **首 token** 超时（秒）：只卡"多久出第一个 token"，不卡总生成时长。
     # 7B 生成 300 token 在 CPU 上远超 6~10s，按总时长卡会把正常生成误判为超时。
     # 评审建议值：triage 5 / chat 6 / careplan 8 / interpret 6；此处默认取中间值 8，按任务可覆盖。
