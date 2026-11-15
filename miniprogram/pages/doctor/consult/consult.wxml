@@ -14,16 +14,18 @@
 <view class="page theme-{{theme}} dc-page" style="padding-top: {{navH}}px; padding-bottom: {{kbHeight}}px;">
 
   <!-- ============ 自绘导航 ============ -->
+  <!-- ⚠️ 左右槽位等宽 navSlot（px，由胶囊几何算出）：右侧控件必须让到微信胶囊左边，
+       否则「结束」被胶囊整块盖住 → 用户反馈「无法点击结束问诊」。两侧等宽同时保证标题居中。 -->
   <view class="dc-nav" style="padding-top: {{statusBarHeight}}px; height: {{navH}}px;">
     <view class="dc-nav-bar">
-      <view class="dc-back" bindtap="onBack" aria-role="button" aria-label="返回">
+      <view class="dc-back" style="width: {{navSlot}}px;" bindtap="onBack" aria-role="button" aria-label="返回">
         <image class="dc-back-ic" src="{{icons.chevronLeft}}" mode="aspectFit" />
       </view>
       <view class="dc-title">{{mode === 'CHAT' ? (active.patientName || '在线问诊') : '在线问诊'}}</view>
       <!-- 右侧：会话模式给「结束」入口（列表模式占位保持标题居中） -->
-      <view wx:if="{{mode === 'CHAT' && active.status === 'CLOSED'}}" class="dc-nav-done">已结束</view>
-      <view wx:elif="{{mode === 'CHAT'}}" class="dc-nav-end" bindtap="onCloseConsult" aria-role="button">结束</view>
-      <view wx:else class="dc-nav-ph" />
+      <view wx:if="{{mode === 'CHAT' && active.status === 'CLOSED'}}" class="dc-nav-done" style="width: {{navSlot}}px;">已结束</view>
+      <view wx:elif="{{mode === 'CHAT'}}" class="dc-nav-end" style="width: {{navSlot}}px;" bindtap="onCloseConsult" aria-role="button">结束</view>
+      <view wx:else class="dc-nav-ph" style="width: {{navSlot}}px;" />
     </view>
   </view>
 

@@ -210,22 +210,31 @@ public class ConsultationRepository {
     }
 
     /**
-     * 医生视角待处理会话列表：本医生名下 ACTIVE 会话 + **未分配** ACTIVE 会话（认领池）。
-     * 未分配置前（先来先认领），已分配按最近消息倒序。assignedDoctorId 供前端区分「认领/回复」。
+     * 医生视角待处理会话列表：**仅本医生名下** ACTIVE 的医患图文会话。
+     *
+     * ⚠️ 2026-11-15 修正（医生端看到 AI 问诊内容）：
+     *  原条件 `c.doctor_id = ? OR c.doctor_id IS NULL` 把「未分配的认领池」也列了出来，
+     *  而患者端 AI 助手会话（pages/consultation）恰恰是 doctor_id 为空 → 医生端能看到
+     *  一整屏 AI 对话，还能"接诊"，患者 AI 页的问答因此被同步到医生侧。
+     *  产品口径：医生只应看到**患者指定其回答**的会话，故去掉认领池。
+     *  另外排除带 assistant 消息的会话：历史脏数据里存在「doctor_id 有值但实际是 AI 会话」
+     *  （如 cn-164284e8…，2026-10-24 旧逻辑产生），这些人不应出现在医生工作台。
      */
     public List<DoctorConsultationRow> listByDoctor(String doctorId, Instant beforeCreatedAt, String beforeId, int limit) {
         String base = "SELECT c.id, c.user_id, u.display_name AS patient_name, u.avatar_key AS patient_avatar_key, "
                 + "c.title, c.status, c.summary, c.last_message_at, c.created_at, c.doctor_id AS assigned_doctor_id "
                 + "FROM consultations c LEFT JOIN users u ON u.id = c.user_id "
-                + "WHERE c.status = 'ACTIVE' AND (c.doctor_id = ? OR c.doctor_id IS NULL) ";
+                + "WHERE c.status = 'ACTIVE' AND c.doctor_id = ? "
+                + "AND NOT EXISTS (SELECT 1 FROM consultation_messages m "
+                + "  WHERE m.consultation_id = c.id AND m.role = 'assistant') ";
         if (beforeCreatedAt == null) {
             return jdbc.query(base
-                            + "ORDER BY (c.doctor_id IS NULL) DESC, c.created_at ASC, c.id ASC LIMIT ?",
+                            + "ORDER BY c.created_at ASC, c.id ASC LIMIT ?",
                     ConsultationRepository::mapDoctorConsultation, doctorId, limit);
         }
         return jdbc.query(base
                         + "AND (c.created_at < ? OR (c.created_at = ? AND c.id < ?)) "
-                        + "ORDER BY (c.doctor_id IS NULL) DESC, c.created_at ASC, c.id ASC LIMIT ?",
+                        + "ORDER BY c.created_at ASC, c.id ASC LIMIT ?",
                 ConsultationRepository::mapDoctorConsultation, doctorId,
                 Timestamp.from(beforeCreatedAt), Timestamp.from(beforeCreatedAt), beforeId, limit);
     }

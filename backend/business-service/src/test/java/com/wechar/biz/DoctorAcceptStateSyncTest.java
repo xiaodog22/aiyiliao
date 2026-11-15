@@ -37,7 +37,8 @@ import org.springframework.test.web.servlet.MvcResult;
  *   ④ 患者详情 accepting=true（正在接诊）；
  *   ⑤ 患者随后再发消息 → accepting 仍为 true（不翻转：接诊是会话级事实）；
  *   ⑥ 重复 accept → 幂等 200，且 system_notice 不重复写入；
- *   ⑦ 认领池会话（不带 doctorId）→ accept 后同样写系统提示并置 accepting=true。
+ *   ⑦ 未指定医生的会话（患者端 AI 助手）→ 不进医生工作台、直读 404
+ *      （2026-11-15 口径修正：AI 问答不再同步给医生）。
  */
 @SpringBootTest(properties = {
         "spring.profiles.active=itest",
@@ -189,21 +190,22 @@ class DoctorAcceptStateSyncTest {
     }
 
     @Test
-    void 认领池会话_接诊后患者端同样变正在接诊() throws Exception {
+    void 未指定医生的会话_不进医生工作台且不可越权读取() throws Exception {
+        // 2026-11-15 口径修正：未指定医生的会话就是患者端 AI 助手的会话，
+        // 原「认领池」把 AI 问答整体推到医生眼前（医生端能看到一整屏 AI 对话、还能接诊），
+        // 现改为医生端只列 doctor_id=本人 的会话。本用例锁死这条边界。
         String cid = createConsultation(null);
 
-        JsonNode before = doctorListItem(cid);
-        Assertions.assertNotNull(before);
-        Assertions.assertTrue(before.path("assignedDoctorId").isMissingNode()
-                        || before.path("assignedDoctorId").isNull(),
-                "未指定医生的会话应处于认领池");
-        Assertions.assertFalse(patientDetail(cid).path("accepting").asBoolean());
+        Assertions.assertNull(doctorListItem(cid),
+                "未指定医生的会话不得出现在医生工作台列表（AI 问答不同步给医生）");
 
-        accept(cid);
+        // 列表不显示后，深链/旧入口也必须读不到：归属校验 → 404
+        mockMvc.perform(get("/api/v1/doctor/consultations/" + cid + "/messages")
+                        .header("X-User-Id", USER_DOCTOR))
+                .andExpect(status().isNotFound());
 
-        Assertions.assertTrue(patientDetail(cid).path("accepting").asBoolean());
-        Assertions.assertEquals(1, countRole(doctorMessages(cid), "system_notice"));
-        Assertions.assertEquals(DOCTOR_ID, doctorListItem(cid).path("assignedDoctorId").asText(),
-                "认领后会话应归本人");
+        // 患者侧照旧：AI 会话正常存在，accepting 为空（与医生无关）
+        Assertions.assertFalse(patientDetail(cid).path("accepting").asBoolean(),
+                "AI 会话不存在承担接诊的医生，accepting 必须为 false");
     }
 }

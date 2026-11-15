@@ -15,6 +15,17 @@ const { parseAptDate } = require('../../utils/apt-date.js')
 const { aptDirtyAt } = require('../../utils/apt-status.js')
 
 /**
+ * 预约终态 → 成功页退回时的提示文案。
+ * 只登记「这单已经结束、不该再显示挂号成功」的状态；PENDING/CONFIRMED/CHECKED_IN 不在此表。
+ */
+const DONE_STATUS_TIP = {
+  CANCELLED: '该预约已取消，可重新选择',
+  COMPLETED: '本次就诊已完成',
+  EXPIRED: '该预约已过期，请重新挂号',
+  NO_SHOW: '本次预约未到诊'
+}
+
+/**
  * 科室 → 图标底板 + 字形（纯视觉映射，不参与业务判断）：
  * 未命中关键词时回退蓝底 + 医院图标 —— 宁可统一，不给错配的专科图标。
  * 颜色纪律：底板只用五色 pastel 装饰色，不挪用红/橙语义色（D-01④）。
@@ -84,8 +95,20 @@ function buildDates(size) {
 }
 
 /**
- * 医生号源状态（复刻文档 §四.3-⑤ 三态之二）：
- * 契约 Doctor 只有 `hasAvailableSlot`（布尔，且**缺省不代表约满**），因此
+ * 上午 / 下午分段的展示区间（2026-11-15）：首档起点 ~ 末档终点，如「08:00-11:00」。
+ * 列表已按时间升序，因此首尾即可代表整段；无档返回空串（模板据此显示「暂无号源」）。
+ * @param {Array<{time:string,endTime:string}>} list
+ * @returns {string}
+ */
+function segRange(list) {
+  if (!list || !list.length) return ''
+  const first = list[0]
+  const last = list[list.length - 1]
+  return first.time + '-' + (last.endTime || last.time)
+}
+
+/**
+ * 医生号源状态（复刻文档 §四.3-⑤ 三态之二）： * 契约 Doctor 只有 `hasAvailableSlot`（布尔，且**缺省不代表约满**），因此
  *   true  → 近期可约（薄荷绿字）
  *   false → 约满（灰字 + 灰禁用按钮）
  *   其它  → 未知：不写状态、按钮照常可点（点进去由号源面板给出真实结论）
@@ -123,14 +146,24 @@ Page({
     keyword: '',
     deptFilterOn: false,
     showConfirm: false,
-    /* 就诊时段（效果图 03）：am / pm 两档，本地过滤 slots，不额外请求 */
+    /* 就诊时段（效果图 03）：am / pm 两档，本地过滤 slots，不额外请求。
+       amCount / pmCount / amRange / pmRange 用于在切换前就把「哪段有号、覆盖几点到几点」
+       写清楚（2026-11-15 号源扩到每天 12 档后，用户需要先看到段信息再决定点哪一段）。 */
     period: 'am',
+    amCount: 0,
+    pmCount: 0,
+    amRange: '',
+    pmRange: '',
+    emptyTip: '',
     filteredSlots: [],
     _allDepartments: [],
     _allDoctors: [],
     selDate: '',
     selDateText: '',
     selTime: '',
+    /* 就诊时间段的完整文案（「上午 08:00-08:30」）：抽屉与成功页直接显示，
+       避免只给一个起点让用户自己猜这一档到几点结束 */
+    selTimeText: '',
     selSlotId: '',
     patient: {},
     orderNo: '',
@@ -172,7 +205,9 @@ Page({
 
   /**
    * 成功页兜底校验（2026-11-15）：不依赖任何本地标记。
-   * 判据：本人预约列表里找不到这一单，或状态已是 CANCELLED → 退回选科室。
+   * 判据：本人预约列表里找不到这一单，或状态已进入**终态**（已取消 / 已完成 / 已过期 / 未到诊）
+   *      → 退回选科室，并按终态给对应文案。
+   * ⚠️ 就诊中（CHECKED_IN）不算终态：叫号后医生还在看，患者仍该看到这张单。
    * ⚠️ 接口失败一律保持现状 —— 宁可多显示一次成功页，也不能把有效预约误退掉。
    */
   _verifyDoneStillValid() {
@@ -183,18 +218,25 @@ Page({
         // 期间用户可能已经重新挂号/退出成功页，别用过期的响应改状态
         if (this.data.step !== 'done' || this._lastAptId !== id) return
         const hit = (list || []).filter((it) => String((it && it.id) || '') === id)[0]
-        const cancelled = String((hit && hit.status) || '').toUpperCase() === 'CANCELLED'
-        if (hit && !cancelled) return
-        this.setData({ step: 'dept', stepIndex: 0, orderNo: '', submitting: false, selTime: '', selSlotId: '', showConfirm: false })
-        wx.showToast({ title: '该预约已取消', icon: 'none' })
+        if (!hit) return this._leaveDone('该预约已不存在，请重新选择')
+        const st = String(hit.status || '').trim().toUpperCase()
+        const done = DONE_STATUS_TIP[st]
+        if (!done) return // 待确认/待就诊/就诊中：这单还成立，保持成功页
+        this._leaveDone(done)
       })
       .catch(() => { /* 校验失败不改状态：没证据就不动 */ })
+  },
+
+  /** 成功页退回选科室（终态收口共用），tip 为提示文案 */
+  _leaveDone(tip) {
+    this.setData({ step: 'dept', stepIndex: 0, orderNo: '', submitting: false, selTime: '', selSlotId: '', selTimeText: '', showConfirm: false })
+    if (tip) wx.showToast({ title: tip, icon: 'none' })
   },
 
   /** 别处取消了预约：退回选科室 + 刷新当前医生/日期余号 */
   _syncAfterCancel() {
     if (this.data.step === 'done') {
-      this.setData({ step: 'dept', stepIndex: 0, orderNo: '', submitting: false, selTime: '', selSlotId: '', showConfirm: false })
+      this.setData({ step: 'dept', stepIndex: 0, orderNo: '', submitting: false, selTime: '', selSlotId: '', selTimeText: '', showConfirm: false })
       wx.showToast({ title: '预约已取消，可重新选择', icon: 'none' })
     }
     if (this.data.selDoctorId && this.data.selDate) this._loadSlots(this.data.selDate, true)
@@ -281,6 +323,7 @@ Page({
       selDoctors: [],
       selTime: '',
       selSlotId: '',
+      selTimeText: '',
       slots: [],
       filteredSlots: [],
       loadingDoctors: true
@@ -334,9 +377,12 @@ Page({
       selDoctorTitle: doc.title || '',
       selTime: '',
       selSlotId: '',
+      selTimeText: '',
       slots: [],
       filteredSlots: []
     })
+    // 换医生后重新按「哪段有号」自动选段（上一位医生可能只有下午）
+    this._periodTouched = false
     this.goStep('time', 2)
     /* 日期是独立维度（效果图里换医生不动日期条），所以不重置 selDate；
        已选日期就直接拉这位医生的号源，少一次点击。 */
@@ -346,7 +392,9 @@ Page({
   pickDate(e) {
     const { value, text } = e.currentTarget.dataset
     if (value === this.data.selDate) return
-    this.setData({ selDate: value, selDateText: text || '', selTime: '', selSlotId: '', slots: [], filteredSlots: [] })
+    this.setData({ selDate: value, selDateText: text || '', selTime: '', selSlotId: '', selTimeText: '', slots: [], filteredSlots: [] })
+    // 换日期后重新按「哪段有号」自动选段（今天的上午过了、明天上午却还有）
+    this._periodTouched = false
     // 还没选医生时只记日期，别去请求一个没有 doctorId 的号源
     if (this.data.selDoctorId) this._loadSlots(value)
   },
@@ -379,7 +427,20 @@ Page({
           .map((s) => {
             const dt = appointmentService.slotDateTime(s.startTime)
             if (!dt || dt.date !== date) return null
-            return { id: s.id, date: dt.date, time: dt.time, remaining: s.remaining, fee: s.fee }
+            // 结束时间同一口径解析；解析不出就不编造，range 退回单点时间
+            const et = appointmentService.slotDateTime(s.endTime)
+            const endTime = (et && et.date === date) ? et.time : ''
+            return {
+              id: s.id,
+              date: dt.date,
+              time: dt.time,
+              endTime,
+              range: endTime ? (dt.time + '-' + endTime) : dt.time,
+              // < 12:00 归上午，其余归下午（时段都是整/半点，字符串比较与时刻比较等价）
+              period: dt.time < '12:00' ? 'am' : 'pm',
+              remaining: s.remaining,
+              fee: s.fee
+            }
           })
           .filter((s) => s && (s.date > todayStr || (s.date === todayStr && s.time > nowHm)))
           .sort((a, b) => (a.time < b.time ? -1 : 1))
@@ -399,29 +460,57 @@ Page({
   pickTime(e) {
     const { id, time, remaining } = e.currentTarget.dataset
     if (Number(remaining) <= 0) return // 约满不可选
-    this.setData({ selSlotId: id, selTime: time })
+    // 完整就诊时间段文案（上午 08:00-08:30）：确认抽屉 / 成功页 / 侧栏摘要共用
+    const hit = (this.data.slots || []).filter((s) => s.id === id)[0]
+    const selTimeText = hit ? ((hit.period === 'am' ? '上午 ' : '下午 ') + hit.range) : time
+    this.setData({ selSlotId: id, selTime: time, selTimeText })
   },
 
   /** 切换上午 / 下午；若已有选号源则提示用户重新选择具体时间 */
   onPeriod(e) {
-    const period = e.currentTarget.dataset.period
+    const period = e.currentTarget.dataset.period === 'pm' ? 'pm' : 'am'
     if (period === this.data.period) return
+    // 用户手动切过段，后续换日期不再自动改段（尊重用户选择）
+    this._periodTouched = true
     const hadSelectedSlot = !!this.data.selSlotId
-    this.setData({ period, selSlotId: '', selTime: '' }, () => {
+    this.setData({ period, selSlotId: '', selTime: '', selTimeText: '' }, () => {
       this._applyPeriod()
       if (hadSelectedSlot) wx.showToast({ title: '已切换时段，请重新选择时间', icon: 'none' })
     })
   },
 
-  /** 按所选时段过滤号源（pure view 计算，不改服务端数据） */
+  /**
+   * 按上午 / 下午分段（2026-11-15 扩容：每天 12 档，上下午各 6 档）。
+   * 除了过滤，还要给出两段各自的档数与区间（「08:00-11:00」/「14:00-17:00」），
+   * 让用户在切换前就知道哪一段有号 —— 之前只按 period 过滤、页面又没有切换入口，
+   * 下午号源实际上永远看不到。
+   */
   _applyPeriod() {
-    const am = this.data.period !== 'pm'
-    const h = (t) => {
-      const n = parseInt(String(t || '').slice(0, 2), 10)
-      return isNaN(n) ? 0 : n
+    const all = this.data.slots || []
+    const am = all.filter((s) => s.period !== 'pm')
+    const pm = all.filter((s) => s.period === 'pm')
+    let period = this.data.period === 'pm' ? 'pm' : 'am'
+    // 未手动切过段：当前段一档都没有、另一段有 → 自动落到有号的那一段
+    // （最常见场景是下午打开页面，「今天上午」的档已经全部过期被过滤掉）
+    if (!this._periodTouched) {
+      const cur = period === 'am' ? am : pm
+      const other = period === 'am' ? pm : am
+      if (!cur.length && other.length) period = (period === 'am') ? 'pm' : 'am'
     }
-    const filtered = (this.data.slots || []).filter((s) => (h(s.time) < 12) === am)
-    this.setData({ filteredSlots: filtered })
+    const otherCount = period === 'am' ? pm.length : am.length
+    const otherName = period === 'am' ? '下午' : '上午'
+    const emptyTip = otherCount
+      ? ('本段暂无可约时段，可切换到' + otherName + '（' + otherCount + ' 个时段）')
+      : '当天暂无可约时段，请换一天试试'
+    this.setData({
+      period,
+      filteredSlots: period === 'am' ? am : pm,
+      amCount: am.length,
+      pmCount: pm.length,
+      amRange: segRange(am),
+      pmRange: segRange(pm),
+      emptyTip
+    })
   },
 
   /**

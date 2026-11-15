@@ -25,12 +25,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 /**
- * M6 医生回复闭环端到端测试（V21：认领 → 回复 → 患者消息中心红点，2026-10-23）。
+ * M6 医生回复闭环端到端测试（V21：接诊 → 回复 → 患者消息中心红点，2026-10-23）。
  * 数据：test-m3-seed.sql（doc-gastro-1 任职在 dev-user-2；患者 dev-user-1 无任职）。
  * 链路断言（全部走真实 Controller/Service/SQL，AI 上游以替身返回 QUEUED）：
- *   ① 患者创建咨询 → 200（会话 ACTIVE、未分配）；
- *   ② 医生会话列表 → 未分配会话在认领池（assignedDoctorId=null）；
- *   ③ 医生认领 → 200 replayed=false；重复认领（同键）→ 200 replayed=true；
+ *   ① 患者创建咨询并**指定医生** → 200（会话 ACTIVE、doctor_id=doc-gastro-1）；
+ *   ② 医生会话列表 → 含该会话且已归属本人（2026-11-15 起不再有「认领池」：
+ *      未指定医生的会话属患者端 AI 助手，不进医生工作台，见 DoctorAcceptStateSyncTest）；
+ *   ③ 医生「接诊」→ 200；本会话已归属本人，服务端按幂等返回 replayed=true；
  *   ④ 医生拉会话消息 → 200；
  *   ⑤ 医生回复 → 200（role=doctor、provenance=DOCTOR_REPLY）；
  *   ⑥ 患者拉会话消息 → 200 且含医生回复；
@@ -82,13 +83,16 @@ class M6DoctorReplyConsultTest {
         return result.getResponse().getContentAsString(StandardCharsets.UTF_8);
     }
 
-    /** 患者创建咨询（AI 替身 QUEUED → 200）。 */
-    private String createConsultation() throws Exception {
+    /** 患者创建咨询（AI 替身 QUEUED → 200）；doctorId 非空时患者指定该医生。 */
+    private String createConsultation(String doctorId) throws Exception {
+        String payload = doctorId == null
+                ? "{\"initialMessage\":\"嗓子疼三天，伴有低烧，想问问该挂什么科。\"}"
+                : "{\"initialMessage\":\"嗓子疼三天，伴有低烧，想问问该挂什么科。\",\"doctorId\":\"" + doctorId + "\"}";
         MvcResult res = mockMvc.perform(post("/api/v1/consultations")
                         .header("X-User-Id", USER_PATIENT)
                         .header("Idempotency-Key", "m6-create-" + UUID.randomUUID())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"initialMessage\":\"嗓子疼三天，伴有低烧，想问问该挂什么科。\"}"))
+                        .content(payload))
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode data = mapper.readTree(body(res)).path("data");
@@ -100,12 +104,13 @@ class M6DoctorReplyConsultTest {
     }
 
     @Test
-    void 医生认领回复闭环_患者感知() throws Exception {
-        // ① 患者创建咨询（未分配）
-        String cid = createConsultation();
+    void 指定医生会话_接诊回复闭环_患者感知() throws Exception {
+        // ① 患者创建咨询并指定医生（2026-11-15：医生端只处理「指定其回答」的会话，
+        //    未指定医生的会话属于患者端 AI 助手，不再进医生工作台——见 DoctorAcceptStateSyncTest）
+        String cid = createConsultation("doc-gastro-1");
         org.junit.jupiter.api.Assertions.assertTrue(cid.startsWith("cn-"));
 
-        // ② 医生列表：未分配会话在认领池
+        // ② 医生列表：已直接归属本人（无需认领）
         MvcResult listRes = mockMvc.perform(get("/api/v1/doctor/consultations")
                         .header("X-User-Id", USER_DOCTOR))
                 .andExpect(status().isOk())
@@ -118,20 +123,20 @@ class M6DoctorReplyConsultTest {
                 break;
             }
         }
-        org.junit.jupiter.api.Assertions.assertNotNull(hit, "医生列表应包含未分配会话");
-        org.junit.jupiter.api.Assertions.assertTrue(hit.path("assignedDoctorId").isMissingNode()
-                        || hit.path("assignedDoctorId").isNull(),
-                "新会话应处于未分配状态（认领池，assignedDoctorId 应缺失或为 null）");
+        org.junit.jupiter.api.Assertions.assertNotNull(hit, "医生列表应包含指定给自己的会话");
+        org.junit.jupiter.api.Assertions.assertEquals("doc-gastro-1",
+                hit.path("assignedDoctorId").asText(), "指定医生的会话交付即归属");
         org.junit.jupiter.api.Assertions.assertFalse(hit.path("patientName").asText().isBlank(),
                 "患者姓名应来自 users 真实数据");
 
-        // ③ 医生认领 → 200；同键重放 → replayed=true
+        // ③ 医生「接诊」（显式开始）→ 200；本会话已归属本人，服务端按幂等返回 replayed=true；
+        //    同键重放同样 200 且 system_notice 只写一条（下面 ④ 之后校验）
         String key = "m6-accept-" + UUID.randomUUID();
         MvcResult accept1 = mockMvc.perform(post("/api/v1/doctor/consultations/" + cid + "/accept")
                         .header("X-User-Id", USER_DOCTOR)
                         .header("Idempotency-Key", key))
                 .andExpect(status().isOk())
-                .andExpect(header().string("Idempotency-Replayed", "false"))
+                .andExpect(header().string("Idempotency-Replayed", "true"))
                 .andReturn();
         MvcResult accept2 = mockMvc.perform(post("/api/v1/doctor/consultations/" + cid + "/accept")
                         .header("X-User-Id", USER_DOCTOR)
