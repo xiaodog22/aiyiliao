@@ -304,6 +304,57 @@
 .doc-op-off:active { background: var(--disabled-soft); }
 
 /* ============ 选时段（号源快照，约满禁选） ============ */
+/* 上午 / 下午分段（2026-11-15）：两列卡片，段名 + 档数 + 该段覆盖的时钟区间。
+   选中段用主题色描边（不改底色语义），无号段只把「档数」降级成灰字，避免误以为按钮失效。 */
+.period-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16rpx;
+  margin-bottom: 20rpx;
+}
+
+.period-tab {
+  background: var(--card);
+  border-radius: var(--radius-md);
+  border: 2rpx solid transparent;
+  box-shadow: var(--shadow-card);
+  padding: 16rpx 20rpx;
+  box-sizing: border-box;
+}
+
+.period-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.period-name {
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.period-count {
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
+.period-count-off { color: var(--text-weak); }
+
+.period-range {
+  margin-top: 6rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
+.period-on {
+  border-color: var(--primary);
+  background: var(--bg);
+}
+
+.period-on .period-name { color: var(--primary); }
+.period-on .period-range { color: var(--primary-dark); }
+
 .slot-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -322,7 +373,8 @@
 }
 
 .slot-time {
-  font-size: var(--font-body);
+  /* 一档 30 分钟，三列布局下要放得下「08:00-08:30」整段，因此比正文小一档 */
+  font-size: calc(var(--font-caption) + 2rpx);
   color: var(--text-main);
 }
 
@@ -640,8 +692,12 @@
   .doc-op { min-width: 64px; height: 32px; padding: 0 12px; margin-left: 10px; }
 
   /* 号源 */
+  .period-tabs { gap: 8px; margin-bottom: 10px; }
+  .period-tab { padding: 8px 10px; border-width: 1px; }
+  .period-range { margin-top: 3px; }
   .slot-grid { gap: 8px; margin-bottom: 24px; }
   .slot { padding: 8px 0 6px; border-width: 1px; }
+  .slot-time { font-size: 13px; }
   .slot-left { margin-top: 3px; }
   .act-btn { margin-top: 12px; }
 

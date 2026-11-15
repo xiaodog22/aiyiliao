@@ -27,15 +27,30 @@ import java.util.Map;
  *
  * 端点（已在 AuthInterceptor 白名单，dev 档免登录）：
  *  - GET  /api/v1/dev/slots/status → 按医生聚合的当前剩余号源状态
- *  - POST /api/v1/dev/slots/reset  → 所有 OPEN 号源 capacity/remaining 重置为 20
+ *  - POST /api/v1/dev/slots/reset  → 回补未来 14 天上午/下午多档号源（每档 10 号，扣已约）
  */
 @RestController
 @RequestMapping("/api/v1/dev")
 @Profile("dev")
 public class DevAdminController {
 
-    /** 一键重置后的空余号源数（演示口径）。 */
-    private static final int RESET_REMAINING = 20;
+    /** 一键重置后每档的空余号源数（演示口径；实际按「容量 - 有效预约数」回补）。 */
+    private static final int RESET_REMAINING = 10;
+
+    /**
+     * 可预约时段（北京时间，每档 30 分钟）：上午 6 档 + 下午 6 档。
+     * 2026-11-15：原来每天只有 09:00 / 14:00 两档，用户可选时间太少；
+     * 这里扩到 12 档并**上下午各半**，同时把「上午/下午」写进 id 便于排查。
+     */
+    private static final String[][] SLOT_TIMES = {
+            {"08:00", "08:30"}, {"08:30", "09:00"}, {"09:00", "09:30"},
+            {"09:30", "10:00"}, {"10:00", "10:30"}, {"10:30", "11:00"},
+            {"14:00", "14:30"}, {"14:30", "15:00"}, {"15:00", "15:30"},
+            {"15:30", "16:00"}, {"16:00", "16:30"}, {"16:30", "17:00"}
+    };
+
+    /** 补建天数（与前端 7 天日期条相比留出余量，深链约后几天也有号） */
+    private static final int SEED_DAYS = 14;
 
     private final JdbcTemplate jdbc;
 
@@ -67,44 +82,65 @@ public class DevAdminController {
                 "resetRemaining", RESET_REMAINING));
     }
 
-    /** 一键重置：关闭过期号源 + 补建未来 7 天 AM/PM 号源 + 现有 OPEN 号源 remaining=20。 */
+    /** 一键重置：关闭过期/旧版两档号源 + 补建未来 14 天上午/下午 12 档 + 按已约数回补余号。 */
     @PostMapping("/slots/reset")
     public Envelope<Map<String, Object>> resetSlots() {
         // 1) 关闭已过期的号源（避免 hasAvailableSlot 误判为可预约）
         int closed = jdbc.update(
                 "UPDATE doctor_slots SET status='CLOSED', updated_at=CURRENT_TIMESTAMP(3) " +
                 "WHERE status='OPEN' AND start_time < NOW()");
-        // 2) 补建未来 7 天 AM/PM 号源（幂等：ON DUPLICATE KEY UPDATE）
-        jdbc.update("""
-                INSERT INTO doctor_slots (id, doctor_id, start_time, end_time, capacity, remaining, fee, currency, status)
-                SELECT CONCAT('slot-', d.id, '-', DATE_FORMAT(day.d, '%Y%m%d'), '-am'),
-                       d.id, TIMESTAMP(day.d, '09:00:00'), TIMESTAMP(day.d, '09:30:00'),
-                       20, 20, 25.00, 'CNY', 'OPEN'
-                FROM doctors d,
-                     (SELECT CURDATE() + INTERVAL n DAY AS d FROM
-                      (SELECT 0 n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4
-                       UNION SELECT 5 UNION SELECT 6) nums) day
-                ON DUPLICATE KEY UPDATE capacity=20, remaining=20, status='OPEN', updated_at=CURRENT_TIMESTAMP(3)
+        // 2) 旧版每天只有 09:00(-am) / 14:00(-pm) 两档，与新档 09:00/14:00 会同刻重复：
+        //    未来的旧档一律下线。只改 status 不删除 —— appointments.slot_id 有外键，
+        //    历史预约仍要能查到这条号源。
+        int legacy = jdbc.update(
+                "UPDATE doctor_slots SET status='CLOSED', updated_at=CURRENT_TIMESTAMP(3) " +
+                "WHERE status='OPEN' AND start_time >= NOW() AND (id LIKE '%-am' OR id LIKE '%-pm')");
+        // 3) 补建未来 14 天 × 12 档（幂等：ON DUPLICATE KEY UPDATE；remaining 留给第 4 步按预约算）
+        int seeded = 0;
+        for (String[] t : SLOT_TIMES) {
+            seeded += jdbc.update(slotInsertSql(t[0], t[1]));
+        }
+        // 4) 余号回补 = 容量 − 有效预约数（PENDING/CONFIRMED）。
+        //    原实现无条件刷 20，用户已约的号会被"回血"，同档可超卖；这里按真实占用算。
+        int updated = jdbc.update("""
+                UPDATE doctor_slots s
+                SET s.remaining = GREATEST(s.capacity - (
+                        SELECT COUNT(*) FROM appointments a
+                        WHERE a.slot_id = s.id AND a.status IN ('PENDING','CONFIRMED')), 0),
+                    s.updated_at = CURRENT_TIMESTAMP(3)
+                WHERE s.status = 'OPEN' AND s.start_time >= NOW()
                 """);
-        jdbc.update("""
-                INSERT INTO doctor_slots (id, doctor_id, start_time, end_time, capacity, remaining, fee, currency, status)
-                SELECT CONCAT('slot-', d.id, '-', DATE_FORMAT(day.d, '%Y%m%d'), '-pm'),
-                       d.id, TIMESTAMP(day.d, '14:00:00'), TIMESTAMP(day.d, '14:30:00'),
-                       20, 20, 25.00, 'CNY', 'OPEN'
-                FROM doctors d,
-                     (SELECT CURDATE() + INTERVAL n DAY AS d FROM
-                      (SELECT 0 n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4
-                       UNION SELECT 5 UNION SELECT 6) nums) day
-                ON DUPLICATE KEY UPDATE capacity=20, remaining=20, status='OPEN', updated_at=CURRENT_TIMESTAMP(3)
-                """);
-        // 3) 现有 OPEN 号源统一 remaining=20
-        int updated = jdbc.update(
-                "UPDATE doctor_slots SET capacity=20, remaining=20, updated_at=CURRENT_TIMESTAMP(3) WHERE status='OPEN'");
         return Envelope.ok(RequestIds.current(), Map.of(
                 "closedExpired", closed,
+                "legacyClosed", legacy,
+                "seededRows", seeded,
                 "resetSlots", updated,
                 "remainingEach", RESET_REMAINING,
-                "message", "已关闭 " + closed + " 条过期号源，" + updated + " 条 OPEN 号源重置为空余 " + RESET_REMAINING + "（含补建未来 7 天）"));
+                "slotTimes", SLOT_TIMES.length,
+                "message", "已关闭 " + closed + " 条过期号源、" + legacy + " 条旧版两档号源；"
+                        + "补建未来 " + SEED_DAYS + " 天 × 每天 " + SLOT_TIMES.length
+                        + " 档（上午 6 + 下午 6，每档 " + RESET_REMAINING + " 号），回补 " + updated + " 条 OPEN 号源余号"));
+    }
+
+    /**
+     * 单档号源补建 SQL（未来 {@link #SEED_DAYS} 天 × 全部 ACTIVE 医生）。
+     * ⚠️ 库内 DATETIME 以 UTC 存储（连接串 forceConnectionTimeZoneToSession=true），
+     *    配置表写的是北京时间 → 必须 -8 HOUR，否则前端按设备本地时区一转换就整体偏 8 小时。
+     */
+    private String slotInsertSql(String startHm, String endHm) {
+        String suffix = startHm.replace(":", "");
+        StringBuilder days = new StringBuilder();
+        for (int i = 0; i < SEED_DAYS; i++) {
+            if (i > 0) days.append(" UNION ");
+            days.append("SELECT ").append(i).append(" n");
+        }
+        return "INSERT INTO doctor_slots (id, doctor_id, start_time, end_time, capacity, remaining, fee, currency, status) "
+                + "SELECT CONCAT('slot-', d.id, '-', DATE_FORMAT(day.d, '%Y%m%d'), '-" + suffix + "'), d.id, "
+                + "TIMESTAMP(day.d, '" + startHm + ":00') - INTERVAL 8 HOUR, "
+                + "TIMESTAMP(day.d, '" + endHm + ":00') - INTERVAL 8 HOUR, "
+                + RESET_REMAINING + ", " + RESET_REMAINING + ", 25.00, 'CNY', 'OPEN' "
+                + "FROM doctors d, (SELECT CURDATE() + INTERVAL n DAY AS d FROM (" + days + ") nums) day "
+                + "ON DUPLICATE KEY UPDATE capacity=VALUES(capacity), status='OPEN', updated_at=CURRENT_TIMESTAMP(3)";
     }
 
     /**

@@ -36,7 +36,7 @@
       <!-- ③ 浅蓝日期信息框 -->
       <view class="rc-datebox">
         <image class="rc-date-ic" src="{{icons.calendar}}" />
-        <text class="rc-date-t">{{item.date}} {{item.time}}</text>
+        <text class="rc-date-t">{{item.date}} {{item.periodText}}{{item.time}}</text>
       </view>
 
       <!-- ④ 分隔线 + 双按钮（待就诊=取消预约/查看详情；已完成=查看报告/再次预约） -->

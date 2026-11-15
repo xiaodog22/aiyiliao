@@ -192,6 +192,9 @@ Page({
             doctor: it.doctorTitle ? (it.doctorName + ' · ' + it.doctorTitle) : (it.doctorName || ''),
             date: when.date,
             time: when.time,
+            // 上午/下午写清楚（2026-11-15 号源扩到每天 12 档后，只给 08:30 这种时点
+            // 看不出属于哪一半，列表里还会和 14:30 混在一起）
+            periodText: !when.time ? '' : (when.time < '12:00' ? '上午 ' : '下午 '),
             place: it.location || '',
             // D-06：过期单的后端状态可能还停在 CONFIRMED，展示层按时间纠正为「已过期」
             status: aptDisplayStatus(it.status, it.startTime, it.endTime) || '待就诊',
@@ -241,7 +244,7 @@ Page({
     const lines = [
       '科室：' + (it.dept || '—'),
       '医生：' + (it.doctor || '—'),
-      '时间：' + ((it.date || '') + ' ' + (it.time || '')).trim(),
+      '时间：' + ((it.date || '') + ' ' + (it.periodText || '') + (it.time || '')).trim(),
       '状态：' + (it.status || '—')
     ]
     if (it.place) lines.push('地点：' + it.place)
