@@ -186,7 +186,9 @@ if (homeDef) {
 
   navCalls.length = 0
   ctx._route('reports')
-  expectUrl('navigateTo', '/pages/profile/health-records/health-records', '四宫格-报告查询 → health-records')
+  // 2026-11-14 口径：「报告查询」唯一入口 = /pages/profile/reports（电子检查报告页），
+  // 不再落健康档案页（健康档案是另一张卡，别混）。
+  expectUrl('navigateTo', '/pages/profile/reports/reports', '四宫格-报告查询 → reports')
 
   navCalls.length = 0
   ctx._route('archive')

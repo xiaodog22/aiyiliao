@@ -26,6 +26,27 @@ function check(name, ok, extra) {
 // ==================== 桩数据（形状取自 2026-10-17 真实后端实测）====================
 const SCENARIO = { mode: 'normal' }   // normal | http500
 
+// 首页预约夹具必须**恒在未来**：aptDisplayStatus 把「CONFIRMED 且时段已过」纠正为
+// 「已过期」（2026-11-15 口径），写死 2026-10-18 的夹具之后跑必红 → 动态生成未来时段。
+function futParts(hour, minute) {
+  const d = new Date()
+  d.setHours(hour, minute, 0, 0)
+  if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1)
+  const p = (n) => (n < 10 ? '0' + n : '' + n)
+  return {
+    iso: d.toISOString(),
+    date: d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()),
+    time: p(d.getHours()) + ':' + p(d.getMinutes()),
+    day: p(d.getDate())
+  }
+}
+const FUT_START = futParts(9, 30)
+const FUT_END = futParts(10, 0)
+
+// GET 短缓存（15s 白名单）会让「失败注入场景」命中上一场景的成功缓存 → 假数据。
+// 每次切换场景前手动清空（与线上 clearGetCache 同一入口）。
+const reqStub = require(path.join(ROOT, 'services', 'request.js'))
+
 const ME = {
   id: 'u-dev-user-1', displayName: '开发用户甲', profileCompleteness: 33,
   roles: ['PATIENT'], phoneBound: true, consents: [],
@@ -46,8 +67,8 @@ const HOME_WITH_APT = {
       kind: 'NEXT_APPOINTMENT', status: 'ok',
       nextAppointment: {
         id: 'ap-1', status: 'CONFIRMED', departmentName: '消化内科', doctorName: '林建平',
-        patientName: '张建国', startTime: '2026-10-18T01:30:00Z',  // +08 → 2026-10-18 09:30
-        endTime: '2026-10-18T02:00:00Z', location: '门诊楼 3 楼 302 诊室'
+        patientName: '张建国', startTime: FUT_START.iso, endTime: FUT_END.iso,
+        location: '门诊楼 3 楼 302 诊室'
       }
     },
     { kind: 'QUICK_SERVICES', status: 'ok' }
@@ -256,11 +277,11 @@ async function testHome() {
   check('[首页] hasApt=true', b.data.hasApt === true)
   check('[首页] departmentName → dept', apt.dept === '消化内科', '实得 ' + JSON.stringify(apt.dept))
   check('[首页] doctorName → doctor', apt.doctor === '林建平', '实得 ' + JSON.stringify(apt.doctor))
-  check('[首页] startTime → 本地日期 2026-10-18', apt.date === '2026-10-18', '实得 ' + apt.date)
-  check('[首页] startTime → 本地时间 09:30', apt.time === '09:30', '实得 ' + apt.time)
+  check('[首页] startTime → 本地日期', apt.date === FUT_START.date, '实得 ' + apt.date + ' 期望 ' + FUT_START.date)
+  check('[首页] startTime → 本地时间', apt.time === FUT_START.time, '实得 ' + apt.time)
   check('[首页] CONFIRMED → 「待就诊」', apt.status === '待就诊', '实得 ' + apt.status)
   check('[首页] location → place', apt.place === '门诊楼 3 楼 302 诊室', '实得 ' + apt.place)
-  check('[首页] 日期徽章已解析（parseAptDate）', !!b.data.aptDate && b.data.aptDate.day === '18',
+  check('[首页] 日期徽章已解析（parseAptDate）', !!b.data.aptDate && b.data.aptDate.day === FUT_START.day,
     '实得 ' + JSON.stringify(b.data.aptDate))
 }
 
@@ -375,6 +396,8 @@ async function testConsultRoom() {
   check('[问诊室] 就诊事项取后端 title', inst.data.activeTitle === '咳嗽待查咨询', '实得 ' + inst.data.activeTitle)
 
   /* ⑤ 详情 501 → 回退「列表 + 消息」，页面仍可用；医生字段缺省走中性占位 */
+  // 场景①成功详情还在 15s GET 缓存里，不清掉 501 轮会命中缓存 → doctorName 恒为「陈医生」
+  reqStub.clearGetCache()
   SCENARIO.consultDetail = 'off'
   const b = instantiate(cfg)
   b.onLoad({ consultationId: 'cn-1' })
@@ -461,9 +484,12 @@ async function testDoctorQueue() {
 
 async function testErrorPath() {
   // 生产档（关掉演示兜底）+ 后端 500 → 错误态中文文案（不混入演示数据）
+  // ⚠️ /health-records 在 15s GET 缓存白名单内：前面的档案页用例已写入缓存，
+  // 不清掉 500 轮直接命中缓存 → error 恒为空（假红）。
   const ENV = require(path.join(ROOT, 'config', 'env.js'))
   const prev = ENV.MOCK_FALLBACK
   ENV.MOCK_FALLBACK = false
+  reqStub.clearGetCache()
   SCENARIO.mode = 'http500'
 
   const cfg = loadPage(path.join('pages', 'profile', 'health-records', 'health-records.js'))

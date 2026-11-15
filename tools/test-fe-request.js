@@ -52,6 +52,9 @@ beforeEach(() => {
   calls.length = 0
   session.clear()
   for (const k of Object.keys(storage)) delete storage[k]
+  // ⚠️ /api/v1/departments 等 8 路径在 15s GET 短缓存白名单内（2026-11-14 引入）：
+  // 不清缓存时 RQ-01 的成功响应会被 RQ-02+ 同 URL 用例命中 → 串数据/假不 reject。
+  req.clearGetCache()
 })
 
 const okEnv = (data) => ({ statusCode: 200, data: { code: 'OK', message: '成功', data } })

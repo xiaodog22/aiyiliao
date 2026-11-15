@@ -46,7 +46,7 @@ const CONTRACT_APPOINTMENTS = Array.from({ length: N }, (_, i) => ({
   status: 'PENDING',
   departmentName: '心血管内科',
   doctorName: '张医生',
-  startTime: '2026-09-16T01:30:00Z',        // ISO Instant；+08 环境 → 2026-09-16 09:30
+  startTime: isoFuture(9, 30),               // 恒在未来（见 isoFuture 注释）
   location: '门诊楼 3 楼 302 诊室',
   patientName: '张建国'
 }))
@@ -59,6 +59,15 @@ const CONTRACT_APPOINTMENTS = Array.from({ length: N }, (_, i) => ({
 function isoToday(hour, minute) {
   const d = new Date()
   d.setHours(hour, minute, 0, 0)
+  return d.toISOString()
+}
+
+// 患者端记录页夹具必须**恒在未来**：aptDisplayStatus 会把「PENDING 且时段已过」纠正为
+// 「已过期」（2026-11-15 口径），写死日期的夹具下午/隔天跑必红 → 生成「未到的今天/明天」。
+function isoFuture(hour, minute) {
+  const d = new Date()
+  d.setHours(hour, minute, 0, 0)
+  if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1)
   return d.toISOString()
 }
 const DOCTOR_APPOINTMENTS_STUB = Array.from({ length: N }, (_, i) => ({
@@ -113,6 +122,28 @@ global.wx = {
       }
       // 床位走契约形状 {beds:[Bed]}（页面 toViewRow 读 status 英文枚举 + bedNo + wardId）。
       // ⚠️ 旧桩是 legacy {list:[{status:'空闲'}]}：英文枚举取不到 → 全部落「维修中」，且 rows 为空。
+      // ⚠️ 申请列表（申请制 2026-11-15）必须先于通用 'bed' 分支判断：路径同含 bed，形状是数组。
+      if (url.indexOf('/beds/applications') >= 0) {
+        o.success({
+          statusCode: 200,
+          data: {
+            code: 'OK',
+            data: [
+              {
+                id: 'ba-1', wardId: 'w1', wardName: '心血管内科', bedLabel: 'A-01',
+                patientDisplayName: '张*', reason: '胸闷待查', priority: 'NORMAL',
+                status: 'PENDING', reviewNote: '', createdAt: '2026-11-15T03:00:00Z'
+              },
+              {
+                id: 'ba-2', wardId: 'w1', wardName: '心血管内科', bedLabel: '',
+                patientDisplayName: '李*', reason: '', priority: 'URGENT',
+                status: 'REJECTED', reviewNote: '病区已满', createdAt: '2026-11-15T02:00:00Z'
+              }
+            ]
+          }
+        })
+        return
+      }
       if (url.indexOf('bed') >= 0) {
         o.success({
           statusCode: 200,
@@ -320,6 +351,19 @@ async function testBeds() {
     'all=' + (inst.data.all ? inst.data.all.length : inst.data.all))
   check('[床位] displayed 与 all 一致（总量小于一页）', inst.data.displayed.length === inst.data.all.length)
   check('[床位] total 有值', inst.data.total === inst.data.all.length)
+  // 申请制（2026-11-15）：空闲床按钮语义改为「申请」，申请列表来自 /beds/applications
+  const avail = inst.data.all.find((b) => b.id === 'bed-1')
+  check('[床位] 空闲床位标记 canApply（申请制）', !!avail && avail.canApply === true,
+    '实得 ' + (avail ? avail.canApply : '无此行'))
+  check('[床位] 我的申请拿到 2 条', inst.data.apps.length === 2, '实得 ' + inst.data.apps.length)
+  check('[床位] PENDING 映射「待审批」', inst.data.apps[0].statusText === '待审批',
+    '实得 ' + inst.data.apps[0].statusText)
+  check('[床位] REJECTED 映射「已驳回」', inst.data.apps[1].statusText === '已驳回',
+    '实得 ' + inst.data.apps[1].statusText)
+  check('[床位] URGENT 标记紧急', inst.data.apps[1].urgent === true,
+    '实得 ' + inst.data.apps[1].urgent)
+  check('[床位] 无床号申请单回退病区名（待排床）', inst.data.apps[1].target.indexOf('待排床') >= 0,
+    '实得 ' + inst.data.apps[1].target)
 }
 
 // ==================== ⑤ 我的问诊（2026-10-17 起数据源=后端契约 /api/v1/consultations）====================
@@ -384,9 +428,13 @@ async function testRecords() {
 
   // records 走 withFallback：开发阶段（MOCK_FALLBACK=true）后端失败会被演示数据兜底，
   // 压根到不了 catch 分支。要验证真正的错误态文案，得临时关掉降级开关。
+  // ⚠️ /appointments/me 在 GET 短缓存白名单内（15s）：上一轮成功结果还在缓存里，
+  // 不清掉 http500 轮会直接命中缓存 → error 恒为空（假绿/假红都不像）。
+  const reqStub = require(path.join(ROOT, 'services', 'request.js'))
   const ENV = require(path.join(ROOT, 'config', 'env.js'))
   const prevMock = ENV.MOCK_FALLBACK
   ENV.MOCK_FALLBACK = false
+  reqStub.clearGetCache()
   MODE = 'http500'
   const bad = instantiate(cfg)
   bad.onLoad()

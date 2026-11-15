@@ -80,6 +80,9 @@ public class AuthInterceptor implements HandlerInterceptor {
             // 生产环境无此端点，白名单条目安全（生产路径 404）
             Map.entry("/api/v1/dev/slots/status", "GET"),
             Map.entry("/api/v1/dev/slots/reset", "POST"),
+            // dev 档床位申请审批（2026-11-15）：申请制下医生不能自审，演示由该端点代护士站执行
+            Map.entry("/api/v1/dev/bed-applications", "GET"),
+            Map.entry("/api/v1/dev/bed-applications/*/review", "POST"),
             Map.entry("/api/v1/dev/admin", "GET"));
 
     private final AuthSessionStore authSessionStore;

@@ -119,6 +119,14 @@ function settle(inst, pred, ms) {
 const tick5 = () => new Promise((r) => setTimeout(r, 5))
 
 // 45 条契约预约：20 PENDING + 15 CONFIRMED + 5 COMPLETED + 5 CANCELLED
+// ⚠️ PENDING/CONFIRMED 必须**恒在未来**：aptDisplayStatus 会把「未终态且时段已过」纠正为
+// 「已过期」并入已完成段（2026-11-15 口径），写死日期的夹具下午/隔天跑必红。
+function futIso() {
+  const d = new Date()
+  d.setHours(9, 30, 0, 0)
+  if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1)
+  return d.toISOString()
+}
 const CONTRACT_APPOINTMENTS = []
 ;[['PENDING', 20], ['CONFIRMED', 15], ['COMPLETED', 5], ['CANCELLED', 5]].forEach(([st, n]) => {
   for (let i = 0; i < n; i++) CONTRACT_APPOINTMENTS.push({
@@ -126,7 +134,7 @@ const CONTRACT_APPOINTMENTS = []
     status: st,
     departmentName: '心血管内科',
     doctorName: '张医生',
-    startTime: '2026-10-29T01:30:00Z',
+    startTime: (st === 'PENDING' || st === 'CONFIRMED') ? futIso() : '2026-10-29T01:30:00Z',
     location: '门诊楼 3 楼'
   })
 })
@@ -177,8 +185,10 @@ async function testRecords() {
   check('[records] hasMore=true', inst.data.hasMore === true)
   check('[records] PENDING 经 apt-status 转中文（页面未写死判断）',
     inst.data.all[0].status === '待确认', '实得 ' + inst.data.all[0].status)
-  check('[records] 计数：active=35 / done=5',
-    inst.data.counts.active === 35 && inst.data.counts.done === 5,
+  // 2026-11-15 口径：isHistory 把「已完成/过期/取消/未到」都并入历史段 →
+  // 夹具 5 COMPLETED + 5 CANCELLED = done=10，active = 20 PENDING + 15 CONFIRMED = 35
+  check('[records] 计数：active=35 / done=10',
+    inst.data.counts.active === 35 && inst.data.counts.done === 10,
     JSON.stringify(inst.data.counts))
 
   inst.onReachBottom()
@@ -190,8 +200,8 @@ async function testRecords() {
   check('[records] hasMore=false 时触底幂等', inst.data.displayed.length === 45)
 
   inst.onSeg({ currentTarget: { dataset: { f: '已完成' } } })
-  check('[records] 分段「已完成」筛出 5 条且 hasMore=false',
-    inst.data.displayed.length === 5 && inst.data.hasMore === false,
+  check('[records] 分段「已完成」筛出 10 条（含取消）且 hasMore=false',
+    inst.data.displayed.length === 10 && inst.data.hasMore === false,
     '实得 ' + inst.data.displayed.length)
   inst.onSeg({ currentTarget: { dataset: { f: '待就诊' } } })
   check('[records] 分段「待就诊」total=35（首屏切片 20）',
@@ -200,6 +210,8 @@ async function testRecords() {
   inst.onSeg({ currentTarget: { dataset: { f: '全部' } } })
 
   // 错误态：后端 500（MOCK_FALLBACK=true 档 app.MOCK 未注入 → mockFactory 抛错 → 走页面 catch）
+  // ⚠️ /appointments/me 在 15s GET 缓存白名单内：成功轮的结果还在缓存里，不清掉 500 轮命中缓存。
+  require(path.join(ROOT, 'services', 'request.js')).clearGetCache()
   MODE = 'http500'
   inst.fetch()
   await settle(inst, (d) => d.error !== '')
