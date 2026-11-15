@@ -14,18 +14,18 @@
 <view class="page theme-{{theme}} dc-page" style="padding-top: {{navH}}px; padding-bottom: {{kbHeight}}px;">
 
   <!-- ============ 自绘导航 ============ -->
-  <!-- ⚠️ 左右槽位等宽 navSlot（px，由胶囊几何算出）：右侧控件必须让到微信胶囊左边，
-       否则「结束」被胶囊整块盖住 → 用户反馈「无法点击结束问诊」。两侧等宽同时保证标题居中。 -->
+  <!-- ⚠️ 导航右侧**不再放任何可点控件**（2026-11-15 二次返工）。
+       微信胶囊恒贴屏幕右上、层级高于页面，之前把「结束」放在这里，无论多宽都落在胶囊底下：
+       用户看到的是「点了没反应」，实际是根本没点到页面按钮。
+       结束入口已移到患者信息卡下方的操作条（.dc-card-ops），那里不在胶囊覆盖范围内。
+       右侧 .dc-nav-ph 仅作占位，保证标题精确居中。 -->
   <view class="dc-nav" style="padding-top: {{statusBarHeight}}px; height: {{navH}}px;">
     <view class="dc-nav-bar">
-      <view class="dc-back" style="width: {{navSlot}}px;" bindtap="onBack" aria-role="button" aria-label="返回">
+      <view class="dc-back" bindtap="onBack" aria-role="button" aria-label="返回">
         <image class="dc-back-ic" src="{{icons.chevronLeft}}" mode="aspectFit" />
       </view>
       <view class="dc-title">{{mode === 'CHAT' ? (active.patientName || '在线问诊') : '在线问诊'}}</view>
-      <!-- 右侧：会话模式给「结束」入口（列表模式占位保持标题居中） -->
-      <view wx:if="{{mode === 'CHAT' && active.status === 'CLOSED'}}" class="dc-nav-done" style="width: {{navSlot}}px;">已结束</view>
-      <view wx:elif="{{mode === 'CHAT'}}" class="dc-nav-end" style="width: {{navSlot}}px;" bindtap="onCloseConsult" aria-role="button">结束</view>
-      <view wx:else class="dc-nav-ph" style="width: {{navSlot}}px;" />
+      <view class="dc-nav-ph" />
     </view>
   </view>
 
@@ -100,6 +100,15 @@
       </view>
       <view class="dc-card-divider"></view>
       <view class="dc-card-tip">{{active.status === 'CLOSED' ? '本次问诊已结束，双方均无法继续发送消息' : (active.accepting ? '患者消息实时同步，可直接回复' : '回复患者即视为接诊，患者端会同步显示「正在接诊」')}}</view>
+      <!-- 结束入口：独立整行操作条 + 44px 高按钮，位置固定可见、不随消息滚动、不受微信胶囊影响 -->
+      <view wx:if="{{active.status !== 'CLOSED'}}" class="dc-card-ops">
+        <view
+          class="dc-end-btn {{closing ? 'dc-end-btn-busy' : ''}}"
+          bindtap="onCloseConsult"
+          aria-role="button"
+          aria-label="结束本次问诊"
+        >{{closing ? '正在结束…' : '结束问诊'}}</view>
+      </view>
     </view>
 
     <!-- 消息流 -->

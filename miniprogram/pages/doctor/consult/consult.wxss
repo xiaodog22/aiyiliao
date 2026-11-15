@@ -24,9 +24,9 @@
   border-bottom: 1rpx solid var(--border);
   box-sizing: border-box;
 }
-/* 导航左右槽位（.dc-back / .dc-nav-end / .dc-nav-done / .dc-nav-ph）的宽度由页面内联
-   style 覆盖为 navSlot(px)：右侧必须让到微信胶囊左边，否则「结束」被胶囊整块压住、点不到。
-   下面的 88rpx 只是取不到胶囊几何时的兜底值（≈44px，与旧版一致）。 */
+/* 导航左右槽位（.dc-back / .dc-nav-ph）固定等宽 88rpx，标题因此精确居中。
+   ⚠️ 右侧槽位**只能放占位**：微信胶囊恒贴屏幕右上、层级高于页面，任何贴右的可点控件都会被它吃掉
+   （2026-11-15 两次返工）。结束问诊入口在患者卡内的 .dc-card-ops。 */
 .dc-nav-bar {
   height: 44px;
   display: flex;
@@ -53,35 +53,10 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* 导航右侧只做占位（宽度与左侧返回键一致 88rpx），标题因此精确居中。
+   ⚠️ 这里**不要**再放「结束」等可点控件：微信胶囊恒贴右上且层级更高，任何贴右控件都会被它吃掉
+   （2026-11-15 两次返工的原因）。结束入口在 .dc-card-ops。 */
 .dc-nav-ph { width: 88rpx; }
-
-/* 导航右侧「结束」入口（会话模式）；88rpx 宽与左侧返回键等宽，标题保持居中。
-   高度撑满 44px 导航条 → 触控热区达标，不必再用 ::after 补偿。 */
-.dc-nav-end {
-  width: 88rpx;
-  height: 88rpx;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 12rpx;
-  box-sizing: border-box;
-  font-size: calc(var(--font-caption) + 2rpx);
-  font-weight: 600;
-  color: var(--danger-text);
-  white-space: nowrap;
-}
-/* 已结束后同一位置只留状态文字（不可点） */
-.dc-nav-done {
-  width: 88rpx;
-  text-align: right;
-  padding-right: 12rpx;
-  box-sizing: border-box;
-  /* 3 个字必须一行放得下：88rpx 槽位 - 右侧 12rpx 内边距 ≈ 38px → 字号压到 caption(12px)，
-     否则会在导航右侧折成两行（2026-10-24 视觉复核发现） */
-  font-size: var(--font-caption);
-  color: var(--text-weak);
-  white-space: nowrap;
-}
 
 /* ---------------- 列表模式 ---------------- */
 .dc-body { flex: 1; min-height: 0; }
@@ -259,6 +234,33 @@
   color: var(--text-weak);
 }
 
+/* ---------------- 结束问诊操作条（患者卡内） ----------------
+   放在卡片里而不是导航栏：导航右侧被微信胶囊独占，贴右控件「看不见也点不到」（2026-11-15 二次返工）。
+   卡片 .dc-card 有 flex-shrink:0 且位于消息流之上，滚动消息时始终可见。 */
+.dc-card-ops {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0 24rpx;
+}
+.dc-end-btn {
+  min-width: 208rpx;
+  height: 88rpx;          /* 44px：满足触控热区下限，医生单手持机也不会点空 */
+  padding: 0 36rpx;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid var(--danger-text);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--danger-text);
+  font-size: var(--font-body);
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* 请求进行中：压暗 + 由 onCloseConsult 的 closing 去重，避免重复提交 */
+.dc-end-btn-busy { opacity: 0.5; }
+
 /* ---------------- 会话模式：消息流 ---------------- */
 .dc-chat { flex: 1; min-height: 0; padding: 16rpx 24rpx 0; box-sizing: border-box; }
 .dc-anchor { height: calc(24rpx + env(safe-area-inset-bottom)); }
@@ -402,8 +404,6 @@
   .dc-back-ic { width: 22px; height: 22px; }
   .dc-title { font-size: 17px; }
   .dc-nav-ph { width: 44px; }
-  .dc-nav-end { width: 44px; height: 44px; padding-right: 6px; font-size: 14px; }
-  .dc-nav-done { width: 44px; padding-right: 6px; font-size: 12px; }
 
   .dc-list-head { padding: 12px 16px 4px; }
   .dc-list-tip { font-size: 12px; }
@@ -429,6 +429,8 @@
   .dc-card-state { padding: 4px 9px; }
   .dc-card-divider { margin-top: 10px; height: 1px; }
   .dc-card-tip { padding: 9px 0 10px; }
+  .dc-card-ops { padding: 0 0 12px; }
+  .dc-end-btn { min-width: 104px; height: 44px; padding: 0 18px; border-width: 1px; }
 
   .dc-chat { padding: 8px 12px 0; }
   .dc-anchor { height: 12px; }

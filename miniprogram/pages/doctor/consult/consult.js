@@ -31,8 +31,6 @@ Page({
     theme: 'standard',
     statusBarHeight: 20,
     navH: 64,
-    // 导航左右槽位宽（px）：右侧要让到微信胶囊左边，否则「结束」被胶囊压住 → 看不见也点不到
-    navSlot: 44,
 
     mode: 'LIST',          // LIST | CHAT
     list: [],
@@ -66,25 +64,16 @@ Page({
     }
     const q = options || {}
     let sbh = 20
-    let navSlot = 44
     try {
       const win = wx.getWindowInfo() || {}
       sbh = win.statusBarHeight || 20
-      // 胶囊恒贴屏幕右边，安全槽 = 屏宽 − 胶囊左边界 + 8px 呼吸位（≈102px，与屏宽无关）。
-      // 取不到胶囊几何（旧基础库）或坐标系不自洽（Pad 横竖屏）、算出离谱值时一律退回 44px。
-      const mb = wx.getMenuButtonBoundingClientRect ? wx.getMenuButtonBoundingClientRect() : null
-      const ww = win.windowWidth || 375
-      if (mb && mb.width && mb.left > 0 && mb.left < ww) {
-        navSlot = Math.min(160, Math.max(44, Math.round(ww - mb.left + 8)))
-      }
     } catch (e) {}
     this._gone = false
     this.setData({
       icons,
       theme: app.globalData.theme || 'standard',
       statusBarHeight: sbh,
-      navH: sbh + 44,
-      navSlot
+      navH: sbh + 44
     })
 
     const id = this._decode(q.id)
