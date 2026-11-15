@@ -26,7 +26,7 @@ Page({
     /* 我的问诊未读点：默认值 = 设计稿同态（仅开发兜底档），随后由真实列表覆盖 */
     unread: ENV.MOCK_FALLBACK,
     /* 版本号：优先取小程序真实版本（线上有值、开发工具为空）→ 兜底与 settings 页同值 */
-    appVersion: 'V1.5.0'
+    appVersion: 'V1.6.0'
   },
 
   onLoad() {

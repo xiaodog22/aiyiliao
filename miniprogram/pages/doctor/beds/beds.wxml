@@ -1,16 +1,18 @@
 <!--
-  pages/doctor/beds —— 床位管理（医生端）
+  pages/doctor/beds —— 床位管理（医生端·申请制）
   版式：design-output/医生端/E-医生端/14-床位管理.png（1391×3014，1rpx ≈ 1.8547px，逐元素实测）
 
   ① 自定义导航栏（返回 + 居中标题；右侧胶囊由微信自绘）
   ② 床位统计（总床位 / 占用 / 空闲 / 待消毒）—— 增强项，设计稿无，口径见 README §8.40
-  ③ 病区横滑筛选 —— 增强项，**仅当医生有 ≥2 个授权病区时出现**（单病区时与设计稿一致）
-  ④ 图例：空闲(绿) / 占用(蓝) / 维修中(灰)；床位数据里出现「待消毒」「已预留」时才追加对应图例
-  ⑤ 床位卡（2 列）：空闲=白底绿描边 + 安排入住；占用=蓝色渐变头 + 浅蓝底 + 患者脱敏名；
+  ③ 我的床位申请（申请制新增）：待审批(橙) / 已通过(绿) / 已驳回(红) / 已撤销(灰)
+  ④ 病区横滑筛选 —— 增强项，**仅当医生有 ≥2 个授权病区时出现**（单病区时与设计稿一致）
+  ⑤ 图例：空闲(绿) / 占用(蓝) / 维修中(灰)；床位数据里出现「待消毒」「已预留」时才追加对应图例
+  ⑥ 床位卡（2 列）：空闲=白底绿描边 + 申请床位；占用=蓝色渐变头 + 浅蓝底 + 患者脱敏名；
      待消毒=浅橙底；维修中=中性灰；已预留=浅蓝渐变
 
-  ⚠️ 状态只认契约英文枚举（BedStatus），中文与配色由 JS 唯一映射，模板不写英文判断。
-  ⚠️ 不伪造：wardName / occupantDisplayName 缺失就不渲染对应文案。
+  ⚠️ 申请制：医生端不直接改床位状态，空闲床位只能提交申请 → 护士站审批（后端落床）。
+  ⚠️ 状态只认契约英文枚举（BedStatus / 申请状态），中文与配色由 JS 唯一映射，模板不写英文判断。
+  ⚠️ 不伪造：wardName / patientDisplayName 缺失就不渲染对应文案。
 -->
 <view class="page theme-{{theme}} bd-page" style="padding-top: {{navH}}px;">
 
@@ -35,7 +37,35 @@
     </view>
   </view>
 
-  <!-- ③ 病区筛选：单病区不渲染（保持设计稿版式） -->
+  <!-- ③ 我的床位申请（申请制）：护士站审批结果在这里回看 -->
+  <view class="apps-card">
+    <view class="apps-head">
+      <view class="apps-title">我的床位申请</view>
+      <view wx:if="{{appsLoading}}" class="apps-hint">加载中…</view>
+      <view wx:elif="{{appsError}}" class="apps-hint apps-hint-err" bindtap="fetchApplications">{{appsError}}，点此重试</view>
+      <view wx:else class="apps-hint">共 {{apps.length}} 条</view>
+    </view>
+
+    <view wx:if="{{!appsLoading && !appsError && apps.length === 0}}" class="apps-empty">
+      暂无申请。点下方空闲床位的「申请床位」发起
+    </view>
+
+    <view wx:else>
+      <view wx:for="{{apps}}" wx:key="id" class="app-row">
+        <view class="app-line1">
+          <view class="app-target">{{item.target}}</view>
+          <view wx:if="{{item.urgent}}" class="app-urgent">紧急</view>
+          <view class="app-state app-state-{{item.cls}}">{{item.statusText}}</view>
+        </view>
+        <view wx:if="{{item.patient}}" class="app-patient">患者：{{item.patient}}</view>
+        <view wx:if="{{item.reason}}" class="app-reason">{{item.reason}}</view>
+        <view wx:if="{{item.reviewNote}}" class="app-note">审批意见：{{item.reviewNote}}</view>
+        <view wx:if="{{item.time}}" class="app-time">{{item.time}} 提交</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ④ 病区筛选：单病区不渲染（保持设计稿版式） -->
   <scroll-view wx:if="{{wards.length > 1}}" class="bd-wards" scroll-x>
     <view class="bd-ward {{wardId === '' ? 'bd-ward-on' : ''}}"
           data-id="" bindtap="onWardTap" aria-role="button">全部病区</view>
@@ -59,7 +89,7 @@
   </view>
 
   <block wx:elif="{{displayed.length > 0}}">
-    <!-- ④ 图例 -->
+    <!-- ⑤ 图例 -->
     <view class="bd-legend">
       <view wx:for="{{legend}}" wx:key="cls" class="bl-item">
         <view class="bl-dot bl-dot-{{item.cls}}"></view>
@@ -67,7 +97,7 @@
       </view>
     </view>
 
-    <!-- ⑤ 床位卡（2 列） -->
+    <!-- ⑥ 床位卡（2 列） -->
     <view class="bed-grid">
       <view wx:for="{{displayed}}" wx:key="id" class="bed-card bed-{{item.cls}}">
         <view class="bed-top">
@@ -78,11 +108,11 @@
         <!-- 患者脱敏展示名（仅占用/已预留且后端下发时渲染） -->
         <view wx:if="{{item.patient}}" class="bed-patient">{{item.patient}}</view>
 
-        <!-- 仅空闲床位可「安排入住」（契约 action=ASSIGN + 乐观锁 version） -->
-        <view wx:if="{{item.canAssign}}" class="bed-assign"
-              data-id="{{item.id}}" data-no="{{item.no}}" data-version="{{item.version}}"
-              bindtap="onAssignTap" hover-class="bed-assign-hover"
-              aria-role="button" aria-label="{{item.no}} 安排入住">安排入住</view>
+        <!-- 仅空闲床位可「申请床位」（申请制：提交后待护士站审批，不直接落床） -->
+        <view wx:if="{{item.canApply}}" class="bed-apply"
+              data-id="{{item.id}}" data-no="{{item.no}}" data-ward="{{item.wardId}}"
+              bindtap="onApplyTap" hover-class="bed-apply-hover"
+              aria-role="button" aria-label="{{item.no}} 申请床位">申请床位</view>
       </view>
     </view>
 
@@ -96,29 +126,40 @@
     <view class="state-sub">床位信息接入后会显示在这里</view>
   </view>
 
-  <!-- 安排入住抽屉（AVAILABLE 床位）：patientRef 为内部患者 ID（契约不接受姓名/手机号） -->
-  <view wx:if="{{showAssign}}" class="sheet-mask" bindtap="closeAssign">
-    <view class="sheet assign-sheet" catchtap="noop">
+  <!-- 申请抽屉（AVAILABLE 床位）：patientRef 为内部患者 ID（契约不接受姓名/手机号）；
+       审批通过且床位空闲时由后端落床，医生端不做任何直接状态写入 -->
+  <view wx:if="{{showApply}}" class="sheet-mask" bindtap="closeApply">
+    <view class="sheet apply-sheet" catchtap="noop">
       <view class="sheet-handle"></view>
-      <view class="sheet-title">安排入住 · {{assignBedNo}}</view>
+      <view class="sheet-title">申请床位 · {{applyBedNo}}</view>
 
       <view class="form-row">
         <view class="form-label">患者内部 ID</view>
         <input class="form-input" placeholder="请输入 patientRef（内部编号）"
-               value="{{assignPatientRef}}" data-field="assignPatientRef" bindinput="onAssignInput" />
+               value="{{applyPatientRef}}" data-field="applyPatientRef" bindinput="onApplyInput" />
       </view>
       <view class="form-row">
-        <view class="form-label">备注（选填）</view>
-        <input class="form-input" placeholder="可填写入院备注"
-               value="{{assignNote}}" data-field="assignNote" bindinput="onAssignInput" />
+        <view class="form-label">病情说明（选填）</view>
+        <textarea class="form-area" placeholder="可填写病情或申请说明（≤200 字）"
+                  maxlength="200" value="{{applyReason}}" data-field="applyReason"
+                  bindinput="onApplyInput" auto-height />
+      </view>
+      <view class="form-row">
+        <view class="form-label">优先级</view>
+        <view class="pri-row">
+          <view class="pri-chip {{applyPriority === 'NORMAL' ? 'pri-chip-on' : ''}}"
+                data-p="NORMAL" bindtap="onPriorityTap" aria-role="button">普通</view>
+          <view class="pri-chip {{applyPriority === 'URGENT' ? 'pri-chip-on' : ''}}"
+                data-p="URGENT" bindtap="onPriorityTap" aria-role="button">紧急</view>
+        </view>
       </view>
 
-      <view wx:if="{{assignErr}}" class="form-err">{{assignErr}}</view>
+      <view wx:if="{{applyErr}}" class="form-err">{{applyErr}}</view>
 
       <view class="sheet-actions">
-        <view class="btn btn-ghost" bindtap="closeAssign">取消</view>
-        <view class="btn btn-primary {{assigning ? 'btn-loading' : ''}}" bindtap="confirmAssign">
-          {{assigning ? '提交中…' : '确认入住'}}
+        <view class="btn btn-ghost" bindtap="closeApply">取消</view>
+        <view class="btn btn-primary {{applying ? 'btn-loading' : ''}}" bindtap="confirmApply">
+          {{applying ? '提交中…' : '提交申请'}}
         </view>
       </view>
     </view>

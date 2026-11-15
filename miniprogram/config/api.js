@@ -68,6 +68,8 @@ const BED_LIST            = { base: 'java', path: '/api/v1/beds' }
 const BED_UPDATE          = { base: 'java', path: '/api/v1/bed/update/{id}' }
 // 床位分配变更（契约 M3）：显式 action + expectedVersion + 幂等键（替代旧 bed/update）
 const BED_ASSIGNMENT      = { base: 'java', path: '/api/v1/beds/{bedId}/assignment' }
+// 床位申请（申请制，2026-11-15）：医生只提交/查看申请，审批由护士站执行
+const BED_APPLICATIONS    = { base: 'java', path: '/api/v1/beds/applications' }
 const HEALTH_RECORDS      = { base: 'java', path: '/api/v1/health-records' }
 const FAMILY_MEMBERS      = { base: 'java', path: '/api/v1/family-members' }
 const FAMILY_MEMBER_BY_ID = { base: 'java', path: '/api/v1/family-members/{id}' }
@@ -83,6 +85,7 @@ const REPORT_LIST         = { base: 'java', path: '/api/v1/reports' }
 const REPORT_DETAIL       = { base: 'java', path: '/api/v1/reports/{recordId}' }
 const HR_ATTACHMENT_BY_ID = { base: 'java', path: '/api/v1/health-records/{recordId}/attachments/{attachmentId}' }
 // 科普文章（N12/N13）：列表/详情均匿名只读；详情可能带 videoUrl（V19，签名 URL，2h TTL）
+const HEALTH_ARTICLE_LIST  = { base: 'java', path: '/api/v1/health-articles' }
 const HEALTH_ARTICLE_DETAIL = { base: 'java', path: '/api/v1/health-articles/{id}' }
 const ATTACHMENT_UPLOAD   = { base: 'java', path: '/api/v1/attachments' }
 const ATTACHMENT_FILE     = { base: 'java', path: '/api/v1/attachments/{objectKey}' }
@@ -159,10 +162,11 @@ module.exports = {
   DOCTOR_APPOINTMENTS, DOCTOR_APPTS_STATUS, DOCTOR_TODOS,
   DOCTOR_CONSULTATIONS, DOCTOR_CONSULT_MESSAGES, DOCTOR_ACCEPT, DOCTOR_CONSULT_CLOSE, DOCTOR_REPLY,
   DOCTOR_SCHEDULE, DOCTOR_ONLINE_STATUS, DOCTOR_AVAILABILITY,
-  BED_LIST, BED_UPDATE, BED_ASSIGNMENT, HEALTH_RECORDS, FAMILY_MEMBERS, FAMILY_MEMBER_BY_ID, FAMILY_INVITATIONS,
+  BED_LIST, BED_UPDATE, BED_ASSIGNMENT, BED_APPLICATIONS, HEALTH_RECORDS, FAMILY_MEMBERS, FAMILY_MEMBER_BY_ID, FAMILY_INVITATIONS,
   FAMILY_INVITE_ACCEPT,
   HR_ATTACHMENTS, HR_ATTACHMENT_BY_ID, ATTACHMENT_UPLOAD, ATTACHMENT_FILE, HR_INTERPRET,
   REPORT_LIST, REPORT_DETAIL,
+  HEALTH_ARTICLE_LIST,
   HEALTH_ARTICLE_DETAIL,
   CONSULTATION_LIST, CONSULTATION_DETAIL, CONSULTATION_MESSAGES,
   CONSULTATION_TRIAGE, AI_TASK,

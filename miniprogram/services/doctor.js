@@ -319,11 +319,42 @@ function assignBed(bedId, action, expectedVersion, patientRef, opts) {
   return post(spec, body, { idempotencyKey: o.idempotencyKey || req.newIdempotencyKey() })
 }
 
+/**
+ * 床位申请列表（申请制，GET /api/v1/beds/applications）
+ * @param {string} [status] 可选过滤：PENDING / APPROVED / REJECTED / CANCELLED；缺省全部
+ * @returns {Promise<Array>} 申请单数组（patientDisplayName 后端已脱敏）
+ */
+function listBedApplications(status) {
+  if (!status) return get(API.BED_APPLICATIONS)
+  return get({ base: API.BED_APPLICATIONS.base, path: API.BED_APPLICATIONS.path + '?status=' + encodeURIComponent(status) })
+}
+
+/**
+ * 提交床位申请（POST /api/v1/beds/applications；写操作强校验幂等键）
+ * @param {{patientRef:string, bedId?:string, wardId?:string, reason?:string, priority?:string}} body
+ *   patientRef 必填且只接受内部患者 ID（手机号/姓名 422）；bedId 指定床位须空闲且属授权病区；
+ *   priority 只认 NORMAL / URGENT，其余按 NORMAL。
+ * @param {{idempotencyKey?:string, note?:string}} [opts] 幂等键缺省自动生成
+ * @returns {Promise<Object>} 申请单（status=PENDING，等待护士站审批）
+ */
+function submitBedApplication(body, opts) {
+  const o = opts || {}
+  const payload = {
+    patientRef: String((body && body.patientRef) || '').trim()
+  }
+  if (body.bedId) payload.bedId = String(body.bedId)
+  if (body.wardId) payload.wardId = String(body.wardId)
+  if (body.reason) payload.reason = String(body.reason).slice(0, 200)
+  if (body.priority) payload.priority = String(body.priority)
+  return post(API.BED_APPLICATIONS, payload, { idempotencyKey: o.idempotencyKey || req.newIdempotencyKey() })
+}
+
 module.exports = {
   getDoctor, setDoctor, restore, logout,
   login, loginByWxCode, listAllDoctors, listDoctorsByDept,
   listAppointments, updateStatus, listDoctorTodos,
   listConsultations, consultationMessages, acceptConsultation, doctorReply, closeConsultation,
   getSchedule, saveSchedule, setOnlineStatus,
-  listBeds, updateBed, assignBed
+  listBeds, updateBed, assignBed,
+  listBedApplications, submitBedApplication
 }
