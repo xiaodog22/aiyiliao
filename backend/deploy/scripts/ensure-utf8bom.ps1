@@ -7,7 +7,7 @@ param([string]$Dir)
 
 if (-not $Dir) { exit 0 }
 
-$targets = @('orchestrator.ps1', 'deploy-common.ps1', 'gui.ps1')
+$targets = @('orchestrator.ps1', 'deploy-common.ps1', 'gui.ps1', 'watchdog.ps1')
 foreach ($n in $targets) {
     $p = Join-Path $Dir $n
     if (-not (Test-Path -LiteralPath $p)) { continue }
