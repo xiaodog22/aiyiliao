@@ -98,7 +98,7 @@
       <!-- 科室加载失败：可见错误 + 重试（不混入演示数据） -->
       <view wx:if="{{deptError}}" class="error-card">
         <view class="error-text">{{deptError}}</view>
-        <view class="btn btn-outline error-retry" bindtap="retryDepartments">重新加载</view>
+        <view class="btn btn-primary btn-inline error-retry" bindtap="retryDepartments">重新加载</view>
       </view>
 
       <!-- ============================================================

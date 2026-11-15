@@ -213,7 +213,10 @@ public class AttachmentStorage {
      */
     public String signedUrl(String objectKey, long ttl) {
         long effective = ttl > 0 ? ttl : ttlSeconds;
-        long expires = Instant.now().getEpochSecond() + effective;
+        // 过期时间按 5 分钟窗口取整（2026-11-15 线上问诊）：轮询会反复拉同一条消息，
+        // 若每次 now+ttl，URL 每轮都变 → <image> 会反复重新下载（闪烁 + 流量）。
+        // 取整后同一窗口内 URL 恒定，且实际有效期始终 ≥ effective。
+        long expires = ((Instant.now().getEpochSecond() + effective) / 300 + 1) * 300;
         return "/api/v1/attachments/" + objectKey + "?expires=" + expires + "&sig=" + sign(objectKey, expires);
     }
 

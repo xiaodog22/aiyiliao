@@ -16,6 +16,7 @@ const icons = require('../../../utils/icons.js')
 // 只保留降级包装；接口一律走 services/user.js（页面不得直发接口）
 const { withFallback } = require('../../../services/request.js')
 const userService = require('../../../services/user.js')
+const resourceService = require('../../../services/resource.js')
 const { errText } = require('../../../utils/err-text.js')
 const { fmtDate } = require('../../../utils/datetime.js')
 
@@ -67,18 +68,37 @@ function fmtSize(bytes) {
 function normalize(list) {
   const arr = Array.isArray(list) ? list : []
   return arr.map((it) => {
-    const category = CATEGORY_TEXT[String(it.category || '').toUpperCase()] || (it.category || '其他')
+    const rawCategory = String(it.category || '').toUpperCase()
+    const category = CATEGORY_TEXT[rawCategory] || (it.category || '其他')
     const v = CAT_VISUAL[category] || { tint: 'tile-gray', icon: icons.fileText }
     // 检查资料附件（V9）：短期签名 url 需拼网关前缀；pdf 走 openDocument 而非 previewImage
-    const attachments = (Array.isArray(it.attachments) ? it.attachments : []).map((a) => ({
-      id: a.id || '',
-      objectKey: a.objectKey || '',
-      url: userService.resolveAttachmentUrl(a.url),
-      fileName: a.fileName || '',
-      mime: a.mime || '',
-      sizeText: fmtSize(a.size),
-      isPdf: /pdf/i.test(String(a.mime || ''))
-    }))
+    // bundle=true 表示演示/内置资源（包内 /assets/ 路径），不做网关拼接
+    // resourceKey（2026-11-15）：系统推送报告改由后端资源库下发，前端只按 key 拼匿名端点地址
+    // 唯一性（2026-11-15）：同一记录内按内容摘要（sha256 / md5）去重，同一份报告只展示一次
+    const seen = {}
+    const attachments = (Array.isArray(it.attachments) ? it.attachments : [])
+      .filter((a) => {
+        const mark = a.sha256 || a.md5 || a.objectKey || a.id || ''
+        if (!mark) return true
+        if (seen[mark]) return false
+        seen[mark] = true
+        return true
+      })
+      .map((a) => {
+        const remote = a.resourceKey ? resourceService.staticResourceUrl(a.resourceKey) : ''
+        return {
+          id: a.id || '',
+          objectKey: a.objectKey || '',
+          url: remote || (a.bundle ? String(a.url || '') : userService.resolveAttachmentUrl(a.url)),
+          bundle: remote ? false : !!a.bundle,
+          fileName: a.fileName || '',
+          mime: a.mime || '',
+          /* 内容摘要：展示层不渲染，保留给去重与「同一文件不重复」的排查 */
+          hash: a.sha256 || a.md5 || '',
+          sizeText: fmtSize(a.size),
+          isPdf: /pdf/i.test(String(a.mime || ''))
+        }
+      })
     return {
       id: it.id || '',
       category,
@@ -96,6 +116,9 @@ function normalize(list) {
          ⚠️ 只在**明确知道报告未就绪**时锁；后端没下发 reportStatus 时不禁用
             —— 就诊记录这类非报告条目本来就没有报告状态。 */
       locked: !!it.reportStatus && String(it.reportStatus).toUpperCase() !== 'READY',
+      /* 可查看报告：检查检验类记录（EXAM）→ V27 结构化报告单；
+         其它类别（体征/过敏/用药/病史）本身没有报告，不渲染「查看报告」按钮 */
+      reportable: rawCategory === 'EXAM',
       attachments
     }
   })
@@ -125,14 +148,18 @@ function mockRecords() {
     title: (v.dept || '') + (v.doctor ? ' · ' + v.doctor : ''),
     summary: [v.diagnosis ? '诊断：' + v.diagnosis : '', v.prescription ? '医嘱：' + v.prescription : '']
       .filter(Boolean).join('；'),
-    recordedAt: v.date || ''
+    recordedAt: v.date || '',
+    // 就诊记录同样带报告文件（系统推送的门诊病历/检查单），保证「查看报告」不再空态
+    attachments: Array.isArray(v.attachments) ? v.attachments : []
   }))
   ;(m.reports || []).forEach((r, i) => out.push({
     id: 'mr' + i,
     category: '检验检查报告',
     title: r.name || '',
     summary: [r.org || '', r.status || ''].filter(Boolean).join(' · '),
-    recordedAt: r.date || ''
+    recordedAt: r.date || '',
+    // 系统推送资料（2026-11-15）：图片由后端资源库下发（resourceKey），包内不再内置大图
+    attachments: Array.isArray(r.attachments) ? r.attachments : []
   }))
   return out
 }
@@ -151,7 +178,8 @@ Page({
     view: [],
     loading: true,
     error: '',
-    uploading: false,
+    /* 系统推送图片全屏查看（包内 /assets/ 路径不能用 wx.previewImage） */
+    viewerUrl: '',
     /* AI 解读：interpreting 存「正在解读的 recordId」（空串=空闲），
        用 id 而非 boolean，才能只让当前卡片的按钮进 loading 态 */
     interpreting: '',
@@ -206,67 +234,18 @@ Page({
     this.setData({ activeKey: key, view })
   },
 
-  /**
-   * 上传检查资料（V9）：来源三选（拍照/相册/文件）→ 服务层 multipart 上传 → 刷新列表。
-   * 防重复提交：uploading 期间忽略再次点击；大小先按后端上限（10MB）前端预检。
-   */
-  onUploadAttachment(e) {
-    const recordId = (e.currentTarget.dataset || {}).id || ''
-    if (!recordId || this.data.uploading) return
-    wx.showActionSheet({
-      itemList: ['拍照', '从相册选择', '选择文件'],
-      success: (res) => {
-        if (res.tapIndex === 2) {
-          // 文件（PDF 等）：chooseMessageFile 才能选非图片文档
-          wx.chooseMessageFile({
-            count: 1,
-            type: 'file',
-            success: (r) => this._doUpload(recordId, (r.tempFiles || [])[0]),
-            fail: () => { /* 用户取消，静默 */ }
-          })
-          return
-        }
-        wx.chooseMedia({
-          count: 1,
-          mediaType: ['image'],
-          sourceType: res.tapIndex === 0 ? ['camera'] : ['album'],
-          success: (r) => this._doUpload(recordId, (r.tempFiles || [])[0]),
-          fail: () => { /* 用户取消，静默 */ }
-        })
-      }
-    })
-  },
-
-  /** 实际上传（chooseMedia/chooseMessageFile 共用）：大小预检 → 服务层 → 刷新 */
-  _doUpload(recordId, file) {
-    if (!file) return
-    if (file.size > 10 * 1024 * 1024) {
-      wx.showToast({ title: '文件不能超过 10MB', icon: 'none' })
-      return
-    }
-    this.setData({ uploading: true })
-    wx.showLoading({ title: '上传中', mask: true })
-    userService.uploadAttachment(recordId, file.tempFilePath)
-      .then(() => {
-        wx.hideLoading()
-        wx.showToast({ title: '上传成功', icon: 'success' })
-        this.fetch()
-      })
-      .catch((err) => {
-        wx.hideLoading()
-        wx.showToast({ title: errText(err, '上传失败，请重试'), icon: 'none' })
-      })
-      .then(() => this.setData({ uploading: false }))
-  },
-
   /** 个人信息卡 → 个人信息页（改头像/姓名/手机号） */
   onOpenProfile() {
     wx.navigateTo({ url: '/pages/profile/personal-info/personal-info' })
   },
 
   /**
-   * 「查看报告」（设计稿 05 的左按钮）：打开该记录的第一个附件。
-   * 无附件时给明确空态 —— 不打开空页面、不伪造报告内容。
+   * 「查看报告」（设计稿 05 的左按钮）：
+   *   1) 有文件附件 → 打开附件（图片/PDF）；
+   *   2) 无附件但属于检查检验记录 → 打开 V27 结构化报告单（report-detail）；
+   *   3) 两者都没有 → 明确空态提示，不打开空页面、不伪造报告内容。
+   * 真实后端档案多数是结构化报告（health_report_details）而无图片附件，
+   * 只认附件会让「查看报告」永远停在「暂无报告文件」。
    */
   onViewReport(e) {
     const id = (e.currentTarget.dataset || {}).id || ''
@@ -277,11 +256,38 @@ Page({
       return
     }
     const atts = it.attachments || []
-    if (!atts.length) {
-      wx.showToast({ title: '该记录暂无报告文件，可先上传', icon: 'none' })
+    if (atts.length) {
+      this._openAttachment(atts[0].url, atts[0].isPdf, atts[0].bundle)
       return
     }
-    this._openAttachment(atts[0].url, atts[0].isPdf)
+    if (!it.reportable) {
+      wx.showToast({ title: '该记录暂无报告文件', icon: 'none' })
+      return
+    }
+    this._openStructuredReport(id)
+  },
+
+  /**
+   * 打开结构化报告单：先确认报告存在，避免跳进详情页再看到「报告不存在」。
+   * 404（REPORT_DETAIL_NOT_FOUND / HEALTH_RECORD_NOT_FOUND）→ 保留原空态提示。
+   */
+  _openStructuredReport(id) {
+    wx.showLoading({ title: '加载报告', mask: true })
+    userService.getReport(id)
+      .then(() => {
+        wx.hideLoading()
+        wx.navigateTo({
+          url: '/pages/profile/report-detail/report-detail?recordId=' + encodeURIComponent(id)
+        })
+      })
+      .catch((err) => {
+        wx.hideLoading()
+        const missing = err && (err.status === 404 || /NOT_FOUND/.test(String(err.code || '')))
+        wx.showToast({
+          title: missing ? '该记录暂无报告文件' : errText(err, '报告加载失败，请稍后重试'),
+          icon: 'none'
+        })
+      })
   },
 
   /**
@@ -318,16 +324,21 @@ Page({
       })
   },
 
-  /** 查看附件：图片走 previewImage；pdf 走「downloadFile → openDocument」两步 */
+  /** 查看附件：包内图片走全屏浮层；远端图片走 previewImage；pdf 走「downloadFile → openDocument」 */
   onPreviewAttachment(e) {
     const ds = e.currentTarget.dataset || {}
-    this._openAttachment(ds.url || '', !!ds.pdf)
+    this._openAttachment(ds.url || '', !!ds.pdf, !!ds.bundle)
   },
 
-  _openAttachment(url, isPdf) {
+  _openAttachment(url, isPdf, bundle) {
     if (!url) return
     if (isPdf) {
       this._openPdf(url)
+      return
+    }
+    // 包内 /assets/ 路径 wx.previewImage 不认，用页面浮层展示
+    if (bundle) {
+      this.setData({ viewerUrl: url })
       return
     }
     wx.previewImage({
@@ -335,6 +346,11 @@ Page({
       current: url,
       fail: () => wx.showToast({ title: '图片打不开，链接可能已过期', icon: 'none' })
     })
+  },
+
+  /** 关闭全屏查看浮层 */
+  onCloseViewer() {
+    this.setData({ viewerUrl: '' })
   },
 
   /**
@@ -373,29 +389,6 @@ Page({
       fail: () => {
         wx.hideLoading()
         wx.showToast({ title: '下载失败，请检查网络', icon: 'none' })
-      }
-    })
-  },
-
-  /** 删除附件：二次确认（V4 §8.13 要求说明不可恢复）→ 服务层删除 → 刷新列表 */
-  onDeleteAttachment(e) {
-    const ds = e.currentTarget.dataset || {}
-    const recordId = ds.recordid || ''
-    const attachmentId = ds.id || ''
-    if (!recordId || !attachmentId) return
-    wx.showModal({
-      title: '删除附件',
-      content: '确定删除「' + (ds.name || '该附件') + '」？删除后不可恢复。',
-      confirmText: '删除',
-      confirmColor: '#F53F3F',
-      success: (res) => {
-        if (!res.confirm) return
-        userService.deleteAttachment(recordId, attachmentId)
-          .then(() => {
-            wx.showToast({ title: '已删除', icon: 'success' })
-            this.fetch()
-          })
-          .catch((err) => wx.showToast({ title: errText(err, '删除失败，请重试'), icon: 'none' }))
       }
     })
   },

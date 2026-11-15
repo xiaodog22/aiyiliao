@@ -102,6 +102,39 @@ ttsEngine=… | ttsStream=on|off | llmSmall=… | llmLarge=… | queueMax=… | 
 | `AI_RAG_TOP_K` / `AI_RAG_SCORE_THRESHOLD` / `AI_RAG_MAX_RETRIES` | 3 / 0.7 / 2 | 返回条数 / 相似度下限 / 失败重试次数 |
 | `AI_KNOWLEDGE_BASE_PATH` | config/hospital-knowledge.json | **院内知识库注入层**（静态 JSON，与 RAG 互补，见下节）；文件缺失/损坏 → 自动降级为通用 prompt |
 
+### DeepSeek 兜底（第二级 provider，2026-11-15）
+
+链路：`Ollama（首级）→ DeepSeek（兜底）→ business TriageRuleEngine（规则兜底）`。
+只在本地模型首 token 超时 / 模型缺失 / 请求失败时才调用云端；**前端、网关、business 零改动**（服务端出网）。
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `AI_DEEPSEEK_API_KEY` | （空） | **唯一凭据**，只写在 `backend/deploy/env.local`。留空 → 该级 fail-fast 跳过，等同未接入 |
+| `AI_DEEPSEEK_BASE_URL` | https://api.deepseek.com | OpenAI 兼容端点前缀，代码自动补 `/chat/completions` |
+| `AI_DEEPSEEK_MODEL` | deepseek-flash | 官方当前有效名；`deepseek-v4-pro` 可选，`deepseek-chat` 已不在列表 |
+| `AI_PROVIDER_ORDER` | ollama,deepseek | 顺序即降级顺序；`deepseek,ollama` 会把 DeepSeek 变首级 |
+| `AI_TRIAGE_DEEPSEEK_TIMEOUT_SECONDS` | 15 | 第二级单次预算；实际取 `min(该值, 任务自身 timeout)` |
+| `AI_CHAT_DEEPSEEK_TIMEOUT_SECONDS` | 20 | 同上 |
+| `AI_CAREPLAN_DEEPSEEK_TIMEOUT_SECONDS` | 45 | 同上 |
+| `AI_INTERPRET_DEEPSEEK_TIMEOUT_SECONDS` | 35 | 同上 |
+| `AI_BREAKER_FAILURES` / `AI_BREAKER_COOLDOWN_SECONDS` | 3 / 60 | 连续失败熔断，进程内状态（多副本各自独立） |
+
+实现约束（踩坑固化，见 `providers/deepseek.py`）：
+- 显式 `"thinking":{"type":"disabled"}` + `"reasoning_effort":"none"`：官方默认开启思考模式
+  会让 `temperature` 静默失效、额外产出 reasoning tokens 计费并拖长延迟；
+- `format=json` → `response_format={"type":"json_object"}`，prompt 缺小写 `json` 字样时补一条
+  最小约束（不动四份业务模板）；检查 `finish_reason`（length / content_filter / aborted…）
+  与空白 content，截断的 JSON 一律 `MODEL_OUTPUT_INVALID`；
+- 错误分流：401/403/402/422 → `CAPABILITY_UNAVAILABLE`，408/504 → `MODEL_TIMEOUT`，
+  429/5xx → `MODEL_UNAVAILABLE`；`usage` 只进日志，不回显 key / URL / 正文；
+- 缓存键含 `providerSignature`（顺序 | 云端模型名 | 是否配 key，**不含 key 值**），
+  `_CACHE_VERSION` 升到 2 丢弃旧条目，避免切到兜底后 TTL 内仍命中 Ollama 旧答案；
+- 契约 `ai-openapi.yaml` 两处 `error.dependency` 枚举已补 `deepseek`。
+
+验证：`pytest tests -q`（含 `test_deepseek_fallback.py` 28 例）；未填 key 时启动摘要应为
+`deepseek=missing-key | fallback=off`，填 key 后为 `deepseek=configured | fallback=on`。
+改完配置须执行 `deploy/scripts/orchestrator.ps1 -Action stop|start` 重启才生效。
+
 ## 端点
 
 **契约路径（共 5 条，ai-openapi.yaml）**：
@@ -169,7 +202,9 @@ ttsEngine=… | ttsStream=on|off | llmSmall=… | llmLarge=… | queueMax=… | 
 | 输出非 JSON / 缺结构 | `MODEL_OUTPUT_INVALID` | `ollama` | false | 不缝合半成品 |
 | 输入为空 | `INVALID_INPUT` | — | false | 提交方错误 |
 
-**CHAT result（promptTemplateVersion=`consultation-chat-v5`）**：
+**CHAT result（promptTemplateVersion=`consultation-chat-v6`）**：
+> v6（2026-11-15）：业务侧在会话已有成功 TRIAGE 时，会在 `inputInline` 前加
+> `【分诊建议已给出】` 标记 → 本执行器切「答疑模式」（只回答患者问题，不再追问症状细节）。
 
 ```json
 {

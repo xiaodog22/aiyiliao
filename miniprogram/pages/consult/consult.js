@@ -25,7 +25,9 @@
 const app = getApp()
 const icons = require('../../utils/icons.js')
 const userService = require('../../services/user.js')
+const doctorService = require('../../services/doctor.js')
 const speechService = require('../../services/speech.js')
+const resourceService = require('../../services/resource.js')
 
 /**
  * 安全解码 query / objectKey 片段：畸形 % 序列（如 `?dept=%E4%B8`）会让
@@ -37,6 +39,7 @@ function safeDecode(v) {
 }
 const { errText } = require('../../utils/err-text.js')
 const { hasContent } = require('../../utils/input-guard.js')
+const { withFallback } = require('../../services/request.js')
 // 时间展示统一走 utils/datetime.js（ISO Instant → 设备本地 'YYYY-MM-DD' / 'HH:mm'）
 const { fmtLocalDateTime, dayLabel } = require('../../utils/datetime.js')
 
@@ -47,9 +50,12 @@ const { fmtLocalDateTime, dayLabel } = require('../../utils/datetime.js')
 const INPUT_MAX = 2000
 const INPUT_MAX_TIP = '已达字数上限，可先发送再补充'
 
-const POLL_INTERVAL = 4000   // 等待医生/AI 回复的轮询间隔
-const POLL_MAX = 12          // 最多 12 次（≈48s），超时不再打扰服务端
+const POLL_INTERVAL = 2000   // 等待医生/AI 回复的轮询间隔（2026-11-15：4s→2s，同步更快）
+const POLL_FIRST_DELAY = 400 // 首轮不等满一个间隔：发送/进页后尽快拿到新消息与接诊态
+const POLL_MAX = 24          // 最多 24 次（≈48s），超时不再打扰服务端
 const IMG_RE = /\.(png|jpe?g|webp)(\?|$)/i
+// 图片消息白名单（2026-11-15 上传合规）：与后端 validateImageContent 同口径
+const IMAGE_MAX_BYTES = 10 * 1024 * 1024
 
 Page({
   data: {
@@ -131,7 +137,19 @@ Page({
       pendingDocSub: pendingDocSub ? pendingDocSub + ' · 互联网医院' : '互联网医院',
       hasDoctor: !!pendingDoctorId
     })
-    this.fetch().then(() => this._startLive())
+    // 同步医生端「线上问诊设置」：指定医生但当前不在线 → 只提示不阻断
+    //（预约制：提交后由医生上线接单；请求失败/字段缺失按未知处理，不打扰患者）
+    if (pendingDoctorId) this._noticeDoctorOffline(pendingDoctorId)
+    this.fetch().then(() => this._startLive(true))
+  },
+
+  /** 医生不在线时的非阻断提示（availability 是增强信息，失败静默） */
+  _noticeDoctorOffline(doctorId) {
+    doctorService.getAvailability(doctorId).then((a) => {
+      if (a && a.online === false) {
+        wx.showToast({ title: '该医生当前不在线，提交后待其上线接诊', icon: 'none', duration: 2600 })
+      }
+    }).catch(() => {})
   },
 
   onUnload() {
@@ -146,7 +164,11 @@ Page({
     const theme = app.globalData.theme || 'standard'
     const hc = !!app.globalData.highContrast
     if (theme !== this.data.theme || hc !== this.data.hc) this.setData({ theme, hc })
-    if (this.data.activeId) this._startLive()
+    if (this.data.activeId) {
+      // 回到页面立即同步一次，不等首个定时器（2026-11-15 同步提速）
+      this._stopLive()
+      this._liveTick()
+    }
   },
 
   /** 离开页面：停常驻同步，避免后台空转 */
@@ -321,9 +343,12 @@ Page({
           attachCount: items.filter((x) => x.kind === 'file').length,
           consultError: ''
         }
-        // 兜底：会话已有医生侧消息（回复 / 接诊系统提示）→ 必然已接诊。
+        // 兜底：会话已有**医生侧**消息（role=doctor / 「已接诊」系统提示）→ 必然已接诊。
         // 详情接口偶发失败或元信息轮询未到时，不能让状态停在「待接诊」误导患者。
-        const hasDoctorSide = items.some((x) => x.kind === 'doc' || x.kind === 'rx')
+        // ⚠️ 不能按渲染 kind 判：AI 助手回复（role=assistant）也渲染成 doc 气泡，
+        //    会把「AI 先答一句」误判成医生接单，绕过预约制（D6，2026-11-15）。
+        const hasDoctorSide = raw.some((m) => String(m.role || '') === 'doctor'
+          || (String(m.role || '') === 'system_notice' && /接诊/.test(String(m.content || ''))))
         if (hasDoctorSide && !this.data.accepting) {
           patch.accepting = true
           patch.tipText = '医生正在查看您的描述，请稍候…'
@@ -354,16 +379,19 @@ Page({
       const key = String(m.content || '')
       const meta = this._fileMeta[key] || {}
       const base = key.split('/').pop() || ''
-      const name = meta.name || (base ? safeDecode(base) : '检查资料')
+      const name = m.attachmentName || meta.name || (base ? safeDecode(base) : '检查资料')
+      const size = Number(m.attachmentSize || meta.size || 0)
+      const rawUrl = m.attachmentUrl || meta.url || ''
       return {
         id,
         kind: 'file',
-        // 只有本次会话上传过的文件才有签名 url；重载后无 url → 空串，模板退化为文件卡（不裂图）
-        url: meta.url ? userService.resolveAttachmentUrl(meta.url) : '',
+        // 服务端按 objectKey 反查健康档案附件下发签名 URL（同 objectKey → 同 URL）；
+        // 仅在本轮刚发出、尚未刷新到服务端字段时用 meta.url 兜底。
+        url: rawUrl ? userService.resolveAttachmentUrl(rawUrl) : '',
         isImage: IMG_RE.test(name),
         isPdf: /\.pdf(\?|$)/i.test(name),
         fileName: name,
-        fileSub: meta.size ? '已上传 · ' + this._sizeText(meta.size) : '已上传'
+        fileSub: size ? '已上传 · ' + this._sizeText(size) : '已上传'
       }
     }
 
@@ -422,6 +450,8 @@ Page({
       wx.showToast({ title: INPUT_MAX_TIP, icon: 'none' })
     }
     if (v.length < INPUT_MAX) this._maxTipShown = false
+    // 用户改了内容 = 这是一条新消息，幂等键不能沿用上一条失败的（否则服务端按旧摘要判重）
+    this._clearSendKey()
     this.setData({ input: v })
   },
 
@@ -473,15 +503,26 @@ Page({
       }
       return this._createThenSend(text)
     }
+    // 2026-11-15 修正：不再拦截「接单前的后续消息」—— 患者可随时补充病情/检查资料，
+    // 医生端在工作台能看到完整描述；接诊态只影响顶部提示，不影响输入。
     this.setData({ sending: true, input: '' })
+    // 乐观上屏（2026-11-15 响应提速）：不等 POST 返回就显示自己这条；
+    // 成功后用服务端权威列表整表替换，失败则移除并恢复原文。
+    const localId = 'local-' + Date.now()
+    this._appendLocalMessage({ id: localId, kind: 'user', text, timeText: nowTime() })
+    const idemKey = this._sendKey()
     return userService
-      .sendConsultationMessage(id, { content: text, inputMode: 'TEXT' })
-      .then(() => this._loadMessages())
+      .sendConsultationMessage(id, { content: text, inputMode: 'TEXT' }, { idempotencyKey: idemKey })
+      .then(() => {
+        this._clearSendKey()
+        return this._loadMessages()
+      })
       .then(() => {
         // 以「自己这条已落库之后」的条数为基准：再涨一条 = 医生/AI 回复到达
         this._startPolling(this.data.messages.length)
       })
       .catch((err) => {
+        this._removeLocalMessage(localId)
         const code = (err && (err.httpCode || err.statusCode)) || 0
         if (code === 409) {
           // 医生已结束本次问诊：锁输入并显示终态，而不是让患者反复重试
@@ -574,7 +615,7 @@ Page({
         this._pollTimer = setTimeout(tick, POLL_INTERVAL)
       })
     }
-    this._pollTimer = setTimeout(tick, POLL_INTERVAL)
+    this._pollTimer = setTimeout(tick, POLL_FIRST_DELAY)
   },
 
   _stopPolling() {
@@ -586,13 +627,14 @@ Page({
 
   // ============ 常驻同步（2026-10-24：医生接诊/回复实时可见） ============
   /**
-   * 会话内常驻轮询：每 4s 拉消息；每 12s 拉一次会话详情，同步「正在接诊」等元信息。
+   * 会话内常驻轮询：每 2s 拉消息；每 2 轮（≈4s）拉一次会话详情，同步「正在接诊」等元信息。
    * 发送后的短轮询（_startPolling）进行中时让位，避免两套定时器重复请求。
    */
-  _startLive() {
+  _startLive(immediate) {
     this._stopLive()
     if (this._gone || !this.data.activeId || this.data.closed) return
-    this._liveTimer = setTimeout(() => this._liveTick(), POLL_INTERVAL)
+    // 首次进页/回到页面走 POLL_FIRST_DELAY，之后按 POLL_INTERVAL 匀速（避免 400ms 空转）
+    this._liveTimer = setTimeout(() => this._liveTick(), immediate ? POLL_FIRST_DELAY : POLL_INTERVAL)
   },
 
   _stopLive() {
@@ -608,7 +650,7 @@ Page({
     const round = (this._liveRound = (this._liveRound || 0) + 1)
     const before = this.data.messages.length
     const jobs = [this._loadMessages()]
-    if (round % 3 === 0) jobs.push(this._syncMeta())
+    if (round % 2 === 0) jobs.push(this._syncMeta())
     Promise.all(jobs)
       .then(() => {
         // 拉到新回复即收起「正在输入」
@@ -628,84 +670,180 @@ Page({
   },
 
   // ============ 附件 ============
-  /** ＋：拍照 / 相册 / 聊天文件（检查报告多为图片或 PDF） */
+  /**
+   * ＋：**只允许从健康档案选择已有检查资料**（2026-11-15 上传合规收紧）。
+   * ⚠️ 不再提供拍照 / 相册 / 微信文件入口：患者端上传权限仅限健康档案，
+   *    防止任意图片/文件进入医患会话；服务端另有 objectKey 归属白名单兜底。
+   */
   onPickAttach() {
     if (this.data.uploading) return
     if (!this.data.activeId) {
       wx.showToast({ title: this.data.pendingDoctorId ? '请先发送首条消息创建会话' : '请先选择医生发起问诊', icon: 'none' })
       return
     }
-    const items = ['拍照上传', '从相册选择', '选择聊天文件']
-    wx.showActionSheet({
-      itemList: items,
-      success: (res) => {
-        if (res.tapIndex === 0) this._pickImage('camera')
-        else if (res.tapIndex === 1) this._pickImage('album')
-        else this._pickFile()
-      },
-      fail: () => {}   // 用户取消，不算错误
-    })
-  },
-
-  _pickImage(sourceType) {
-    wx.chooseMedia({
-      count: 1,
-      mediaType: ['image'],
-      sourceType: [sourceType],
-      sizeType: ['compressed'],
-      success: (res) => {
-        const f = (res.tempFiles || [])[0]
-        if (!f) return
-        const name = sourceType === 'camera' ? '照片.jpg' : (f.tempFilePath || '').split('/').pop() || '照片.jpg'
-        this._uploadAndSend(f.tempFilePath, f.size, name)
-      },
-      fail: (e) => { console.warn('[consult] 选择图片被取消', e) }
-    })
-  },
-
-  _pickFile() {
-    wx.chooseMessageFile({
-      count: 1,
-      type: 'file',
-      extension: ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
-      success: (res) => {
-        const f = (res.tempFiles || [])[0]
-        if (!f) return
-        this._uploadAndSend(f.path, f.size, f.name || '检查资料')
-      },
-      fail: (e) => { console.warn('[consult] 选择文件被取消', e) }
-    })
+    // 2026-11-15 修正：接单前也允许补充检查资料（与文本消息同一口径）
+    this._pickFromHealthRecords()
   },
 
   /**
-   * 上传 → 以 IMAGE_NOTE 消息发出。
-   * ⚠️ 前端不构造任何 URL（objectKey 由服务端下发）；uploading 兼作防重复闸门。
-   * ⚠️ 用**独立上传**端点（POST /api/v1/attachments）：会话内发图没有既有档案，
-   *    走 health-records/{recordId}/attachments 会因 recordId 为空得到 404。
+   * 从健康档案选择已有检查图片（唯一上传入口，2026-11-15）：
+   * 不重复上传，直接把档案附件的 objectKey 或系统推送报告的 resourceKey 作为 IMAGE 消息发出。
+   * 前置校验（与后端 validateImageContent 同口径）：
+   *   · 仅 image/jpeg、image/png、image/webp；
+   *   · 0 < size ≤ 10MB；
+   *   · objectKey 属于本人档案附件；系统推送报告只认 resource_asset 的 health.* key。
+   * 降级与健康档案页一致（仅开发档）：后端读失败时用演示档案，其中报告图带真实 resourceKey。
    */
-  _uploadAndSend(path, size, name) {
-    if (!path) return
-    if (size > 10 * 1024 * 1024) {
-      wx.showToast({ title: '文件超过 10MB，请压缩后再试', icon: 'none' })
+  _pickFromHealthRecords() {
+    if (this.data.uploading) return
+    withFallback(userService.listHealthRecords(), () => this._demoHealthRecords())
+      .then((list) => {
+        const opts = []
+        ;(Array.isArray(list) ? list : []).forEach((rec) => {
+          ;(rec.attachments || []).forEach((a) => {
+            const name = String(a.fileName || a.name || '检查资料')
+            const objectKey = a.objectKey || a.object_key || ''
+            const resourceKey = String(a.resourceKey || '')
+            // 系统推送报告（resource_asset）只认 health.*，防止拿 banner 等资源冒充检查资料
+            const key = objectKey || (/^health\./.test(resourceKey) ? resourceKey : '')
+            const mime = this._imageMime(a.mime, name)
+            const size = Number(a.size) || 0
+            if (!key || !mime || size > IMAGE_MAX_BYTES) return
+            opts.push({
+              key, name, mime, size,
+              // 资源库报告走匿名静态端点；档案附件走短期签名 URL
+              url: objectKey
+                ? userService.resolveAttachmentUrl(a.url || '')
+                : resourceService.staticResourceUrl(resourceKey),
+              recordId: rec.id || '',
+              attachmentId: a.id || '',
+              record: rec.title || rec.recordType || ''
+            })
+          })
+        })
+        if (!opts.length) {
+          wx.showToast({ title: '健康档案里还没有可发送的合规图片', icon: 'none' })
+          return
+        }
+        const picked = opts.slice(0, 6)
+        wx.showActionSheet({
+          itemList: picked.map((o) => o.name + (o.record ? ' · ' + o.record : '')),
+          success: (res) => {
+            const o = picked[res.tapIndex]
+            if (o) this._sendRecordAttachment(o)
+          },
+          fail: () => {}
+        })
+      })
+      .catch((err) => {
+        wx.showToast({ title: errText(err, '健康档案加载失败'), icon: 'none' })
+      })
+  },
+
+  /** 演示档案（仅开发档降级用）：与健康档案页同源，就诊记录与报告都可作为可选资料 */
+  _demoHealthRecords() {
+    const m = (app && app.MOCK && app.MOCK.HEALTH_RECORDS) || {}
+    const out = []
+    ;(m.visits || []).forEach((v, i) => out.push({
+      id: 'mv' + i,
+      title: (v.dept || '') + (v.doctor ? ' · ' + v.doctor : ''),
+      attachments: Array.isArray(v.attachments) ? v.attachments : []
+    }))
+    ;(m.reports || []).forEach((r, i) => out.push({
+      id: 'mr' + i,
+      title: r.name || '',
+      attachments: Array.isArray(r.attachments) ? r.attachments : []
+    }))
+    return out
+  },
+
+  /** MIME 白名单归一：仅 jpeg/png/webp；无 mime 时按扩展名判定，不合规返回空串 */
+  _imageMime(mime, fileName) {
+    const m = String(mime || '').trim().toLowerCase()
+    if (m === 'image/jpeg' || m === 'image/jpg') return 'image/jpeg'
+    if (m === 'image/png' || m === 'image/webp') return m
+    const ext = String(fileName || '').split('.').pop().toLowerCase()
+    if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+    if (ext === 'png') return 'image/png'
+    if (ext === 'webp') return 'image/webp'
+    return ''
+  },
+
+  /**
+   * 发送健康档案里已有的图片（不重新上传，直接复用 objectKey）。
+   * 乐观插入气泡 + 失败回滚；超时重试复用同一幂等键，避免医生收到重复图片。
+   */
+  _sendRecordAttachment(o) {
+    const id = this.data.activeId
+    if (!id || !o || !o.key || !o.mime) return
+    if (o.size > IMAGE_MAX_BYTES) {
+      wx.showToast({ title: '图片超过 10MB，请压缩后再发送', icon: 'none' })
       return
     }
-    const id = this.data.activeId
+    if (this.data.uploading) return
+    this._fileMeta[o.key] = { name: o.name || '检查资料', size: o.size || 0, url: o.url || '' }
+    const localId = 'local-' + Date.now()
+    this._appendLocalMessage({
+      id: localId,
+      kind: 'file',
+      url: o.url || '',
+      isImage: true,
+      isPdf: false,
+      fileName: o.name || '检查资料',
+      fileSub: '已发送 · ' + this._sizeText(o.size || 0)
+    })
     this.setData({ uploading: true })
-    userService
-      .uploadStandaloneAttachment(path)
-      .then((att) => {
-        const objectKey = (att && (att.objectKey || att.object_key)) || ''
-        if (!objectKey) throw new Error('EMPTY_KEY')
-        // 记下本次会话的真实文件名/大小与短期签名 url：
-        // 契约消息体只带 objectKey，重载后拿不到签名 → 图片降级为文件卡（不裂图）
-        this._fileMeta[objectKey] = { name, size, url: (att && att.url) || '' }
-        return userService.sendConsultationMessage(id, { content: objectKey, inputMode: 'IMAGE' })
+    // 图片幂等键按 objectKey 绑定：同一张图超时重试复用同一键（不重复落库）；
+    // 换一张图则换新键（避免"同键异体"被后端 409 拒绝）。
+    const idemKey = this._imgSendKey(o.key)
+    return userService.sendConsultationMessage(id, { content: o.key, inputMode: 'IMAGE' }, { idempotencyKey: idemKey })
+      .then(() => {
+        this._clearImgSendKey()
+        return this._loadMessages()
       })
-      .then(() => this._loadMessages())
       .catch((err) => {
-        wx.showToast({ title: errText(err, '上传失败，请重试'), icon: 'none' })
+        this._removeLocalMessage(localId)
+        wx.showToast({ title: errText(err, '发送失败，请重试'), icon: 'none' })
       })
       .then(() => this.setData({ uploading: false }))
+  },
+
+  /** 乐观消息：本地先上屏（发送/图片共用），成功后由服务端列表整表替换 */
+  _appendLocalMessage(msg) {
+    const idx = this.data.messages.length
+    this.setData({ ['messages[' + idx + ']']: msg })
+    this._scrollToBottom()
+  },
+
+  /** 失败回滚：按本地 id 移除乐观消息（不碰服务端已落库的任何一条） */
+  _removeLocalMessage(localId) {
+    const msgs = this.data.messages.filter((m) => m.id !== localId)
+    this.setData({ messages: msgs })
+  },
+
+  /** 幂等键：同一句话/同一张图失败重试必须复用，成功或改文后清空 */
+  _sendKey() {
+    if (!this._lastSendKey) {
+      this._lastSendKey = 'k-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
+    }
+    return this._lastSendKey
+  },
+
+  _clearSendKey() {
+    this._lastSendKey = ''
+  },
+
+  /** 图片消息幂等键：同一 objectKey/resourceKey 复用，换图换新键 */
+  _imgSendKey(key) {
+    const cur = this._lastImgSend
+    if (cur && cur.key === key) return cur.idem
+    const idem = 'img-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
+    this._lastImgSend = { key, idem }
+    return idem
+  },
+
+  _clearImgSendKey() {
+    this._lastImgSend = null
   },
 
   onPreviewAttach(e) {

@@ -15,7 +15,7 @@
       </view>
     </view>
 
-    <!-- 搜索：本地过滤标题/摘要/分类，不请求后端（科普库随包发布，无检索接口） -->
+    <!-- 搜索：本地即时过滤标题/摘要/分类，同时联动服务端 kw 检索（N12），失败自动回落本地 -->
     <view class="kb-search">
       <image class="kb-search-ic" src="{{icons.search}}" />
       <input
@@ -45,6 +45,9 @@
           class="kb-type {{type === item.key ? 'kb-type-on' : ''}}"
           data-type="{{item.key}}" bindtap="onType">{{item.name}}</view>
   </view>
+
+  <!-- 数据来源提示：服务端列表为空/不可用时降级本地库（契约 N12：显式提示，不伪造服务端数据） -->
+  <view wx:if="{{sourceTip}}" class="kb-src">{{sourceTip}}</view>
 
   <!-- 两列卡片：封面图在上（分包内 4:3 素材），标题与「分类 · 类型」在下 -->
   <view class="kb-grid">

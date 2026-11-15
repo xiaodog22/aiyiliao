@@ -317,6 +317,22 @@
   background: var(--primary);
   border-top-right-radius: 8rpx;
 }
+
+/* 患者图片消息（健康档案附件）：缩略图 + 文件名，点击预览 */
+.dc-msg-img {
+  display: block;
+  width: 360rpx;
+  border-radius: 8rpx;
+  background: var(--bg);
+}
+
+.dc-file-name {
+  display: block;
+  margin-top: 8rpx;
+  font-size: var(--font-body);
+  color: var(--text-weak);
+  word-break: break-all;
+}
 .dc-text {
   display: block;
   font-size: var(--font-body);

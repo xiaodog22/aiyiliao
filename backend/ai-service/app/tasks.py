@@ -439,11 +439,20 @@ class TaskService:
         if descriptor is None:
             return None
         model_id = self._model_resolver(self.settings, task.get("modelProfile"))
+        # provider 配置签名：顺序 / 云端模型名 / 是否配 key 任一变化即换键（**不含 key 值**）。
+        # 否则从「仅 Ollama」切到「Ollama → DeepSeek 兜底」后，TTL 内仍会命中旧的本地结果。
+        s = self.settings
+        provider_signature = "|".join((
+            str(s.provider_order or ""),
+            str(s.deepseek_model or ""),
+            "key" if s.deepseek_api_key else "nokey",
+        ))
         return compute_cache_key(
             task,
             tenant_secret=self.cache_secret,
             prompt_template_version=descriptor.get("promptTemplateVersion", ""),
             model_id=model_id,
+            provider_signature=provider_signature,
         )
 
     def _succeed_from_cache(self, task: dict, entry: dict) -> None:

@@ -148,6 +148,16 @@
           <view class="btn btn-outline apt-empty-btn pressable" data-key="appoint" bindtap="onRoute">去预约挂号</view>
         </view>
 
+        <!-- 在线问诊接单提示（D6，2026-11-15）：待接单常驻；已接单提示一次，点进会话即已读 -->
+        <view wx:if="{{consultNotice}}" class="apt-consult pressable" bindtap="onConsultNotice">
+          <view class="apt-consult-dot {{consultNotice.accepted ? 'apt-consult-dot-on' : ''}}"></view>
+          <view class="apt-consult-body">
+            <view class="apt-consult-t">{{consultNotice.title}}</view>
+            <view class="apt-consult-s">{{consultNotice.sub}}</view>
+          </view>
+          <image class="apt-consult-arrow" src="{{icons.chevronRight}}" />
+        </view>
+
       </view>
 
       <!-- ============================================================

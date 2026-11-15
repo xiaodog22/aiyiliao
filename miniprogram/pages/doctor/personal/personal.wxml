@@ -45,7 +45,7 @@
 
     <view class="row pd-row row-arrow pressable" data-page="schedule" bindtap="onEntry">
       <image class="pd-row-ic" src="{{icons.calendar}}" />
-      <view class="pd-row-text">排班设置</view>
+      <view class="pd-row-text">线上问诊设置</view>
     </view>
 
     <view class="row pd-row row-arrow pressable" data-page="account-security" bindtap="onEntry">

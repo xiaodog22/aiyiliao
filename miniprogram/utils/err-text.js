@@ -60,6 +60,8 @@ function errText(err, fallback) {
   if (code === 'FAMILY_MEMBER_NOT_FOUND') return '尚未获得该成员的代管授权'
   if (code === 'INVITATION_EXPIRED') return '授权码已使用或已过期，请重新申请'
   if (code === 'INVITATION_NOT_FOUND') return '授权码无效，请重新申请'
+  // 在线问诊：先预约、等医生接单后才能继续对话（后端 409 WAITING_ACCEPT）
+  if (code === 'WAITING_ACCEPT') return '医生接单后才能继续对话，请耐心等待'
 
   // ② 业务错误 / 无 code：仅当 message 是中文才展示
   if (readable(raw)) return raw

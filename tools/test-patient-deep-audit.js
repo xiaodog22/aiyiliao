@@ -150,8 +150,8 @@ section('B. P1-04 consultation 失败气泡文案断言')
   const src = readSrc('pages/consultation/consultation.js')
   // B1 源级：文件 require err-text.js
   check('B1 源码 require err-text.js', /require\(['"][^'"]*err-text\.js['"]\)/.test(src))
-  // B2 源级：_onAiFail 体内调用 errText
-  const m = src.match(/_onAiFail\(err\)\s*\{([\s\S]*?)\n\s*\}/)
+  // B2 源级：_onAiFail 体内调用 errText（2026-11-15：签名扩为 (err, text)，text 用于规则兜底）
+  const m = src.match(/_onAiFail\(err(?:,\s*text)?\)\s*\{([\s\S]*?)\n\s*\}/)
   const body = m ? m[1] : ''
   check('B2 _onAiFail 调用 errText()', /errText\s*\(/.test(body), '方法体未匹配到 errText')
 
@@ -236,11 +236,14 @@ section('C. 边界与篡改辅助断言')
     !/(standard|large|xlarge)[^\n]*\b(includes|indexOf)\b/.test(themeSnippet), themeSnippet.trim())
 
   // C7 D-B-P2-03 已修：进度卡分支按契约英文枚举，不再比对 aptStatusText 的中文展示文案
+  // 2026-11-15：两页取数逻辑统一抽到 utils/flow-progress.js，枚举分支跟着搬家，判据同步到新模块
   const consSrc = readSrc('pages/consultation/consultation.js')
   const triPageSrc = readSrc('pages/triage/triage.js')
+  const flowSrc = readSrc('utils/flow-progress.js')
   const cnBranch = /status === '待就诊'|status === '就诊中'|status === '已完成'/.test(consSrc) ||
-    /status === '待就诊'|status === '就诊中'|status === '已完成'/.test(triPageSrc)
-  const enumBranch = /raw === 'CONFIRMED'/.test(consSrc) && /raw === 'CONFIRMED'/.test(triPageSrc)
+    /status === '待就诊'|status === '就诊中'|status === '已完成'/.test(triPageSrc) ||
+    /status === '待就诊'|status === '就诊中'|status === '已完成'/.test(flowSrc)
+  const enumBranch = /raw === 'CONFIRMED'/.test(flowSrc)
   check('C7 D-B-P2-03 进度卡按英文枚举分支（无中文文案耦合）', !cnBranch && enumBranch,
     '中文分支残留=' + cnBranch + ' 枚举分支=' + enumBranch)
 

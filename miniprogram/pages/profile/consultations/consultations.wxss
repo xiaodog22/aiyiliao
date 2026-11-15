@@ -41,7 +41,7 @@
 .qc-title {
   flex: 1;
   min-width: 0;
-  font-size: calc(var(--font-title) + 6rpx);
+  font-size: var(--font-title);
   font-weight: 700;
   color: var(--text-main);
   line-height: 1.35;
@@ -78,14 +78,14 @@
 
 .qc-date {
   margin-top: 20rpx;
-  font-size: var(--font-h2);
+  font-size: var(--font-body);
   color: var(--text-weak);
   line-height: 1.4;
 }
 
 .qc-brief {
   margin-top: 32rpx;
-  font-size: calc(var(--font-body) + 2rpx);
+  font-size: var(--font-body);
   color: var(--text-main);
   line-height: 1.5;
   overflow: hidden;
@@ -111,7 +111,7 @@
 }
 
 .qc-more-t {
-  font-size: var(--font-h2);
+  font-size: var(--font-body);
   font-weight: 600;
   color: var(--primary);
   line-height: 1.4;
@@ -143,22 +143,22 @@
     border-radius: 8px;
   }
 
-  .qc-title { font-size: 23px; }
+  .qc-title { font-size: 21px; }
   .qc-badge {
     margin: 2px 0 0 8px;
     padding: 4px 10px;
     border-radius: 6px;
     font-size: 15px;
   }
-  .qc-date { margin-top: 10px; font-size: 17px; }
-  .qc-brief { margin-top: 16px; font-size: 16px; }
+  .qc-date { margin-top: 10px; font-size: 15px; }
+  .qc-brief { margin-top: 16px; font-size: 15px; }
 
   .qc-foot {
     margin-top: 22px;
     padding: 18px 0 19px;
     border-top-width: 1px;
   }
-  .qc-more-t { font-size: 17px; }
+  .qc-more-t { font-size: 15px; }
   .qc-more-ic { width: 10px; height: 10px; margin-left: 4px; }
 
   .qc-page .load-more,
@@ -176,10 +176,10 @@
     padding: 20px 20px 0;
     border-radius: 12px;
   }
-  .qc-title { font-size: 25px; }
+  .qc-title { font-size: 23px; }
   .qc-badge { font-size: 15px; padding: 4px 11px; }
-  .qc-date { font-size: 18px; }
-  .qc-brief { font-size: 17px; }
+  .qc-date { font-size: 16px; }
+  .qc-brief { font-size: 16px; }
   .qc-foot { margin-top: 24px; padding: 20px 0 21px; }
-  .qc-more-t { font-size: 18px; }
+  .qc-more-t { font-size: 16px; }
 }

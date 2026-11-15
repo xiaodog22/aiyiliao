@@ -14,6 +14,7 @@
 const app = getApp()
 const icons = require('../../../utils/icons.js')
 const userService = require('../../../services/user.js')
+const doctorService = require('../../../services/doctor.js')
 const { errText } = require('../../../utils/err-text.js')
 
 Page({
@@ -75,7 +76,41 @@ Page({
         doctors: docArr,
         shown: this._filter(docArr, '')
       })
+      // 同步医生端「线上问诊设置」的在线状态（异步补齐，不阻塞列表首屏）
+      this._loadAvailability(docArr)
     }).catch(() => this.setData({ loading: false }))
+  },
+
+  /**
+   * 同步医生在线接诊状态（GET /api/v1/doctors/{id}/availability，与医生端设置同源）。
+   * · 明确 online=false → 卡片置灰、点击提示「暂未开放线上问诊」，不下单；
+   * · 请求失败或字段缺失 → 视为未知，**不拦截**患者（fail-open，避免误伤演示/断网场景）；
+   * · 在线的排前面，未知保持原序，离线的沉底。
+   */
+  _loadAvailability(docs) {
+    const arr = Array.isArray(docs) ? docs : []
+    if (!arr.length) return
+    Promise.all(arr.map((d) => doctorService.getAvailability(d.id).catch(() => null)))
+      .then((list) => {
+        const av = {}
+        arr.forEach((d, i) => { av[d.id] = list[i] || {} })
+        const decorated = arr.map((d) => {
+          const a = av[d.id] || {}
+          const known = typeof a.online === 'boolean'
+          const available = known ? !!a.online : null
+          let availText = ''
+          if (known) availText = available ? (a.inSlot === true ? '在线接诊' : '今日可约') : '暂不接诊'
+          return Object.assign({}, d, {
+            available,
+            availText,
+            availCls: known ? (available ? 'cp-avail-on' : 'cp-avail-off') : ''
+          })
+        })
+        const sorted = decorated.filter((d) => d.available === true)
+          .concat(decorated.filter((d) => d.available !== true))
+        this.setData({ doctors: sorted, shown: this._filter(sorted, this.data.activeDept) })
+      })
+      .catch(() => { /* 状态是增强信息，失败不影响选择 */ })
   },
 
   _filter(list, deptId) {
@@ -93,6 +128,11 @@ Page({
     const d = (e.currentTarget.dataset && e.currentTarget.dataset.doctor) || {}
     if (!d || !d.id) {
       wx.showToast({ title: '医生信息不完整，请重试', icon: 'none' })
+      return
+    }
+    // 医生已在「线上问诊设置」里下线 → 明确拦截（未知状态不拦截）
+    if (d.available === false) {
+      wx.showToast({ title: '该医生暂未开放线上问诊，请选择其他医生', icon: 'none' })
       return
     }
     this._gotoConsult(d)

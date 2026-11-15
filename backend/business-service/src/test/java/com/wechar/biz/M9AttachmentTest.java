@@ -103,6 +103,36 @@ class M9AttachmentTest {
 
     // ---------------------------------------------------------------- 主链路
 
+    /**
+     * 报告唯一性（2026-11-15）：同一档案记录下内容相同的文件（sha256 一致，文件名可不同）
+     * 只保留一份附件；第二次上传返回既有附件 id，不新增记录。
+     */
+    @Test
+    void 同一记录重复上传相同文件_按sha256去重() throws Exception {
+        String recordId = createRecord("m9-key-dedupe-01", "血常规");
+
+        MvcResult first = mockMvc.perform(multipart("/api/v1/health-records/" + recordId + "/attachments")
+                        .file(png("report.png", 2048))
+                        .header("X-User-Id", USER)
+                        .header("Idempotency-Key", "m9-upload-dedupe-01"))
+                .andExpect(status().isOk())
+                .andReturn();
+        String firstId = extractId(body(first), "hra-");
+
+        MvcResult second = mockMvc.perform(multipart("/api/v1/health-records/" + recordId + "/attachments")
+                        .file(png("report-copy.png", 2048))
+                        .header("X-User-Id", USER)
+                        .header("Idempotency-Key", "m9-upload-dedupe-02"))
+                .andExpect(status().isOk())
+                .andReturn();
+        org.junit.jupiter.api.Assertions.assertEquals(firstId, extractId(body(second), "hra-"));
+
+        mockMvc.perform(get("/api/v1/health-records/" + recordId + "/attachments")
+                        .header("X-User-Id", USER))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", org.hamcrest.Matchers.hasSize(1)));
+    }
+
     @Test
     void 上传_列表_签名读取_删除_全链路() throws Exception {
         String recordId = createRecord("m9-key-main-01", "血常规");

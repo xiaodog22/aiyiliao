@@ -150,6 +150,19 @@ function setOnlineStatus(online) {
 }
 
 /**
+ * 患者侧医生的在线接诊状态（GET /api/v1/doctors/{id}/availability，公开只读）
+ * 与医生端「线上问诊设置」同源：在线状态 + 当前是否在接诊时段。
+ * @param {string} doctorId
+ * @returns {Promise<{online:boolean, accepting:boolean, inSlot:boolean,
+ *                    nextSlotAt:string, capacityLeft:number}>}
+ *          ⚠️ 字段缺失按"未知"处理，调用方不得把未知当离线拦截患者。
+ */
+function getAvailability(doctorId) {
+  if (!doctorId) return Promise.resolve(null)
+  return get(API.DOCTOR_AVAILABILITY, { id: doctorId })
+}
+
+/**
  * 医生排队列表（契约 GET /api/v1/doctor/appointments）
  *
  * ⚠️ 不能用 /api/v1/appointments/me 代替：那条是**患者本人预约**语义（SQL 按 user_id 过滤），
@@ -354,7 +367,7 @@ module.exports = {
   login, loginByWxCode, listAllDoctors, listDoctorsByDept,
   listAppointments, updateStatus, listDoctorTodos,
   listConsultations, consultationMessages, acceptConsultation, doctorReply, closeConsultation,
-  getSchedule, saveSchedule, setOnlineStatus,
+  getSchedule, saveSchedule, setOnlineStatus, getAvailability,
   listBeds, updateBed, assignBed,
   listBedApplications, submitBedApplication
 }

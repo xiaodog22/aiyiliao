@@ -1,12 +1,16 @@
 <view class="page theme-{{theme}} triage-page">
 
-  <!-- ============ 顶部导航（设计效果图 02：返回 + 居中标题，无 Tab） ============ -->
-  <view class="nav-bar" style="padding-top: {{statusBarHeight + 8}}px;">
+  <!-- ============ 顶部导航（设计效果图 02：返回 + 居中标题，无 Tab） ============
+       ⚠️ 自定义导航：状态栏高度与「微信胶囊安全宽」由 JS 注入（triage.js `_navSafeRight()`），
+          否则右上角「清空」会被胶囊压住、点不到。 -->
+  <view class="nav-bar" style="padding-top: {{statusBarHeight + 8}}px; padding-right: {{navSafeRight}}px;">
     <view class="nav-left" bindtap="onBack">
       <image class="nav-back-icon" src="/assets/icons/chevronLeft.png" />
     </view>
     <view class="nav-title">AI 智能导诊</view>
-    <view class="nav-right"></view>
+    <view class="nav-right">
+      <view class="nav-clear" wx:if="{{messages.length > 1}}" bindtap="onClear">清空</view>
+    </view>
   </view>
 
   <!-- 急诊预警常驻条（红旗命中后一直显示，不随对话滚走） -->
@@ -269,14 +273,8 @@
       <image class="ic-xs" src="{{icons.clipboardList}}" />
       <text class="collect-text">{{slotsText}}</text>
     </view>
-    <view class="collect-btn" bindtap="onForceResult">生成结果</view>
-  </view>
-
-  <!-- ============ 固定区服务入口（收敛为单个「更多服务」，4 个去向走动作面板） ============ -->
-  <view class="quick-services">
-    <view class="qs-item pressable" bindtap="onServices">
-      <image class="ic-xs" src="{{icons.layoutGrid}}" /> 更多服务
-    </view>
+    <!-- 已经生成过结果 → 按钮置灰不可再点（要重新导诊须先「清空」） -->
+    <view class="collect-btn {{status === 'THINKING' || generated ? 'collect-btn-off' : ''}}" bindtap="onForceResult">{{generated ? '已生成' : '生成结果'}}</view>
   </view>
 
   <!-- ============ ⑥ 橙色警示条（复刻文档 §2-⑥：常驻在输入栏正上方）

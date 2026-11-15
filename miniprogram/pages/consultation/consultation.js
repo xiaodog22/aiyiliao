@@ -22,7 +22,7 @@ const userService = require('../../services/user.js')
 const triageService = require('../../services/triage.js')
 const aiService = require('../../services/ai.js')
 const req = require('../../services/request.js')
-const { aptStatusText } = require('../../utils/apt-status.js')
+const flowProgress = require('../../utils/flow-progress.js')
 const { fmtDate } = require('../../utils/datetime.js')
 const { errText } = require('../../utils/err-text.js')
 const { hasContent } = require('../../utils/input-guard.js')
@@ -33,6 +33,16 @@ const icons = require('../../utils/icons.js')
  * 后端问诊消息上限 2000，长篇病情描述不能被无声砍掉。
  */
 const INPUT_MAX = 2000
+
+/**
+ * AI 服务不可用类错误码（三级兜底的判定边界）：
+ * 只有这些情况才切到本地规则匹配；AUTH_REQUIRED / RATE_LIMITED 等仍按原错误提示，
+ * 避免把"没登录"误报成"模型挂了"。
+ */
+const AI_DOWN_CODES = [
+  'CAPABILITY_UNAVAILABLE', 'AI_TASK_FAILED', 'TASK_POLL_TIMEOUT',
+  'NETWORK_ERROR', 'TIMEOUT', 'NO_TASK', 'EMPTY_RESULT'
+]
 const INPUT_MAX_TIP = '已达字数上限，可先发送再补充'
 
 /** 问诊会话状态 → 文案（契约 ConsultationData.status，未知值原样透传） */
@@ -45,6 +55,16 @@ const CONSULT_STATUS_TEXT = { ACTIVE: '进行中', CLOSED: '已结束', ARCHIVED
  */
 const TRIAGE_MIN_CONFIDENCE = 0.7
 const TRIAGE_FALLBACK_DEPT = '全科医学科'
+
+/**
+ * 本轮 AI 问诊会话快照（2026-11-15 修「失忆」）：
+ * 小程序被杀 / Tab 页被回收后 activeId 与多轮上下文都在内存里，重进必然新建会话，
+ * AI 不知道前面说过什么。这里把会话状态落到本机 storage，6 小时内恢复。
+ * ⚠️ 仅存本机、不上传；消息裁剪到 40 条；TTL 到期或点「清空」即删除。
+ */
+const SESSION_KEY = 'wb_consult_live_session_v1'
+const SESSION_TTL = 6 * 60 * 60 * 1000
+const SESSION_MSG_CAP = 40
 
 function nowTime() {
   const d = new Date()
@@ -122,7 +142,8 @@ Page({
     this._initUser()
     this._loadProgress()
     this._loadLastConsult()
-    this._greet()
+    // 先尝试恢复上次会话；恢复成功就不再重新自我介绍（否则历史被问候语顶掉）
+    if (!this._restoreSession()) this._greet()
     this._privacyCheck()
   },
 
@@ -166,6 +187,8 @@ Page({
     if (auto !== this.data.autoSpeak) this.setData({ autoSpeak: auto })
     this._initWide()   // 旋转屏幕 / 从平板切到小窗后重新判定
     this._loadProgress()
+    // 线上问诊「待接单 → 已接单」不是本页事件：页面可见时每 10s 轻量刷新一次进度卡
+    this._startProgressPoll()
   },
 
   onUnload() {
@@ -173,6 +196,8 @@ Page({
     //    这里只清句柄、不碰界面 —— 页面已卸载，再写数据既无意义也会告警。
     this._gone = true
     this._clearTypeTimer()
+    this._stopProgressPoll()
+    this._persistSession()
     speechService.stopRecord()
     speechService.stopSpeak()
   },
@@ -181,6 +206,8 @@ Page({
     // 切 Tab / 进后台：停表 + 把这句补全 + 状态复位。
     // 只清表不清状态的话，回来时 status 仍是 TYPING → 输入框 disabled、发送按钮置灰，用户无法再说话。
     this._stopTyping()
+    this._stopProgressPoll()
+    this._persistSession()
     speechService.stopSpeak()
   },
 
@@ -201,38 +228,41 @@ Page({
   _loadProgress() {
     req.ensureSessionReady().then((ready) => {
       if (!ready) return
-      const u = app.globalData.user || {}
-      userService.listMyAppointments(u.phone)
-        .then((list) => {
-          if (!list || !list.length) return
-          const latest = list[list.length - 1]
-          // ⚠️ 分支必须按**契约英文枚举**，不能按 aptStatusText 的中文文案：
-          //    文案一改（如「待就诊」→「已确认」）分支就静默全落空（D-B-P2-03）。
-          const raw = String(latest.status || '').trim().toUpperCase()
-          const dept = latest.departmentName || latest.deptName || ''
-          const prefix = dept ? (dept + '门诊 | ') : ''
-          let step = 2
-          let subtitle = ''
-          if (raw === 'CONFIRMED') {
-            step = 2
-            subtitle = prefix + '您好！您的预约已确认，请按时到院取号'
-          } else if (raw === 'CHECKED_IN') {
-            step = 3
-            subtitle = prefix + '您已取号，请前往诊室候诊'
-          } else if (raw === 'COMPLETED') {
-            step = 4
-            subtitle = prefix + '本次就诊已完成，祝您早日康复'
-          } else if (raw) {
-            // 其余契约态（PENDING/CANCELLED/EXPIRED/NO_SHOW）→ 如实说明，不留空白卡
-            step = 1
-            subtitle = prefix + '当前预约状态：' + aptStatusText(raw)
-          }
-          this.setData({
-            progress: { title: 'AI 助手陪您全流程就医', subtitle, step, hasFlow: true }
+      // ⚠️ 取数口径统一走 utils/flow-progress.js：预约列表是「新→旧」返回，
+      //    原实现取 list[list.length-1] 永远拿到最旧一条，提示不会更新（2026-11-15）。
+      // 无预约时用「最新一条 ACTIVE 线上问诊」兜底（待接单 / 已接单），两路各自静默失败。
+      Promise.all([
+        userService.listMyAppointments().catch(() => []),
+        userService.listMyConsultations().catch(() => [])
+      ]).then(([apts, consults]) => {
+        if (this._gone) return
+        const list = (Array.isArray(consults) ? consults : [])
+          .filter((c) => c && c.id && String(c.status || '').toUpperCase() === 'ACTIVE')
+          .sort((a, b) => {
+            const sa = String(a.lastMessageAt || a.createdAt || '')
+            const sb = String(b.lastMessageAt || b.createdAt || '')
+            return sa < sb ? 1 : (sa > sb ? -1 : 0)
           })
+        this.setData({
+          progress: flowProgress.buildProgress(apts, 'AI 助手陪您全流程就医', list[0] || null)
         })
-        .catch(() => {})
+      })
     })
+  },
+
+  /** 进度卡轻量刷新：10s 一次，只拉问诊/预约列表，不做 AI 请求；离页即停 */
+  _startProgressPoll() {
+    this._stopProgressPoll()
+    this._progressTimer = setInterval(() => {
+      if (!this._gone) this._loadProgress()
+    }, 10000)
+  },
+
+  _stopProgressPoll() {
+    if (this._progressTimer) {
+      clearInterval(this._progressTimer)
+      this._progressTimer = null
+    }
   },
 
   /**
@@ -300,6 +330,8 @@ Page({
    * 同时重置会话态 —— 清空对话 = 新会话（旧 activeId 继续追发会把新主诉接到旧病史里）。
    */
   _greet() {
+    // 清空对话 = 新会话：旧快照必须一起删，否则下次进页又把旧会话恢复回来
+    this._clearSession()
     // 清空/重置对话前先停表：否则旧定时器会继续往「新数组的最后一条」写半句
     this._clearTypeTimer()
     const msgId = this.data.msgId + 1
@@ -325,6 +357,8 @@ Page({
     this._triageBusy = false
     this._idemKey = ''
     this._taskId = ''
+    // 新会话的问候语也要落快照（否则刚进页就切走，下次恢复不到任何内容）
+    this._persistSession()
   },
 
   /**
@@ -342,11 +376,79 @@ Page({
     const i = list.length
     if (i >= this._MSG_CAP) {
       this.setData({ messages: list.slice(i - this._MSG_CAP + 1).concat(msg), msgId: msg.id })
-      return
+    } else {
+      const patch = { msgId: msg.id }
+      patch['messages[' + i + ']'] = msg
+      this.setData(patch)
     }
-    const patch = { msgId: msg.id }
-    patch['messages[' + i + ']'] = msg
-    this.setData(patch)
+    // 每条消息落一次快照（量级 = 每轮一条，写入成本可忽略；换来重进不丢上下文）
+    this._persistSession()
+  },
+
+  /**
+   * 会话快照：activeId + 最近消息 + 分诊标记，仅存本机，6 小时有效。
+   * 恢复后由 _restoreSession 校验 activeId 是否仍为 ACTIVE，失效则清空重来。
+   */
+  _persistSession() {
+    try {
+      if (!this.data.messages.length) return
+      wx.setStorageSync(SESSION_KEY, {
+        v: 1,
+        at: Date.now(),
+        activeId: this.data.activeId || '',
+        messages: this.data.messages.slice(-SESSION_MSG_CAP),
+        msgId: this.data.msgId,
+        turns: this._turns || 0,
+        deptPushed: !!this._deptPushed,
+        pendingNavDept: this._pendingNavDept || '',
+        triagePending: !!this.data.triagePending,
+        latest: this.data.latest || null
+      })
+    } catch (e) { /* 存储满/被禁用时静默：不影响问诊主流程 */ }
+  },
+
+  _clearSession() {
+    try { wx.removeStorageSync(SESSION_KEY) } catch (e) {}
+  },
+
+  /**
+   * 恢复快照：TTL + 结构校验通过后先上屏，再异步校验 activeId 是否仍 ACTIVE。
+   *  - 仍 ACTIVE：保留本地多轮上下文（不再重新自我介绍）；
+   *  - 已结束 / 不存在 / 校验请求失败：清快照，回到新会话起始态。
+   */
+  _restoreSession() {
+    let s = null
+    try { s = wx.getStorageSync(SESSION_KEY) } catch (e) {}
+    if (!s || s.v !== 1 || !Array.isArray(s.messages) || !s.messages.length) return false
+    if (!s.at || Date.now() - s.at > SESSION_TTL) {
+      this._clearSession()
+      return false
+    }
+    this._turns = Number(s.turns) || 0
+    this._deptPushed = !!s.deptPushed
+    this._pendingNavDept = s.pendingNavDept || ''
+    this.setData({
+      activeId: s.activeId || '',
+      messages: s.messages.slice(-SESSION_MSG_CAP),
+      msgId: Number(s.msgId) || s.messages.length,
+      latest: s.latest || null,
+      triagePending: !!s.triagePending,
+      status: 'IDLE',
+      showQuick: false
+    })
+    // activeId 校验：失败不打扰用户（网络问题不等于会话失效），只有明确非 ACTIVE 才清
+    if (s.activeId) {
+      userService.getConsultation(s.activeId)
+        .then((d) => {
+          const status = String((d && d.status) || '').toUpperCase()
+          if (status && status !== 'ACTIVE') {
+            this._clearSession()
+            this._greet()
+          }
+        })
+        .catch(() => { /* 校验失败保留本地会话，避免误清 */ })
+    }
+    return true
   },
 
   onQuick(e) { this.send(e.currentTarget.dataset.text) },
@@ -472,7 +574,7 @@ Page({
         }
         return this._awaitChat(task.taskId)
       })
-      .catch((err) => { this._onAiFail(err) })
+      .catch((err) => { this._onAiFail(err, text) })
   },
 
   /** 轮询 CHAT 任务直到终态，成功后打字机输出 */
@@ -582,18 +684,60 @@ Page({
     this._typeAi('已识别到危险信号，请立即就医。' + advice, () => this._emergencyModal())
   },
 
-  /** AI 链路失败：如实说明 + 保留重试能力，不伪造结论 */
-  _onAiFail(err) {
+  /**
+   * AI 链路失败：如实说明 + 保留重试能力，不伪造结论。
+   * AI 服务不可用（模型下线 / 网络断开）时落到三级兜底的最后一级——本地规则匹配：
+   * 先明确提示「无法连接」，再把规则命中的科室作为参考结果给患者。
+   */
+  _onAiFail(err, text) {
     if (this._gone) return
     this._idemKey = ''
     // ⚠️ 只走 err-text.js：原实现把 err.message/err.code 直接拼进气泡，用户会看到
     //    「（NETWORK_ERROR）」这类英文码/HTTP 码，违反 RULE #13/#27（审查 P1-04）。
     const m = errText(err, '网络异常')
+    const code = String((err && err.code) || '')
     this.setData({ status: 'IDLE', showQuick: true })
+
+    // 非 AI 不可用（未登录 / 限流 / 业务校验）保持原提示，不误报为规则匹配
+    if (AI_DOWN_CODES.indexOf(code) < 0) {
+      this._appendMsg({
+        id: this.data.msgId + 1, role: 'ai', type: 'text', time: nowTime(),
+        content: 'AI 助手暂时没能回答（' + m + '）。您可以再发一次，或先用下方「预约挂号」按科室挂号。'
+      })
+      return
+    }
+
     this._appendMsg({
       id: this.data.msgId + 1, role: 'ai', type: 'text', time: nowTime(),
-      content: 'AI 助手暂时没能回答（' + m + '）。您可以再发一次，或先用下方「预约挂号」按科室挂号。'
+      content: '暂时无法连接 AI 服务（' + m + '），已为您切换到院内规则匹配。'
     })
+
+    const input = String(text || '').trim()
+    let rule = null
+    if (input) {
+      try { rule = triageService.parse(input, {}) } catch (e) { rule = null }
+    }
+    const dept = rule && rule.primary && rule.primary.dept
+    if (!dept) {
+      this._appendMsg({
+        id: this.data.msgId + 1, role: 'ai', type: 'text', time: nowTime(),
+        content: '根据您描述的症状，院内规则暂未匹配到明确科室，建议先到全科医学科或咨询导诊台。'
+      })
+      return
+    }
+
+    // 已经给过结论卡就不再重复出卡（同一段对话只出一次），改为文字补一条规则结论
+    if (this._deptPushed) {
+      const alts = (rule.alternates || []).map((a) => a.dept).filter((d) => d && d !== dept).slice(0, 2)
+      this._appendMsg({
+        id: this.data.msgId + 1, role: 'ai', type: 'text', time: nowTime(),
+        content: '院内规则匹配结果：建议就诊 ' + dept + ' 科' +
+          (alts.length ? '（备选：' + alts.join('、') + '）' : '') +
+          '。' + (rule.levelAdvice || '') + ' 本结果由规则引擎生成，仅供参考。'
+      })
+      return
+    }
+    this._pushDeptCard(rule)
   },
 
   _emergencyModal() {

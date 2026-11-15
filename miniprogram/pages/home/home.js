@@ -14,6 +14,7 @@ const { aptDisplayStatus } = require('../../utils/apt-status.js')
 const { fmtLocalDateTime } = require('../../utils/datetime.js')
 // 首页汇总走后端契约（GET /api/v1/home/summary）；禁止再恒定展示 app.MOCK.HOME
 const homeService = require('../../services/home.js')
+const userService = require('../../services/user.js')
 // 远端素材清单（服务端「清单下发绝对 HTTPS URL」→ 页面远端优先、包内兜底）
 const resource = require('../../services/resource.js')
 const ENV = require('../../config/env.js')
@@ -92,6 +93,8 @@ Page({
     aptError: '',
     // 预约日期徽章（VF-11）：解析成功 = {mon,day,week}；失败 = null → WXML 回退整行文本
     aptDate: null,
+    // 在线问诊接单提示（D6）：{ id, accepted, title, sub, ack }；null = 不渲染
+    consultNotice: null,
     quad: withIcon(QUAD),
     services: SERVICES,
     quickSymptoms: QUICK_SYMPTOMS,
@@ -146,6 +149,8 @@ Page({
     if (!this.data.tip) this._tipAt(0)
     // 首页汇总（问候语 + 预约动态）每次 onShow 刷新：新预约提交后回首页立即能看到
     this._loadSummary()
+    // 在线问诊接单状态（D6）：待接单/已接单提示随 onShow 同步
+    this._loadConsultNotice()
     // 远端素材每次 onShow 重新解析：清单由 app.js 冷启动时异步刷新，
     // 首次进入时可能还没到（此时仍是包内路径），回到本页即自动切到远端。
     this._applyRemoteAssets()
@@ -231,6 +236,53 @@ Page({
   _subTextOf(greeting) {
     const t = this.data.theme
     return (t === 'large' || t === 'xlarge') ? SUB_GREETING_LARGE : (greeting || '')
+  },
+
+  /* ==================== 在线问诊接单提示（D6，2026-11-15）==================== */
+  /**
+   * 「我的就医安排」卡内的问诊提示行。
+   *  - 待接单：会话已创建（患者已提交预约）、医生尚未接单 → 常驻提示；
+   *  - 已接单：提示一次，患者点进会话即按 lastMessageAt 写本地已读；医生有新消息会再次提示。
+   * 只认**指定医生**的图文会话（doctorName 有值）；AI 问诊会话 doctorId 为空，不在此提示。
+   * 失败静默：这是增强信息，不能影响就医安排卡本身的加载/错误态。
+   */
+  _loadConsultNotice() {
+    userService.listMyConsultations()
+      .then((list) => {
+        const arr = Array.isArray(list) ? list : []
+        const c = arr.filter((x) => x && x.id && x.status !== 'CLOSED' && x.doctorName)[0]
+        if (!c) {
+          if (this.data.consultNotice) this.setData({ consultNotice: null })
+          return
+        }
+        const accepted = c.accepting === true
+        const ack = String(c.lastMessageAt || '')
+        const read = wx.getStorageSync('wb_consult_ack_' + c.id) || ''
+        // 已接单且这一版已读过 → 不重复提示
+        if (accepted && read && read === ack) {
+          if (this.data.consultNotice) this.setData({ consultNotice: null })
+          return
+        }
+        const doctorName = c.doctorName || '医生'
+        this.setData({
+          consultNotice: {
+            id: c.id,
+            accepted,
+            ack,
+            title: accepted ? '医生已接单 · 可开始咨询' : '在线问诊 · 等待医生接单',
+            sub: accepted ? '点击进入在线问诊' : doctorName + '接单后可开始对话'
+          }
+        })
+      })
+      .catch(() => { /* 增强信息，失败不打扰 */ })
+  },
+
+  /** 点击问诊提示 → 进入会话；已接单先记已读，避免回首页重复提示 */
+  onConsultNotice() {
+    const n = this.data.consultNotice
+    if (!n || !n.id) return
+    if (n.accepted) wx.setStorageSync('wb_consult_ack_' + n.id, n.ack || '')
+    wx.navigateTo({ url: '/pages/consult/consult?consultationId=' + encodeURIComponent(n.id) })
   },
 
   /** 请求失败 → 开发档演示兜底 / 生产档错误态（可重试，不假装"没挂号"） */

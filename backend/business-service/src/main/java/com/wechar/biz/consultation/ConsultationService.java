@@ -16,6 +16,9 @@ import com.wechar.biz.consultation.dto.InputConfirmationRequest;
 import com.wechar.biz.consultation.dto.MessageCreateRequest;
 import com.wechar.biz.consultation.dto.MessageData;
 import com.wechar.biz.message.MessageService;
+import com.wechar.biz.patient.AttachmentRepository;
+import com.wechar.biz.patient.AttachmentStorage;
+import com.wechar.biz.resource.ResourceAssetRepository;
 import com.wechar.biz.triage.TriageRuleEngine;
 import java.time.Clock;
 import java.time.Instant;
@@ -45,8 +48,21 @@ public class ConsultationService {
     private final TriageRuleEngine triageRuleEngine;
     private final MessageService messageService;
     private final CatalogRepository catalogRepository;
+    private final AttachmentRepository attachmentRepository;
+    private final AttachmentStorage attachmentStorage;
+    private final ResourceAssetRepository resourceAssetRepository;
     private final ObjectMapper mapper;
     private final Clock clock;
+
+    /**
+     * 线上问诊图片消息白名单（2026-11-15）：与患者端展示口径一致，
+     * 只允许健康档案里的 jpeg/png/webp，且不超过 10MB。
+     * 任何其它 objectKey（外部文件、他人档案、gif/bmp 等）一律 422。
+     */
+    private static final Set<String> ALLOWED_IMAGE_MIMES = Set.of("image/jpeg", "image/png", "image/webp");
+    private static final long IMAGE_MAX_BYTES = 10L * 1024 * 1024;
+    /** 系统推送报告的资源 key 前缀（resource_asset 里只认 health.*，防止拿 banner 等资源冒充检查资料） */
+    private static final String HEALTH_RESOURCE_PREFIX = "health.";
 
     /**
      * TRIAGE 模型档位（2026-11-04 从硬编码挪到配置）：默认 large-upgrade=7b。
@@ -58,12 +74,17 @@ public class ConsultationService {
 
     public ConsultationService(ConsultationRepository repository, AiTaskService aiTaskService,
                                TriageRuleEngine triageRuleEngine, MessageService messageService,
-                               CatalogRepository catalogRepository, ObjectMapper mapper, Clock clock) {
+                               CatalogRepository catalogRepository, AttachmentRepository attachmentRepository,
+                               AttachmentStorage attachmentStorage, ResourceAssetRepository resourceAssetRepository,
+                               ObjectMapper mapper, Clock clock) {
         this.repository = repository;
         this.aiTaskService = aiTaskService;
         this.triageRuleEngine = triageRuleEngine;
         this.messageService = messageService;
         this.catalogRepository = catalogRepository;
+        this.attachmentRepository = attachmentRepository;
+        this.attachmentStorage = attachmentStorage;
+        this.resourceAssetRepository = resourceAssetRepository;
         this.mapper = mapper;
         this.clock = clock;
     }
@@ -93,8 +114,12 @@ public class ConsultationService {
         Instant now = clock.instant();
 
         // V23 申请模式：患者指定医生 → 会话直接分配该医生（免认领）；医生不存在/停诊 → 404
+        // 在线问诊（指定医生）不建 AI 任务（2026-11-15 D6）：预约制下医生接单前不允许对话，
+        // 接单后由医生本人回复；AI 自动回复会在「待接单」阶段以医生气泡出现，直接击穿预约制。
+        boolean aiChat = true;
         String doctorLoginUser = null;
         if (request.doctorId() != null && !request.doctorId().isBlank()) {
+            aiChat = false;
             doctorLoginUser = catalogRepository.findDoctorUserId(request.doctorId())
                     .orElseThrow(() -> new ApiException("DOCTOR_NOT_FOUND", HttpStatus.NOT_FOUND,
                             "所选医生不存在或已停诊"));
@@ -108,16 +133,20 @@ public class ConsultationService {
                 throw new ApiException("IDEMPOTENCY_KEY_REUSE", HttpStatus.CONFLICT,
                         "Idempotency-Key 已用于不同载荷的请求，请更换键");
             }
-            var latest = aiTaskService.findLatestForConsultation(row.id());
-            if (latest.isPresent()) {
-                return new ConsultationCreated(toData(row), aiTaskService.toData(latest.get()),
-                        safetyFor(row.id()), true);
+            if (aiChat) {
+                var latest = aiTaskService.findLatestForConsultation(row.id());
+                if (latest.isPresent()) {
+                    return new ConsultationCreated(toData(row), aiTaskService.toData(latest.get()),
+                            safetyFor(row.id()), true);
+                }
+                // 上次任务创建失败（如上游 503）：会话与首条消息已落库，同键重试即补建任务；
+                // safety 用本地红旗规则重算，急症提示不因上次失败而丢失
+                var taskRow = aiTaskService.create(userId, row.id(), "CHAT",
+                        null, chatContext(row.id()), request.requestedProfile(), null, null);
+                return new ConsultationCreated(toData(row), aiTaskService.toData(taskRow),
+                        ruleSafety(request.initialMessage()), true);
             }
-            // 上次任务创建失败（如上游 503）：会话与首条消息已落库，同键重试即补建任务；
-            // safety 用本地红旗规则重算，急症提示不因上次失败而丢失
-            var taskRow = aiTaskService.create(userId, row.id(), "CHAT",
-                    null, chatContext(row.id()), request.requestedProfile(), null, null);
-            return new ConsultationCreated(toData(row), aiTaskService.toData(taskRow),
+            return new ConsultationCreated(toData(row), null,
                     ruleSafety(request.initialMessage()), true);
         }
 
@@ -129,13 +158,19 @@ public class ConsultationService {
                 ? request.initialMessage().substring(0, 30) : request.initialMessage();
 
         // 首条用户消息（落库为权威记录）——独立事务先行提交，任务创建失败不回滚它
+        // 上传合规（2026-11-15）：IMAGE 模式必须先通过健康档案附件白名单，再落库为 IMAGE_NOTE
+        boolean imageInitial = isImageMode(request.inputMode());
+        if (imageInitial) {
+            validateImageContent(userId, request.initialMessage());
+        }
+        String initialContentType = imageInitial ? "IMAGE_NOTE" : "TEXT";
         String messageId = "msg-" + UUID.randomUUID();
         repository.persistConsultationWithInitialMessage(
                 new ConsultationRepository.ConsultationRow(
                         consultationId, userId, request.doctorId(), title, "ACTIVE", null, now, idempotencyKey,
                         digest, now, null),
                 new ConsultationRepository.MessageRow(
-                        messageId, consultationId, userId, "user", "TEXT", request.initialMessage(),
+                        messageId, consultationId, userId, "user", initialContentType, request.initialMessage(),
                         "USER_INPUT", null, null, null, null, null, null, null, null, now));
 
         // V23 申请模式：向医生登录账号写 CONSULT_APPLY 消息（红点提示；失败不阻断创建）
@@ -155,9 +190,13 @@ public class ConsultationService {
 
         // 创建 AI 任务（CHAT；inputInline = **多轮上下文**，由 D 侧执行器消费；上游失败 → 结构化 503 冒泡，
         // 但上面的会话与消息已提交，符合"生成失败不影响持久化"）
-        var taskRow = aiTaskService.create(userId, consultationId, "CHAT",
-                null, chatContext(consultationId), request.requestedProfile(), null, null);
-        AiTaskService.AiTaskData task = aiTaskService.toData(taskRow);
+        // 在线问诊（指定医生）不建任务：接诊后是医生本人回复，见方法上的 D6 说明。
+        AiTaskService.AiTaskData task = null;
+        if (aiChat) {
+            var taskRow = aiTaskService.create(userId, consultationId, "CHAT",
+                    null, chatContext(consultationId), request.requestedProfile(), null, null);
+            task = aiTaskService.toData(taskRow);
+        }
 
         var row = repository.findConsultationById(consultationId).orElseThrow();
         return new ConsultationCreated(toData(row), task, safety, false);
@@ -178,6 +217,11 @@ public class ConsultationService {
         var consultation = ownedConsultation(userId, consultationId);
         requireWritable(consultation);
 
+        // 2026-11-15 修正：取消原 D6「接单后才能继续对话」闸门 ——
+        //   患者在医生接单前需要补充症状、追加检查资料（用户实测：等待条挡住输入栏，
+        //   第二条信息发不出去）。改为始终允许在 ACTIVE 会话内追加消息；
+        //   医生端未接单时仍能在工作台看到完整描述，接单后一并回复。
+
         // 幂等：同键同体 → 既有消息与任务；同键异体 → 409
         var existing = repository.findMessageByIdempotencyKey(userId, idempotencyKey);
         if (existing.isPresent()) {
@@ -192,6 +236,10 @@ public class ConsultationService {
                         safetyFor(consultationId), true);
             }
             // 消息已落库但上次任务创建失败：同键重试即补建任务，safety 本地重算
+            // 指定医生的在线问诊本就不建 AI 任务（医生本人回复），重放直接返回消息
+            if (consultation.doctorId() != null) {
+                return new MessageSent(toData(msg), null, ruleSafety(request.content()), true);
+            }
             var taskRow = aiTaskService.create(userId, consultationId, "CHAT",
                     null, chatContext(consultationId), request.requestedProfile(), null, null);
             return new MessageSent(toData(msg), aiTaskService.toData(taskRow),
@@ -201,15 +249,27 @@ public class ConsultationService {
         // 急症优先：命中红线先给安全提示，不阻塞生成
         SafetyData safety = ruleSafety(request.content());
 
+        // 上传合规（2026-11-15）：IMAGE 模式只接受本人健康档案里的 jpeg/png/webp（≤10MB），
+        // 校验通过才落库为 IMAGE_NOTE；文本消息仍为 TEXT。
+        boolean image = isImageMode(request.inputMode());
+        if (image) {
+            validateImageContent(userId, request.content());
+        }
+        String contentType = image ? "IMAGE_NOTE" : "TEXT";
+
         String messageId = "msg-" + UUID.randomUUID();
         repository.persistMessageAndTouch(consultationId, now, now,
                 new ConsultationRepository.MessageRow(
-                        messageId, consultationId, userId, "user", "TEXT", request.content(),
+                        messageId, consultationId, userId, "user", contentType, request.content(),
                         "USER_INPUT", null, null, null, null, idempotencyKey, digest, null, null, now));
 
-        var taskRow = aiTaskService.create(userId, consultationId, "CHAT",
-                null, chatContext(consultationId), request.requestedProfile(), null, null);
-        AiTaskService.AiTaskData task = aiTaskService.toData(taskRow);
+        // 在线问诊（指定医生）不建 AI 任务：接诊后是医生本人回复，AI 气泡会冒充医生（D6）
+        AiTaskService.AiTaskData task = null;
+        if (consultation.doctorId() == null) {
+            var taskRow = aiTaskService.create(userId, consultationId, "CHAT",
+                    null, chatContext(consultationId), request.requestedProfile(), null, null);
+            task = aiTaskService.toData(taskRow);
+        }
 
         var msg = repository.findMessageById(messageId).orElseThrow();
         return new MessageSent(toData(msg), task, safety, false);
@@ -279,8 +339,8 @@ public class ConsultationService {
                         row.id(), row.title(), row.status(), row.lastMessageAt(),
                         repository.countMessages(row.id()), row.summary(), row.createdAt(),
                         row.patientName(), row.patientAvatarKey(), row.assignedDoctorId(),
-                        // 接诊态与患者端医生卡同源：会话内已有医生侧消息（回复/接诊提示）
-                        repository.hasNonUserMessage(row.id())))
+                        // 接诊态与患者端医生卡同源：会话内已有医生侧记录（回复 / 「已接诊」提示）
+                        repository.hasDoctorAcceptance(row.id())))
                 .toList();
     }
 
@@ -317,12 +377,13 @@ public class ConsultationService {
             }
             replayed = false;
         }
-        // 接诊即写入一条系统提示（role=system_notice），幂等条件：会话内还没有任何医生侧消息。
+        // 接诊即写入一条系统提示（role=system_notice），幂等条件：会话内还没有任何**医生侧**记录。
         //  ① 双方会话里都有「XX 医生已接诊」记录（对齐微信对话的系统胶囊观感）；
-        //  ② 患者端 accepting 由「存在非患者侧消息」判定，因此接诊后立刻从「待接诊」变「正在接诊」，
+        //  ② 患者端 accepting 由 hasDoctorAcceptance 判定，因此接诊后立刻从「待接诊」变「正在接诊」，
         //     且不会因为患者随后再发言而回退；
         //  ③ 重复点「接诊」或已回复过的会话不会重复写。
-        if (!repository.hasNonUserMessage(consultationId)) {
+        //  ⚠️ 2026-11-15 修正：原用 hasNonUserMessage，AI 助手回复也算"医生侧"，导致接诊提示不落、accepting 永真。
+        if (!repository.hasDoctorAcceptance(consultationId)) {
             String doctorName = repository.findDoctorBrief(doctorId)
                     .map(ConsultationRepository.DoctorBrief::name).orElse("");
             String notice = (doctorName.isEmpty() ? "医生" : doctorName) + "已接诊，正在为您解答";
@@ -607,6 +668,15 @@ public class ConsultationService {
         if (ctx.length() > CHAT_CONTEXT_MAX_CHARS) {
             ctx = ctx.substring(ctx.length() - CHAT_CONTEXT_MAX_CHARS);
         }
+        // 分诊结论已出 → 给 CHAT 执行器打「答疑模式」标记（2026-11-15）：
+        // 结果卡输出后 AI 仍在追问「具体位置 / 多久了」，用户明确判定为错误行为。
+        // ai-service 收到该标记会切到「只回答、不追问」的 prompt；未出结论前保持原口径。
+        boolean triageDone = aiTaskService.findLatestTriageForConsultation(consultationId)
+                .map(t -> "SUCCEEDED".equals(t.status()))
+                .orElse(false);
+        if (triageDone) {
+            ctx = "【分诊建议已给出】不要再追问症状细节，直接回答患者最后一句话。\n" + ctx;
+        }
         return ctx;
     }
 
@@ -718,7 +788,9 @@ public class ConsultationService {
         // （⚠️ 不用末条消息角色：患者再发言会把状态翻回「待接诊」—— 2026-10-24 修正；
         //   也不与 brief 是否存在耦合：医生资料缺失时接诊事实依然成立）
         var brief = repository.findDoctorBrief(row.doctorId()).orElse(null);
-        boolean accepting = row.doctorId() != null && repository.hasNonUserMessage(row.id());
+        // D6：接诊事实只认医生侧记录（医生回复 / 「已接诊」系统提示）；
+        // 原 hasNonUserMessage 会把 AI 助手回复也算成接诊，导致「待接单」状态永远不出现。
+        boolean accepting = repository.hasDoctorAcceptance(row.id());
         return new ConsultationData(row.id(), row.title(), row.status(), row.lastMessageAt(),
                 repository.countMessages(row.id()), row.summary(), row.createdAt(),
                 brief == null ? null : brief.name(),
@@ -729,10 +801,94 @@ public class ConsultationService {
                 null);
     }
 
+    /** 消息是否为图片模式（契约 MessageCreate.inputMode=IMAGE） */
+    private static boolean isImageMode(String inputMode) {
+        return "IMAGE".equalsIgnoreCase(inputMode == null ? "" : inputMode.trim());
+    }
+
+    /**
+     * 图片消息来源白名单（2026-11-15 上传合规）：
+     * objectKey 必须属于**当前用户**的健康档案附件，且为 jpeg/png/webp、≤10MB。
+     * 这是服务端最后一道闸门 —— 前端只开放健康档案选择，但直连接口同样必须被拦住。
+     */
+    private void validateImageContent(String userId, String key) {
+        String k = key == null ? "" : key.trim();
+        // ① 系统推送报告：resource_asset 登记的 health.* 资源（如 health.report-blood-routine），
+        //    不经过健康档案附件表；只认启用记录，且同样受图片白名单与 10MB 上限约束。
+        if (k.startsWith(HEALTH_RESOURCE_PREFIX)) {
+            var asset = resourceAssetRepository.findActiveByKey(k)
+                    .orElseThrow(() -> new ApiException("ATTACHMENT_NOT_ALLOWED",
+                            HttpStatus.UNPROCESSABLE_ENTITY, "仅允许发送健康档案中的图片"));
+            String mime = asset.mimeType() == null ? ""
+                    : asset.mimeType().trim().toLowerCase(java.util.Locale.ROOT);
+            if (!ALLOWED_IMAGE_MIMES.contains(mime)) {
+                throw new ApiException("ATTACHMENT_NOT_ALLOWED", HttpStatus.UNPROCESSABLE_ENTITY,
+                        "仅支持 JPG/PNG/WEBP 图片");
+            }
+            if (asset.fileSize() != null && asset.fileSize() > IMAGE_MAX_BYTES) {
+                throw new ApiException("ATTACHMENT_NOT_ALLOWED", HttpStatus.UNPROCESSABLE_ENTITY,
+                        "图片超过 10MB，请压缩后再发送");
+            }
+            return;
+        }
+        // ② 本人健康档案附件（objectKey 归属校验，防止他人档案/任意外部文件）
+        var att = attachmentRepository.findByObjectKeyAndUser(k, userId)
+                .orElseThrow(() -> new ApiException("ATTACHMENT_NOT_ALLOWED",
+                        HttpStatus.UNPROCESSABLE_ENTITY, "仅允许发送健康档案中的图片"));
+        String mime = att.mime() == null ? "" : att.mime().trim().toLowerCase(java.util.Locale.ROOT);
+        if (!ALLOWED_IMAGE_MIMES.contains(mime)) {
+            throw new ApiException("ATTACHMENT_NOT_ALLOWED", HttpStatus.UNPROCESSABLE_ENTITY,
+                    "仅支持 JPG/PNG/WEBP 图片");
+        }
+        if (att.size() > IMAGE_MAX_BYTES) {
+            throw new ApiException("ATTACHMENT_NOT_ALLOWED", HttpStatus.UNPROCESSABLE_ENTITY,
+                    "图片超过 10MB，请压缩后再发送");
+        }
+    }
+
     private MessageData toData(ConsultationRepository.MessageRow row) {
+        // 图片消息：按消息所属用户反查健康档案附件，下发短期签名 URL 与原始文件名。
+        // 查不到（档案已删）时四项留空，客户端退化为文件卡，绝不拼本地路径或猜测内容。
+        String attachmentUrl = null;
+        String attachmentName = null;
+        String attachmentMime = null;
+        Long attachmentSize = null;
+        if ("IMAGE_NOTE".equals(row.contentType())) {
+            String key = row.content() == null ? "" : row.content();
+            var att = attachmentRepository.findByObjectKeyAndUser(key, row.userId()).orElse(null);
+            if (att != null) {
+                attachmentUrl = attachmentStorage.signedUrl(att.objectKey());
+                attachmentName = att.fileName();
+                attachmentMime = att.mime();
+                attachmentSize = att.size();
+            } else if (key.startsWith(HEALTH_RESOURCE_PREFIX)) {
+                // 系统推送报告：资源库登记项，走匿名端点 /api/v1/resources/{key}
+                //（前端 resolveAttachmentUrl 拼网关前缀），与健康档案页同源同图。
+                var asset = resourceAssetRepository.findActiveByKey(key).orElse(null);
+                if (asset != null) {
+                    attachmentUrl = "/api/v1/resources/" + key;
+                    attachmentMime = asset.mimeType();
+                    attachmentSize = asset.fileSize();
+                    attachmentName = "健康档案报告" + imageExt(asset.mimeType());
+                }
+            }
+        }
         return new MessageData(row.id(), row.role(), row.contentType(), row.content(), row.provenance(),
                 parseCitations(row.citationsJson()), parseTags(row.riskTagsJson()),
-                row.generationStatus(), row.createdAt());
+                row.generationStatus(), row.createdAt(),
+                attachmentUrl, attachmentName, attachmentMime, attachmentSize);
+    }
+
+    /** 图片 mime → 展示用扩展名（系统推送报告在资源库中没有原始文件名） */
+    private static String imageExt(String mime) {
+        String m = mime == null ? "" : mime.trim().toLowerCase(java.util.Locale.ROOT);
+        if ("image/png".equals(m)) {
+            return ".png";
+        }
+        if ("image/webp".equals(m)) {
+            return ".webp";
+        }
+        return ".jpg";
     }
 
     // ---------------------------------------------------------------- JSON

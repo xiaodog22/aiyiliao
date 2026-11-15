@@ -91,7 +91,7 @@ Page({
     wx.reLaunch({ url: '/pages/doctor/workbench/workbench' })
   },
 
-  // 三个功能入口：排班设置 / 账号安全 / 消息通知（2026-10-24 已补齐对应页面）
+  // 三个功能入口：线上问诊设置 / 账号安全 / 消息通知（2026-10-24 已补齐对应页面）
   onEntry(e) {
     const page = e.currentTarget.dataset.page
     const routes = {

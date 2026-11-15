@@ -59,7 +59,7 @@ public class AttachmentController {
         String mime = file.getContentType() == null ? "application/octet-stream" : file.getContentType();
         // 暂存上传尚无附件行（建档挂载时才插行）→ id 为 null（NON_NULL 不出现在响应里）
         var data = new AttachmentData(null, objectKey, attachmentStorage.signedUrl(objectKey),
-                file.getOriginalFilename(), mime, file.getSize(), sha256, Instant.now());
+                file.getOriginalFilename(), mime, file.getSize(), sha256, Instant.now(), null);
         return ResponseEntity.ok(Envelope.ok(RequestIds.current(), data));
     }
 

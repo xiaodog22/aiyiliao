@@ -134,6 +134,23 @@
         <!-- 系统提示胶囊（含「医生已接诊」） -->
         <view wx:elif="{{item.kind === 'sys'}}" class="dc-sys">{{item.content}}</view>
 
+        <!-- 患者图片（健康档案附件）：渲染同一张图，点击可预览 -->
+        <view wx:elif="{{item.kind === 'patient-image'}}" class="dc-row dc-row-left">
+          <view class="dc-face">{{active.initial || '者'}}</view>
+          <view class="dc-bubble dc-bubble-patient">
+            <image
+              wx:if="{{item.url}}"
+              class="dc-msg-img"
+              src="{{item.url}}"
+              mode="widthFix"
+              data-url="{{item.url}}"
+              bindtap="onPreviewMessageImage"
+            ></image>
+            <text class="dc-file-name">{{item.fileName}}</text>
+            <text class="dc-bubble-time">{{item.time}}</text>
+          </view>
+        </view>
+
         <!-- 患者：左白气泡 -->
         <view wx:elif="{{item.kind === 'patient'}}" class="dc-row dc-row-left">
           <view class="dc-face">{{active.initial || '者'}}</view>

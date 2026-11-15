@@ -12,7 +12,7 @@
     <view class="rd-state-badge"><image class="rd-state-ic" src="{{icons.alertWhite}}" /></view>
     <view class="rd-state-t">报告加载失败</view>
     <view class="rd-state-s">{{error}}</view>
-    <view class="rd-state-btn" bindtap="fetch">重新加载</view>
+    <view class="btn btn-primary btn-inline rd-state-btn" bindtap="fetch">重新加载</view>
   </view>
 
   <block wx:elif="{{report}}">

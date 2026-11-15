@@ -4,9 +4,13 @@
 
     inputDigest = SHA-256(canonicalBytes)
     cacheKey    = HMAC-SHA256(tenantSecret,
-                    taskType | inputDigest | modelId | modelVersion | quantization |
-                    promptTemplateVersion | policyVersion | knowledgeSnapshot |
+                    taskType | inputDigest | modelId | providerSignature | modelVersion |
+                    quantization | promptTemplateVersion | policyVersion | knowledgeSnapshot |
                     voice | locale | generationParameters)
+
+  providerSignature（2026-11-15 增补）：由 provider 顺序 / DeepSeek 模型名 / 是否配置 key 组成，
+  **不含 key 值**。原因：modelId 恒由资源档解析成本地 Ollama 模型名，若没有这一分量，
+  切到 DeepSeek 兜底后 TTL 内仍会命中「Ollama 生成的旧答案」且 llmSource 也是旧值。
 
 纪律（同 §9.1 / §9.3，违反即返工）：
 - 缓存**不是**权威业务数据（权威在 Spring Boot / MySQL）；Redis 缺 → 本机 JSON 文件实现，
@@ -46,7 +50,9 @@ logger = logging.getLogger("ai-service.cache")
 #    却永远拿不到键（compute_cache_key 返回 None），等于"登记了但没生效"（2026-10-23 修复 INTERPRET）。
 CACHEABLE_TYPES = frozenset({"TRIAGE", "CHAT", "RAG", "CARE_PLAN", "INTERPRET"})
 
-_CACHE_VERSION = 1
+# 2026-11-15 升到 2：键公式新增 providerSignature 分量。旧条目由 load() 直接丢弃，
+# 避免接入 DeepSeek 兜底后仍复用旧的本地模型结果（缓存非权威数据，重启可失）。
+_CACHE_VERSION = 2
 _KEY_JOIN = "|"
 _MODEL_META_KEYS = (
     "modelId", "modelVersion", "quantization", "promptTemplateVersion", "knowledgeSnapshot",
@@ -86,10 +92,12 @@ def compute_cache_key(
     tenant_secret: str,
     prompt_template_version: str = "",
     model_id: str = "",
+    provider_signature: str = "",
 ) -> Optional[str]:
     """按 §9.2 计算内容寻址键。
 
     非白名单类型 / 无文本输入 → None（该任务不参与缓存，调用方跳过即可）。
+    `provider_signature` 隔离不同 provider 配置下的结果（不含任何凭据值）。
     """
     task_type = str(task.get("taskType") or "")
     if task_type not in CACHEABLE_TYPES:
@@ -104,6 +112,7 @@ def compute_cache_key(
         _component(task.get("tenantId")),
         input_digest(text),
         _component(model_id),                                  # 本次将要用的模型（执行前即可知）
+        _component(provider_signature),                        # provider 配置签名（2026-11-15）
         _component(task.get("modelVersion")),
         _component(task.get("quantization")),
         _component(prompt_template_version),

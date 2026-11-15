@@ -1,4 +1,4 @@
-"""staging 开关验证脚本（2026-10-22 配置开启任务）。
+"""staging / provider 开关验证脚本（2026-10-22 配置开启任务；2026-11-15 增 deepseek 联调）。
 
 用途：对一个**已启动的 ai-service** 实例做开关效果验证，输出可直接贴进开发日志的数据。
 不启动服务、不改配置；只发任务、量耗时、读结果。
@@ -9,6 +9,14 @@
     python tools/verify-ai-switches.py cache  --base http://127.0.0.1:8011 --runs 5
     python tools/verify-ai-switches.py asr    --base http://127.0.0.1:8011 --ref asr:demo1 --runs 2
     python tools/verify-ai-switches.py rag    --base http://127.0.0.1:8011
+    python tools/verify-ai-switches.py deepseek --base http://127.0.0.1:8001
+
+`deepseek` 子命令专用于 DeepSeek 兜底联调：先跑 4 条错误路径（不消耗云端算力），
+再提交一次真实 CHAT 任务，断言 `llmSource=deepseek` / `modelId` / 非缓存命中 / 耗时，
+末尾输出 `PASS n / FAIL m` 并以退出码反映结果。
+
+凭据：`--token` > 环境变量 `AI_SERVICE_TOKEN` > `backend/deploy/env.local` 中同名键。
+**任何情况下都不打印令牌值、URL 或请求头**；`--base` 只用于连接。
 
 口径：
 - 任务耗时 = 提交时刻 → 轮询到终态时刻（含排队；单 worker 串行，所以这就是用户侧等待）；
@@ -20,11 +28,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import statistics
 import sys
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 TASKS = "/internal/v1/tasks"
 TERMINAL = {"SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"}
@@ -32,17 +42,59 @@ TERMINAL = {"SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"}
 TRIAGE_TEXT = "最近两天胃疼，吃完饭有点反酸，想看看挂什么科。"
 CHAT_TEXT = "门诊时间到几点？"
 
+# 服务令牌（static 档）；只放在请求头里，绝不打印。缺省为空 = 兼容 AI_AUTH_MODE=off 的旧实例。
+_TOKEN = ""
+
+
+def _resolve_token(cli_value: str | None) -> str:
+    """令牌来源：命令行 > 环境变量 > env.local（只取这一个键，不回显值）。"""
+    if cli_value:
+        return cli_value.strip()
+    env_value = os.environ.get("AI_SERVICE_TOKEN", "").strip()
+    if env_value:
+        return env_value
+    path = Path(__file__).resolve().parent.parent / "backend" / "deploy" / "env.local"
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("AI_SERVICE_TOKEN="):
+                return line.split("=", 1)[1].strip()
+    return ""
+
 
 def _request(base: str, method: str, path: str, body: dict | None = None, headers: dict | None = None):
     """最小 HTTP 客户端：**禁用环境代理**（本机设了 http_proxy，会把 127.0.0.1 也代理掉）。"""
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(base.rstrip("/") + path, data=data, method=method)
     req.add_header("Content-Type", "application/json")
+    if _TOKEN:
+        req.add_header("Authorization", "Bearer " + _TOKEN)
     for key, value in (headers or {}).items():
         req.add_header(key, value)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     with opener.open(req, timeout=60) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+def _expect_status(base: str, method: str, path: str, *, body: dict | None = None,
+                   headers: dict | None = None, token: str | None = None, timeout: float = 10) -> int:
+    """只取 HTTP 状态码（错误路径用）；不打印请求头或服务地址。"""
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(base.rstrip("/") + path, data=data, method=method)
+    req.add_header("Content-Type", "application/json")
+    bearer = token if token is not None else _TOKEN
+    if bearer:
+        req.add_header("Authorization", "Bearer " + bearer)
+    for key, value in (headers or {}).items():
+        req.add_header(key, value)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(req, timeout=timeout) as resp:
+            return resp.status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+    except urllib.error.URLError:
+        return 0
 
 
 def _submit(base: str, task_type: str, *, key: str, input_inline: str | None = None,
@@ -151,30 +203,103 @@ def cmd_rag(args) -> int:
     return 0
 
 
+def cmd_deepseek(args) -> int:
+    """DeepSeek 兜底联调：错误路径 + 一次真实生成，断言结果确实由 DeepSeek 产出。"""
+    if not _TOKEN:
+        print("FAIL 未取得服务令牌：请传 --token、设置 AI_SERVICE_TOKEN，或检查 env.local")
+        return 1
+
+    checks: list[tuple[str, bool, str]] = []
+
+    def check(name: str, ok: bool, detail: str = "") -> None:
+        checks.append((name, bool(ok), detail))
+        print(f"  [{'PASS' if ok else 'FAIL'}] {name}" + (f" | {detail}" if detail else ""))
+
+    body: dict = {
+        "tenantId": "t-staging", "userId": "u-staging", "taskType": "CHAT",
+        "policyVersion": "policy-staging", "traceId": "trace-ds-preflight",
+        "inputInline": "饭后胃胀怎么办",
+    }
+    idem = {"Idempotency-Key": "ds-smoke-preflight-0001"}
+    # 错误路径先行：不消耗任何云端算力
+    check("缺少 Idempotency-Key → 400",
+          _expect_status(args.base, "POST", TASKS, body=body, headers={}) == 400)
+    check("无效服务令牌 → 401",
+          _expect_status(args.base, "POST", TASKS, body=body, headers=idem,
+                         token="intentionally-wrong-token") == 401)
+    check("非法 taskType → 422",
+          _expect_status(args.base, "POST", TASKS,
+                         body={**body, "taskType": "NOT_A_TYPE"}, headers=idem) == 422)
+    check("任务不存在 → 404",
+          _expect_status(args.base, "GET", f"{TASKS}/t_does_not_exist_0000001") == 404)
+
+    # 正常路径：输入带唯一编号，避开内容寻址缓存，确保真的打到模型
+    unique_text = f"饭后胃胀，想了解该注意什么（联调编号 {int(time.time() * 1000)}）"
+    key = f"ds-smoke-{int(time.time() * 1000)}"
+    try:
+        done, ms = _run_task(args.base, "CHAT", key=key, input_inline=unique_text, timeout=args.max_seconds)
+    except Exception as exc:  # 服务不可达 / 轮询超时：如实记为失败，不吞错
+        check("任务到达终态", False, exc.__class__.__name__)
+        print(f"PASS {sum(1 for _, ok, _ in checks if ok)} / FAIL {sum(1 for _, ok, _ in checks if not ok)}")
+        return 1
+
+    result = done.get("result") or {}
+    source = str(result.get("llmSource") or "")
+    model_id = str(done.get("modelId") or "")
+    text = str(result.get("text") or "").strip()
+    seconds = round(ms / 1000, 2)
+    print(f"  status={done['status']} | llmSource={source or 'n/a'} | modelId={model_id or 'n/a'} | {seconds}s")
+    if done.get("error"):
+        print("  error =", json.dumps(done["error"], ensure_ascii=False))
+
+    check("任务 SUCCEEDED", done["status"] == "SUCCEEDED")
+    check("本次为真实计算（cached=false）", done.get("cached") is False)
+    check("结果由 DeepSeek 产出（llmSource）", source == "deepseek", f"实际={source or 'n/a'}")
+    check("modelId 为云端模型", "deepseek" in model_id.lower(), f"实际={model_id or 'n/a'}")
+    check("回复正文非空", bool(text), f"长度={len(text)}")
+    check("耗时在预算内", seconds < args.max_seconds, f"{seconds}s < {args.max_seconds}s")
+
+    passed = sum(1 for _, ok, _ in checks if ok)
+    failed = len(checks) - passed
+    print(f"PASS {passed} / FAIL {failed}")
+    return 0 if failed == 0 else 1
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="ai-service 开关验证（cache / asr / rag / config）")
+    parser = argparse.ArgumentParser(description="ai-service 开关验证（cache / asr / rag / config / deepseek）")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
+    def add_common(p):
+        p.add_argument("--base", required=True)
+        p.add_argument("--token", default=None, help="服务令牌；缺省读 AI_SERVICE_TOKEN / env.local（不打印）")
+
     p = sub.add_parser("config", help="打印 readiness（脱敏）")
-    p.add_argument("--base", required=True)
+    add_common(p)
     p.set_defaults(func=cmd_config)
 
     p = sub.add_parser("cache", help="同输入重复提交，量命中率与命中耗时")
-    p.add_argument("--base", required=True)
+    add_common(p)
     p.add_argument("--runs", type=int, default=5)
     p.set_defaults(func=cmd_cache)
 
     p = sub.add_parser("asr", help="同一音频重复识别，量首次/第二次耗时")
-    p.add_argument("--base", required=True)
+    add_common(p)
     p.add_argument("--ref", required=True, help="asr:{id}，文件需在 AI_ASR_AUDIO_DIR 下")
     p.add_argument("--runs", type=int, default=2)
     p.set_defaults(func=cmd_asr)
 
     p = sub.add_parser("rag", help="RAG 检索 + CHAT 引用/降级")
-    p.add_argument("--base", required=True)
+    add_common(p)
     p.set_defaults(func=cmd_rag)
 
+    p = sub.add_parser("deepseek", help="DeepSeek 兜底联调（错误路径 + 真实生成 + llmSource 断言）")
+    add_common(p)
+    p.add_argument("--max-seconds", type=float, default=60.0, help="单次任务耗时上限（秒）")
+    p.set_defaults(func=cmd_deepseek)
+
     args = parser.parse_args()
+    global _TOKEN
+    _TOKEN = _resolve_token(args.token)
     return args.func(args)
 
 

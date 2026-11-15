@@ -62,7 +62,7 @@ services:
       AI_OLLAMA_URL: ${AI_OLLAMA_URL:-http://host.docker.internal:11434}
       AI_DEEPSEEK_API_KEY: ${AI_DEEPSEEK_API_KEY:-}
       AI_DEEPSEEK_BASE_URL: ${AI_DEEPSEEK_BASE_URL:-https://api.deepseek.com}
-      AI_DEEPSEEK_MODEL: ${AI_DEEPSEEK_MODEL:-deepseek-chat}
+      AI_DEEPSEEK_MODEL: ${AI_DEEPSEEK_MODEL:-deepseek-flash}
       AI_STORE_PATH: /app/runtime/tasks.json
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -107,7 +107,7 @@ const RESOURCE_MANIFEST   = { base: 'java', path: '/api/v1/resources/manifest' }
 const RESOURCE_ITEM       = { base: 'java', path: '/api/v1/resources/{key}' }
 const HOME_SUMMARY        = { base: 'java', path: '/api/v1/home/summary' }
 
-// 医生排班与在线接诊（V22，2026-10-22；后端已实现，页面待接线）：
+// 医生排班与在线接诊（V22，2026-10-22；2026-11-15 已接线：医生端「线上问诊设置」+ 患者端 availability）：
 //  GET/PUT /doctor/schedule（整体替换周模板，PUT 需 Idempotency-Key + expectedVersion）
 //  POST /doctor/online-status（开/关在线接诊，下线前后端校验待回复问诊）
 //  GET /doctors/{id}/availability（患者侧只读，公开；不可接诊时给 nextSlotAt）

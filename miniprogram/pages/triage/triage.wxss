@@ -105,7 +105,7 @@
   display: flex;
   align-items: center;
   gap: 8rpx;
-  min-width: 160rpx;
+  min-width: 120rpx;
 }
 
 .nav-back-icon {
@@ -160,7 +160,26 @@
   background: var(--primary);
 }
 
-.nav-right { min-width: 160rpx; }
+.nav-right { min-width: 120rpx; display: flex; align-items: center; justify-content: flex-end; }
+
+/* 清空当前会话（2026-11-15）：用户换症状时必须能丢弃旧会话，否则后端上下文会串病症。
+   ⚠️ 右上角是微信胶囊的固定位置：nav-bar 已按 `_navSafeRight()` 让出安全宽，
+      这里再给足「胶囊状」触控区（≥88rpx 宽 × 64rpx 高），避免"看得见点不着"。 */
+.nav-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 96rpx;
+  min-height: 64rpx;
+  padding: 0 24rpx;
+  box-sizing: border-box;
+  border-radius: 999rpx;
+  background: var(--accent-soft);
+  color: var(--primary);
+  font-size: var(--font-caption);
+  font-weight: 600;
+}
+.nav-clear:active { opacity: .6; }
 
 /* ============ 主体滚动区 ============ */
 .body-scroll {
@@ -554,34 +573,6 @@
   font-weight: 600;
   line-height: 1.45;
 }
-
-/* ============ 固定区服务入口（2026-10-17 收敛为单个「更多服务」） ============
-   原来 4 个 pill 横排；窄屏会被裁（见 triage.wxml 注释），且占掉固定区一行。
-   现在只有 1 个 pill，`overflow-x` 与 `.qs-all`（早先预留的实心"全部服务"样式，
-   全仓已无引用）一并移除。 */
-.quick-services {
-  display: flex;
-  align-items: center;
-  gap: 20rpx;
-  padding: 10rpx 24rpx;
-  flex-shrink: 0;
-}
-
-.qs-item {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-  min-height: 72rpx;
-  background: var(--card);
-  border-radius: 999rpx;
-  padding: 0 26rpx;
-  font-size: calc(var(--font-caption) + 2rpx);
-  color: var(--text-main);
-  flex-shrink: 0;
-  box-shadow: var(--shadow-card);
-}
-
-.qs-item:active { background: var(--accent-soft); }
 
 /* ============ 底部输入条 ============
    ⚠️ 2026-10-17 修一处真实缺陷：本元素同时挂了 `.safe-bottom`（app.wxss 用
@@ -1116,6 +1107,9 @@
 
 .collect-btn:active { background: var(--primary-dark); }
 
+/* THINKING 期间禁用外观：与 onForceResult 的并发守卫配套，避免连点重复请求 */
+.collect-btn-off { opacity: .5; pointer-events: none; }
+
 /* ==================== ≥600px（平板）====================
    rpx 按屏宽等比放大，平板上一张 112rpx 的底板会变成 ≈150px。
    本页此前**没有任何断点**（flow-card 走 app.wxss 的 px 版，与本页 rpx 混排）。
@@ -1176,9 +1170,6 @@
 
   .collect-bar { margin: 0 12px 4px; padding: 7px 10px; border-radius: 12px; border-width: 1px; }
   .collect-text, .collect-btn { font-size: 12px; }
-
-  .quick-services { padding: 5px 12px; gap: 10px; }
-  .qs-item { min-height: 36px; padding: 0 13px; font-size: 13px; }
 
   .input-bar { gap: 8px; padding: 6px 12px calc(6px + env(safe-area-inset-bottom)); }
   .voice-btn, .send-fab { width: 44px; height: 44px; }

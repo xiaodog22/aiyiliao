@@ -55,6 +55,19 @@ function Load-EnvLocal {
     Dim ("  已从 env.local 注入 " + $count + " 个环境变量（不显示内容）")
 }
 
+# business 的 jar 必须是可执行 fat jar：mvn package 若在 repackage 前被中断，
+# 会留下 maven-jar-plugin 的 thin jar（无 Main-Class），java -jar 直接报「没有主清单属性」。
+function Test-FatJarManifest([string]$JarPath) {
+    # Win10+ 自带 bsdtar 可直接读 zip 内条目，无需额外加载 .NET 程序集
+    try {
+        $tar = Join-Path $env:SystemRoot "System32\tar.exe"
+        if (-not (Test-Path $tar)) { return $true }   # 无 tar 时不误判，交回原启动流程
+        $mf = & $tar -xOf $JarPath "META-INF/MANIFEST.MF" 2>&1
+        if ($LASTEXITCODE -ne 0) { return $false }
+        return (($mf -join "`n") -match "(?m)^Main-Class:\s*\S")
+    } catch { return $false }
+}
+
 function Rotate-Log([string]$Name) {
     foreach ($suffix in @(".log", ".error.log")) {
         $logPath = Join-Path $LogsDir ($Name + $suffix)
@@ -403,6 +416,29 @@ switch ($Action) {
         if ($env:MYSQL_PORT) { $prePort = [int]$env:MYSQL_PORT }
         if (-not (Test-TcpPort $preHost $prePort)) {
             $preErrors += ("  [business] MySQL 不可达（" + $preHost + ":" + $prePort + "）—— 请先启动 MySQL 或核对 env.local")
+        }
+        # business 构建产物校验：thin jar（repackage 被中断）自动重打包，避免反复重启都报「没有主清单属性」。
+        # 仅在 business 未监听端口时执行，防止 jar 被运行中的进程占用导致 rename 失败。
+        $bizChk = $services | Where-Object { $_.name -eq "business" } | Select-Object -First 1
+        if ($null -ne $bizChk) {
+            $bizChkDir = Resolve-ServicePath $bizChk
+            $bizJar = Get-ChildItem -Path (Join-Path $bizChkDir "target") -Filter "*.jar" -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -notlike "*sources*" -and $_.Name -notlike "*.original" } | Select-Object -First 1
+            $bizPort = [int]$cfg.ports.($bizChk.portKey)
+            if ($null -ne $bizJar -and -not (Test-FatJarManifest $bizJar.FullName) -and -not (Test-TcpPort "127.0.0.1" $bizPort)) {
+                if (Test-Path (Join-Path $bizChkDir "mvnw.cmd")) {
+                    Warn "  [business] 构建产物缺少 Main-Class（thin jar），自动重新打包…"
+                    Push-Location $bizChkDir
+                    try { & (Join-Path $bizChkDir "mvnw.cmd") -o -q -DskipTests package } finally { Pop-Location }
+                    if ($LASTEXITCODE -ne 0) {
+                        $preErrors += ("  [business] 自动重打包失败（exit " + $LASTEXITCODE + "）—— 请手动执行 backend\business-service\mvnw.cmd -o -DskipTests package")
+                    } elseif (-not (Test-FatJarManifest $bizJar.FullName)) {
+                        $preErrors += "  [business] 重打包后仍缺少 Main-Class —— 请检查 spring-boot-maven-plugin 配置"
+                    } else {
+                        Ok "  [business] 已重建可执行 jar"
+                    }
+                }
+            }
         }
         if ($preErrors.Count -gt 0) {
             Info ""

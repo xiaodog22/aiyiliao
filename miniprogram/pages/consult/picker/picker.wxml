@@ -22,7 +22,7 @@
     <view class="cp-state-badge"><image class="cp-state-ic" src="{{icons.alertWhite}}" /></view>
     <view class="cp-state-title">医生列表加载失败</view>
     <view class="cp-state-sub">{{error}}</view>
-    <view class="cp-btn cp-btn-primary cp-state-btn" bindtap="fetch">重试</view>
+    <view class="btn btn-primary btn-inline cp-state-btn" bindtap="fetch">重试</view>
   </view>
 
   <block wx:else>
@@ -43,7 +43,8 @@
     <!-- 医生列表 -->
     <view class="cp-list">
       <view wx:for="{{shown}}" wx:key="id" wx:for-item="doc"
-            class="cp-doc" data-doctor="{{doc}}" bindtap="onPickDoctor" hover-class="cp-doc-hover">
+            class="cp-doc {{doc.available === false ? 'cp-doc-off' : ''}}"
+            data-doctor="{{doc}}" bindtap="onPickDoctor" hover-class="cp-doc-hover">
         <view class="cp-doc-face">
           <image class="cp-doc-face-ic" src="{{icons.user}}" />
         </view>
@@ -51,6 +52,8 @@
           <view class="cp-doc-top">
             <text class="cp-doc-name">{{doc.name || '医生'}}</text>
             <view wx:if="{{doc.title}}" class="cp-doc-chip">{{doc.title}}</view>
+            <!-- 在线接诊状态：与医生端「线上问诊设置」同源；未知不渲染 -->
+            <view wx:if="{{doc.availText}}" class="cp-avail {{doc.availCls}}">{{doc.availText}}</view>
           </view>
           <view class="cp-doc-sub">{{doc.departmentName || '互联网医院'}}</view>
           <view wx:if="{{doc.specialties && doc.specialties.length}}" class="cp-doc-spec">
@@ -59,7 +62,7 @@
         </view>
         <view class="cp-doc-side">
           <view wx:if="{{doc.slotStatusText}}" class="cp-doc-slot">{{doc.slotStatusText}}</view>
-          <text class="cp-doc-pick">选择</text>
+          <text class="cp-doc-pick">{{doc.available === false ? '暂不接诊' : '选择'}}</text>
         </view>
       </view>
 

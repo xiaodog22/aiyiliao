@@ -46,7 +46,13 @@ from ._llm import (
 
 logger = logging.getLogger("ai-service.executors.chat")
 
-PROMPT_TEMPLATE_VERSION = "consultation-chat-v5"
+PROMPT_TEMPLATE_VERSION = "consultation-chat-v6"
+
+# 分诊结论已给出后的「答疑模式」标记（2026-11-15）：
+# business-service 在会话已有成功的 TRIAGE 任务时，会在 inputInline 开头加这个标记。
+# 此时**绝不能**再追问症状细节 —— 否则用户会看到「结果卡已输出，下面还在问具体位置」
+# （用户明确反馈的错误行为，属产品口径缺陷，不是模型自由发挥）。
+POST_TRIAGE_MARKER = "【分诊建议已给出】"
 
 # ⚠️ 2026-10-24 重写：原 prompt 是「健康咨询助手」——实测会直接给科室结论（还常常是错的），
 #    与「先收集信息、信息够了再由 TRIAGE 出科室」的产品链路冲突。
@@ -68,6 +74,27 @@ _USER_PROMPT = (
     "不要重复其中的问题）：\n{message}\n"
     "请只输出 JSON，格式："
     '{{"text":"一个问句","language":"zh-CN","refused":false,"refusalReason":null}}'
+    "（拒答时 refused=true，并在 refusalReason 写明原因，text 给出简短的转介说明）"
+)
+
+# 结论已出 → 答疑模式（不再追问）。规则 ① 是硬约束：产品要求结果卡之后不得再出现
+# 「具体位置/多久了」这类追问；② 把输出从"问句"改成"直接回答患者当前问题"。
+_ANSWER_SYSTEM_PROMPT = (
+    "本次问诊的分诊建议已经给出（患者已在界面看到就诊科室建议卡）。规则："
+    "① 你这一轮绝不能再向患者追问任何症状细节，"
+    "尤其不要再问「具体哪个位置」「多久了」「有没有其他不舒服」这类问题；"
+    "② 直接回答患者这句话里提出的问题，简短口语化，2~3 句；"
+    "③ 严禁出现任何疾病名称、药品名称、剂量，不要重复或推翻已给出的科室建议；"
+    "④ 若患者只是补充症状信息，简短确认（如「好的，已了解」）并提醒可按页面上方建议预约就诊；"
+    "⑤ 若出现急症信号（持续胸痛、呼吸困难、意识改变、大出血），提示立即拨打 120；"
+    "⑥ 只输出 JSON，不输出任何其他文字。"
+)
+
+_ANSWER_USER_PROMPT = (
+    "以下是本次问诊的对话记录（「你：」是你自己在前面轮次说过的话）：\n{message}\n"
+    "分诊建议已给出：本轮直接回答患者最后一句话，不要再追问症状细节。"
+    "请只输出 JSON，格式："
+    '{{"text":"回答正文","language":"zh-CN","refused":false,"refusalReason":null}}'
     "（拒答时 refused=true，并在 refusalReason 写明原因，text 给出简短的转介说明）"
 )
 
@@ -141,6 +168,8 @@ def build_chat_executor(
         message = require_input_text(task)
         profile = str(task.get("modelProfile") or "small-default")
         model = resolve_model(settings, profile)
+        # 业务侧标记：本会话分诊建议已给出 → 切「答疑模式」（只回答、不再追问）
+        post_triage = POST_TRIAGE_MARKER in message
 
         await ensure_model_ready(probe, model, settings=settings)
 
@@ -149,25 +178,32 @@ def build_chat_executor(
         
         # ---- 注入院内知识库（2026-10-22 知识库注入层）----
         hospital_knowledge = knowledge_loader.get_knowledge("chat", budget_tokens=400)
+        base_prompt = _ANSWER_SYSTEM_PROMPT if post_triage else _SYSTEM_PROMPT
         if hospital_knowledge:
-            system_prompt = f"{_SYSTEM_PROMPT}\n\n院内知识库：\n{hospital_knowledge}"
+            system_prompt = f"{base_prompt}\n\n院内知识库：\n{hospital_knowledge}"
             logger.info("CHAT 任务注入院内知识库 | task=%s | knowledge_version=%s", task.get("taskId"), knowledge_loader.version)
         else:
-            system_prompt = _SYSTEM_PROMPT
+            system_prompt = base_prompt
             logger.info("CHAT 任务降级为通用 prompt（知识库未加载或场景缺失）| task=%s", task.get("taskId"))
         
         # ---- 构造 prompt（注入检索上下文）----
         if rag_context:
+            answer_hint = (
+                "分诊建议已给出：本轮直接回答患者最后一句话，不要再追问症状细节。"
+                if post_triage else ""
+            )
+            want_text = "回答正文" if post_triage else "一个问句"
             user_prompt = (
                 f"参考以下院内知识库内容：\n{rag_context}\n\n"
-                "以下是本次问诊的对话记录（「你：」是你自己在前面轮次说过的话，不要重复其中的问题）：\n"
+                "以下是本次问诊的对话记录（「你：」是你自己在前面轮次说过的话）：\n"
                 f"{message}\n"
+                f"{answer_hint}"
                 "请只输出 JSON，格式："
-                '{"text":"一个问句","language":"zh-CN","refused":false,"refusalReason":null}'
+                '{"text":"' + want_text + '","language":"zh-CN","refused":false,"refusalReason":null}'
                 "（拒答时 refused=true，并在 refusalReason 写明原因，text 给出简短的转介说明）"
             )
         else:
-            user_prompt = _USER_PROMPT.format(message=message)
+            user_prompt = (_ANSWER_USER_PROMPT if post_triage else _USER_PROMPT).format(message=message)
 
         # num_predict 512 → 160（2026-10-24）：导诊追问只要一句问句，
         # 512 tokens 在 CPU 上意味着多等 20~30s，对每轮都等的对话是纯浪费。

@@ -1,4 +1,4 @@
-/* pages/doctor/schedule —— 排班设置（医生端） */
+/* pages/doctor/schedule —— 线上问诊设置（医生端） */
 
 .ds-page {
   min-height: 100vh;
@@ -66,6 +66,22 @@
   padding: 24rpx;
 }
 .ds-card-head { font-size: 28rpx; font-weight: 600; color: #17233d; margin-bottom: 8rpx; }
+.ds-card-sub { font-size: 24rpx; color: #86909c; line-height: 1.5; margin-bottom: 16rpx; }
+
+/* 周汇总：X 个接诊时段 · Y 人 / 周可接诊 */
+.ds-sum {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 24rpx;
+  margin-bottom: 8rpx;
+  border-radius: 12rpx;
+  background: #f3f7ff;
+}
+.ds-sum-item { flex: 1; display: flex; align-items: baseline; justify-content: center; }
+.ds-sum-num { font-size: 40rpx; font-weight: 700; color: #0b6ef8; }
+.ds-sum-label { margin-left: 8rpx; font-size: 22rpx; color: #86909c; }
+.ds-sum-divider { width: 1rpx; height: 48rpx; background: #dbe4f3; }
+
 .ds-day {
   border-top: 1rpx solid #f2f3f5;
   padding: 20rpx 0;
@@ -83,7 +99,28 @@
   margin-bottom: 12rpx;
 }
 .ds-slot-time { font-size: 28rpx; color: #17233d; flex: 1; }
-.ds-slot-cap { font-size: 24rpx; color: #86909c; margin-right: 24rpx; }
+
+/* 每时段可接诊人数：− N ＋ 步进 */
+.ds-cap { display: flex; align-items: center; margin-right: 24rpx; }
+.ds-cap-btn {
+  width: 44rpx;
+  height: 44rpx;
+  line-height: 40rpx;
+  text-align: center;
+  border: 1rpx solid #dbe4f3;
+  border-radius: 8rpx;
+  font-size: 28rpx;
+  color: #0b6ef8;
+  background: #fff;
+}
+.ds-cap-btn-off { color: #c9cdd4; border-color: #eef0f3; }
+.ds-cap-num {
+  min-width: 56rpx;
+  text-align: center;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #17233d;
+}
 .ds-slot-del { font-size: 26rpx; color: #f53f3f; }
 .ds-day-add { font-size: 26rpx; color: #0b6ef8; text-align: center; padding: 12rpx 0; }
 .ds-day-empty { font-size: 26rpx; color: #0b6ef8; text-align: center; padding: 12rpx 0; }
@@ -101,5 +138,6 @@
 .ds-btn-primary { background: #0b6ef8; color: #fff; }
 .ds-btn-off { opacity: 0.6; }
 .ds-save-btn { margin-top: 8rpx; }
+.ds-tip { margin-top: 16rpx; font-size: 22rpx; color: #86909c; line-height: 1.6; text-align: center; }
 
 .ds-footbar-space { height: 140rpx; }

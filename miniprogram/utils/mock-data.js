@@ -66,12 +66,77 @@ const APPOINTMENTS = [
 const HEALTH_RECORDS = {
   basic: { bloodType: 'A 型', height: '172 cm', weight: '68 kg', allergies: '青霉素过敏', history: '高血压（5 年）' },
   visits: [
-    { date: '2026-07-15', dept: '心血管内科', doctor: '王主任医师', diagnosis: '高血压 2 级', prescription: '氨氯地平片 5mg 每日一次' },
-    { date: '2026-05-02', dept: '呼吸内科', doctor: '李副主任医师', diagnosis: '急性支气管炎', prescription: '头孢克肟胶囊 0.1g 每日两次' }
+    {
+      date: '2026-07-15',
+      dept: '心血管内科',
+      doctor: '王主任医师',
+      diagnosis: '高血压 2 级',
+      prescription: '氨氯地平片 5mg 每日一次',
+      // 每条档案记录对应一份报告文件（2026-11-15）：resourceKey 指向后端资源库，
+      // sha256 为文件内容摘要，用于完整性校验与同记录内去重（同一文件不重复出现）。
+      attachments: [
+        {
+          id: 'hr-push-bp',
+          fileName: '血压动态监测报告.jpg',
+          mime: 'image/jpeg',
+          size: 23684,
+          resourceKey: 'health.report-blood-pressure',
+          sha256: 'cdc7bb02bf5fe2c56c3f62c7b8864cc0d4c0f5b5419a0eda0241b285f2a0efe6'
+        }
+      ]
+    },
+    {
+      // 与血常规报告出具时间一致（报告图内：呼吸内科 · 2026-07-15 10:26）
+      date: '2026-07-15',
+      dept: '呼吸内科',
+      doctor: '李副主任医师',
+      diagnosis: '急性支气管炎',
+      prescription: '头孢克肟胶囊 0.1g 每日两次',
+      attachments: [
+        {
+          id: 'hr-push-cbc',
+          fileName: '血常规检验报告.jpg',
+          mime: 'image/jpeg',
+          size: 21304,
+          resourceKey: 'health.report-blood-routine',
+          sha256: 'd0705eb5f1d0bc44c75ce517eeaf1a5081f30fb498f9dfcdb617ec0908571e13'
+        }
+      ]
+    }
   ],
   reports: [
-    { date: '2026-07-15', name: '血常规检验报告', org: '检验科', status: '已出报告' },
-    { date: '2026-07-15', name: '血压动态监测报告', org: '心血管内科', status: '已出报告' }
+    {
+      date: '2026-07-15',
+      name: '血常规检验报告',
+      org: '检验科',
+      status: '已出报告',
+      attachments: [
+        {
+          id: 'hr-push-cbc',
+          fileName: '血常规检验报告.jpg',
+          mime: 'image/jpeg',
+          size: 21304,
+          resourceKey: 'health.report-blood-routine',
+          sha256: 'd0705eb5f1d0bc44c75ce517eeaf1a5081f30fb498f9dfcdb617ec0908571e13'
+        }
+      ]
+    },
+    {
+      date: '2026-07-15',
+      name: '血压动态监测报告',
+      org: '心血管内科',
+      status: '已出报告',
+      attachments: [
+        {
+          id: 'hr-push-bp',
+          fileName: '血压动态监测报告.jpg',
+          mime: 'image/jpeg',
+          size: 23684,
+          resourceKey: 'health.report-blood-pressure',
+          sha256: 'cdc7bb02bf5fe2c56c3f62c7b8864cc0d4c0f5b5419a0eda0241b285f2a0efe6'
+        }
+      ]
+    }
   ]
 }
 

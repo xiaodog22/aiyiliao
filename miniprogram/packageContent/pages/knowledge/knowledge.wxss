@@ -347,6 +347,14 @@
   line-height: 1.65;
 }
 
+/* 数据来源提示（服务端不可用降级本地库时出现；弱化样式，不抢卡片视觉） */
+.kb-src {
+  padding: 12rpx 4rpx 0;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.6;
+}
+
 /* ================= 平板断点（≥600px）：rpx → px（÷2）+ 主栏 375px 居中 =================
    ⚠️ 每个含 rpx 的选择器都要在此重声明，calc(…rpx) 里的 rpx 也一并改。 */
 @media (min-width: 600px) {
@@ -394,6 +402,7 @@
   .kb-empty-btn { margin-top: 14px; padding: 0 22px; height: 38px; line-height: 38px; }
 
   .k-note { padding: 12px 2px 4px; }
+  .kb-src { padding: 6px 2px 0; }
 }
 
 /* 竖屏平板（≥600px）主栏收窄 375px 居中；页面自带通栏 hero，用 margin 收边 */

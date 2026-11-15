@@ -45,6 +45,28 @@ public class AttachmentRepository {
                 AttachmentRepository::map, attachmentId, recordId).stream().findFirst();
     }
 
+    /**
+     * 按 objectKey + 用户查健康档案附件（2026-11-15 线上问诊上传合规）：
+     * 只有属于该用户的档案附件才允许作为问诊图片消息发送，
+     * 同时也是消息展示时反查附件元信息的唯一口径（不依赖 objectKey 全局唯一）。
+     */
+    public Optional<AttachmentRow> findByObjectKeyAndUser(String objectKey, String userId) {
+        return jdbc.query("SELECT " + COLS + " FROM health_record_attachments "
+                        + "WHERE object_key = ? AND user_id = ?",
+                AttachmentRepository::map, objectKey, userId).stream().findFirst();
+    }
+
+    /**
+     * 同一记录下按内容摘要查附件（2026-11-15 报告唯一性）：
+     * 上传前先查 sha256，命中即复用既有附件，避免同一份报告重复落库/重复占盘。
+     */
+    public Optional<AttachmentRow> findByRecordAndSha(String recordId, String userId, String sha256) {
+        return jdbc.query("SELECT " + COLS + " FROM health_record_attachments "
+                        + "WHERE record_id = ? AND user_id = ? AND sha256 = ? "
+                        + "ORDER BY created_at ASC, id ASC LIMIT 1",
+                AttachmentRepository::map, recordId, userId, sha256).stream().findFirst();
+    }
+
     public void insert(AttachmentRow row) {
         jdbc.update("INSERT INTO health_record_attachments (id, record_id, user_id, object_key, "
                         + "file_name, mime, size, sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",

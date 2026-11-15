@@ -161,6 +161,18 @@
   padding: 4rpx 12rpx;
   flex-shrink: 0;
 }
+/* 在线接诊状态（与医生端「线上问诊设置」同步）：在线=主色 / 暂不接诊=灰 */
+.cp-avail {
+  margin-left: 12rpx;
+  font-size: 22rpx;
+  border-radius: 8rpx;
+  padding: 4rpx 12rpx;
+  flex-shrink: 0;
+}
+.cp-avail-on { color: #0e9f6e; background: #e7f8f1; }
+.cp-avail-off { color: #86909c; background: #f2f3f5; }
+/* 医生已下线：整卡降透明度，仍可点（点了给明确中文提示，不做死按钮） */
+.cp-doc-off { opacity: 0.6; }
 .cp-doc-sub {
   font-size: 26rpx;
   color: #86909c;

@@ -144,9 +144,14 @@ async def generate(
                     transport=transport,
                 )
             else:
+                # 预算按「是不是首级」分配，而不是按 provider 名字写死：
+                #  - 默认 ollama,deepseek → DeepSeek 是兜底，用较短的第二级预算（fast fail）；
+                #  - 若把 AI_PROVIDER_ORDER 改成 deepseek,... → DeepSeek 是首级，必须给满任务预算，
+                #    否则首级会被 15~45s 的兜底预算卡死（2026-11-15 修正）。
+                ds_budget = timeout_s if name == order[0] else (fallback_timeout_s or timeout_s)
                 text, model = await deepseek_provider.generate(
                     settings, payload,
-                    timeout_s=fallback_timeout_s or timeout_s,
+                    timeout_s=ds_budget,
                     transport=transport,
                 )
         except deepseek_provider.NotConfigured:

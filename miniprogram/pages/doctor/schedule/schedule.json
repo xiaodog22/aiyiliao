@@ -1,6 +1,6 @@
 {
   "navigationStyle": "custom",
-  "navigationBarTitleText": "排班设置",
+  "navigationBarTitleText": "线上问诊设置",
   "usingComponents": {
     "doctor-tabbar": "/components/doctor-tab-bar/index"
   }

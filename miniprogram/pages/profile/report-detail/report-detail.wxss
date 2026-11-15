@@ -198,17 +198,7 @@
 .rd-state-ic { width: 40rpx; height: 40rpx; }
 .rd-state-t { color: var(--text-main); font-size: var(--font-h2); }
 .rd-state-s { margin-top: 12rpx; color: var(--text-sub); font-size: var(--font-caption); }
-.rd-state-btn {
-  display: inline-block;
-  margin-top: 24rpx;
-  padding: 0 40rpx;
-  height: 72rpx;
-  line-height: 72rpx;
-  border-radius: var(--radius-md);
-  background: var(--primary);
-  color: #FFFFFF;
-  font-size: var(--font-body);
-}
+.rd-state-btn { margin-top: 24rpx; }
 
 /* ≥600px：rpx → px（÷2），含 border-width */
 @media (min-width: 600px) {
@@ -249,7 +239,7 @@
   .rd-state-badge { width: 40px; height: 40px; margin: 0 auto 8px; }
   .rd-state-ic { width: 20px; height: 20px; }
   .rd-state-s { margin-top: 6px; }
-  .rd-state-btn { margin-top: 12px; padding: 0 20px; height: 36px; line-height: 36px; }
+  .rd-state-btn { margin-top: 12px; }
 }
 @media (min-width: 600px) and (max-width: 899px) {
   .rd-page { max-width: 375px; margin: 0 auto; }

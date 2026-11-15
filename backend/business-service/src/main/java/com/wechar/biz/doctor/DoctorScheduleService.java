@@ -69,8 +69,15 @@ public class DoctorScheduleService {
         }
         var online = repository.findOnline(doctorId)
                 .orElse(new DoctorScheduleRepository.OnlineRow(doctorId, false, false, 0, null));
+        // inSlot：当前本地墙上时间是否落在该医生今天某个接诊时段内（患者端显示「在线接诊」用）
+        LocalDateTime localNow = LocalDateTime.now(ZoneId.systemDefault());
+        LocalTime nowTime = localNow.toLocalTime();
+        int today = localNow.getDayOfWeek().getValue();
+        boolean inSlot = repository.findByDoctorId(doctorId).stream()
+                .anyMatch(r -> r.weekday() == today && !nowTime.isBefore(r.startTime())
+                        && nowTime.isBefore(r.endTime()));
         return new DoctorAvailabilityData(doctorId, online.online(), online.accepting(),
-                nextSlotAt(doctorId));
+                inSlot, nextSlotAt(doctorId));
     }
 
     // ---------------------------------------------------------------- 写

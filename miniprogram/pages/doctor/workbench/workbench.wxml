@@ -7,7 +7,7 @@
     ③ 统计概览卡：三列（待就诊 / 就诊中 / 已完成），标签在上、数值在下，加载态为灰色骨架条
     ④ 今日工作卡：2×2 宫格（预约管理 / 患者接诊 / 在线问诊 / 患者管理），图标+文字同在一枚浅蓝圆角块内
     ⑤ 待处理事项卡：标题 +「查看全部 ›」；每行 = 彩色圆形徽章 + 标题/副标题 + 蓝色「处理」胶囊
-    ⑥ 快捷功能卡：三列（床位管理 / 排班管理 / 消息通知），列间竖线
+    ⑥ 快捷功能卡：三列（床位管理 / 问诊设置 / 消息通知），列间竖线
     ⑦ 底部医生端导航：工作台 / 患者 / 消息 / 我的（组件 components/doctor-tab-bar）
 
   ⚠️ 导航栏为什么自绘：原生导航栏只能竖向排"返回 + 标题 + 一个胶囊"，放不下设计稿右侧那个
@@ -55,7 +55,7 @@
           <image class="wb-rail-ic" src="{{icons.users}}" /><text>患者队列</text>
         </view>
         <view class="wb-rail-item pressable" data-key="schedule" bindtap="onQuick">
-          <image class="wb-rail-ic" src="{{icons.calendar}}" /><text>日程排班</text>
+          <image class="wb-rail-ic" src="{{icons.calendar}}" /><text>问诊设置</text>
         </view>
         <view class="wb-rail-item pressable" data-key="consult" bindtap="onQuick">
           <image class="wb-rail-ic" src="{{icons.chat}}" /><text>在线问诊</text>
@@ -182,7 +182,7 @@
           </view>
           <view class="qf-tile pressable" data-key="schedule" bindtap="onQuick">
             <view class="qf-ic-box"><image class="qf-ic" src="{{icons.calendar}}" /></view>
-            <text class="qf-label">排班管理</text>
+            <text class="qf-label">问诊设置</text>
           </view>
           <view class="qf-tile pressable" data-key="notify" bindtap="onQuick">
             <view class="qf-ic-box"><image class="qf-ic" src="{{icons.bell}}" /></view>

@@ -71,7 +71,7 @@
       <view wx:elif="{{!activeId && hasDoctor}}" class="state">
         <view class="state-badge state-badge-primary"><image class="state-ic" src="{{icons.chatGray}}" /></view>
         <view class="state-title">已选择医生</view>
-        <view class="state-sub">发送您的症状描述，即可发起在线问诊</view>
+        <view class="state-sub">描述病情并提交预约，提交后可继续补充，医生接单后回复</view>
       </view>
 
       <block wx:else>
@@ -150,8 +150,8 @@
         <!-- 空消息：引导（与上面的降级提示互斥，故用组合条件而不是 wx:elif —— 避免注释夹在条件链里） -->
         <view wx:if="{{!consultError && messages.length === 0 && !typing}}" class="cs-empty">
           <view class="cs-empty-ic-wrap"><image class="cs-empty-ic" src="{{icons.chat}}" /></view>
-          <view class="cs-empty-t">问诊已创建，等待医生回复</view>
-          <view class="cs-empty-s">您可以补充症状描述或上传检查报告</view>
+          <view class="cs-empty-t">问诊已创建，等待医生接单</view>
+          <view class="cs-empty-s">您可继续补充症状描述或上传检查报告，医生接单后回复</view>
         </view>
       </block>
     </view>
@@ -176,41 +176,51 @@
   </block>
 
   <!-- ⑤ 底部输入栏（设计稿 04：＋ / 输入框 / 语音 / 发送；无会话已选医生时也允许输入发起）
-       已结束 → 换成只读提示；键盘弹出时只上移本栏（adjust-position=false） -->
+       已结束 → 换成只读提示；已预约未接单 → 输入栏上方给轻提示，输入栏保持可用
+       （2026-11-15：患者可继续补充病情/资料，不再用等待条替换输入栏）；
+       键盘弹出时只上移本栏（adjust-position=false） -->
   <view wx:if="{{!loading && !error && closed}}" class="cs-closed">本次问诊已结束</view>
-  <view wx:elif="{{!loading && !error && (activeId || hasDoctor)}}"
-        class="cs-bar {{kbHeight > 0 ? 'cs-bar-kb' : ''}}"
-        style="transform: translateY(-{{kbHeight}}px);">
-    <view class="cs-bar-btn" bindtap="onPickAttach" aria-role="button" aria-label="上传检查资料">
-      <view class="cs-bar-circle"><image class="cs-bar-ic-plus" src="{{icons.plusGray}}" /></view>
+  <block wx:else>
+    <view wx:if="{{!loading && !error && activeId && !accepting}}"
+          class="cs-wait-top {{kbHeight > 0 ? 'cs-wait-top-kb' : ''}}"
+          style="transform: translateY(-{{kbHeight}}px);">
+      <view class="cs-wait-dot"></view>
+      <text class="cs-wait-top-t">已提交预约，{{doctorName}}接单后会回复；您可继续补充病情</text>
     </view>
-    <view wx:if="{{recording}}" class="cs-bar-input cs-bar-input-rec" bindtap="onVoice">
-      <text class="cs-rec-t">正在聆听… 点击结束</text>
-    </view>
-    <input
-      wx:else
-      class="cs-bar-input"
-      placeholder="输入消息…"
-      placeholder-class="cs-ph"
-      value="{{input}}"
-      bindinput="onInput"
-      confirm-type="send"
-      bindconfirm="onSend"
-      disabled="{{sending}}"
-      maxlength="{{inputMax}}"
-      adjust-position="{{false}}"
-      cursor-spacing="0"
-      bindfocus="onKbHeight"
-      bindblur="onKbBlur"
-      bindkeyboardheightchange="onKbHeight"
-    />
-    <view class="cs-bar-btn" bindtap="onVoice" aria-role="button" aria-label="语音输入">
-      <view class="cs-bar-circle {{recording ? 'cs-bar-circle-on' : ''}}">
-        <image class="cs-bar-ic-mic" src="{{recording ? icons.micWhite : icons.micGray}}" />
+    <view wx:if="{{!loading && !error && (activeId || hasDoctor)}}"
+          class="cs-bar {{kbHeight > 0 ? 'cs-bar-kb' : ''}}"
+          style="transform: translateY(-{{kbHeight}}px);">
+      <view class="cs-bar-btn" bindtap="onPickAttach" aria-role="button" aria-label="上传检查资料">
+        <view class="cs-bar-circle"><image class="cs-bar-ic-plus" src="{{icons.plusGray}}" /></view>
       </view>
+      <view wx:if="{{recording}}" class="cs-bar-input cs-bar-input-rec" bindtap="onVoice">
+        <text class="cs-rec-t">正在聆听… 点击结束</text>
+      </view>
+      <input
+        wx:else
+        class="cs-bar-input"
+        placeholder="{{!activeId && hasDoctor ? '请描述病情，提交后等待医生接单' : '输入消息…'}}"
+        placeholder-class="cs-ph"
+        value="{{input}}"
+        bindinput="onInput"
+        confirm-type="send"
+        bindconfirm="onSend"
+        disabled="{{sending}}"
+        maxlength="{{inputMax}}"
+        adjust-position="{{false}}"
+        cursor-spacing="0"
+        bindfocus="onKbHeight"
+        bindblur="onKbBlur"
+        bindkeyboardheightchange="onKbHeight"
+      />
+      <view class="cs-bar-btn" bindtap="onVoice" aria-role="button" aria-label="语音输入">
+        <view class="cs-bar-circle {{recording ? 'cs-bar-circle-on' : ''}}">
+          <image class="cs-bar-ic-mic" src="{{recording ? icons.micWhite : icons.micGray}}" />
+        </view>
+      </view>
+      <view class="cs-send {{sending ? 'cs-send-off' : ''}}" bindtap="onSend" aria-role="button" aria-label="发送">{{!activeId && hasDoctor ? '提交预约' : '发送'}}</view>
     </view>
-    <view class="cs-send {{sending ? 'cs-send-off' : ''}}" bindtap="onSend" aria-role="button" aria-label="发送">发送</view>
-  </view>
+  </block>
 
   <!-- 键盘占位：把内容撑高到「键盘高度 + 输入栏」，最后一条消息不会被输入栏压住 -->
   <view wx:if="{{kbHeight > 0}}" class="cs-kb-spacer" style="height: {{kbHeight}}px;"></view>

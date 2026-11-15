@@ -25,7 +25,7 @@ const userService = require('../../services/user.js')
 const triageService = require('../../services/triage.js')
 const req = require('../../services/request.js')
 const { hasContent } = require('../../utils/input-guard.js')
-const { aptStatusText, isPastVisit } = require('../../utils/apt-status.js')
+const flowProgress = require('../../utils/flow-progress.js')
 
 const REPORT_KEY = 'wb_triage_report'
 
@@ -58,9 +58,6 @@ const INPUT_MAX_TIP = '已达字数上限，可先发送再补充'
  */
 const MSG_CAP = 60
 
-/** 动作面板项 → 各自动作（「更多服务」用，见 onServices） */
-const SERVICE_MENU = ['预约挂号', '报告查询', '来院导航', '全部服务']
-
 function nowTime() {
   const d = new Date()
   return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
@@ -85,6 +82,8 @@ Page({
     theme: 'standard',
     icons,
     statusBarHeight: 20,
+    // 自定义导航栏右侧预留的微信胶囊安全宽（px）：否则右上角「清空」被胶囊压住、点不到
+    navSafeRight: 0,
     user: { maskName: '用户', gender: '', maskId: '' },
     // 就医进度
     progress: {
@@ -107,13 +106,18 @@ Page({
     slotsText: '',         // 已采集到的信息（顶部看板）
     rounds: 0,             // 追问轮数
     canReport: false,      // 是否已有可生成报告的结论
+    generated: false,      // 本次会话是否已生成过结果（生成后按钮置灰，须清空才能重来）
     lastResult: null
   },
 
   onLoad(options) {
     let win = {}
     try { win = wx.getWindowInfo() } catch (e) {}
-    this.setData({ theme: app.globalData.theme || 'standard', statusBarHeight: win.statusBarHeight || 20 })
+    this.setData({
+      theme: app.globalData.theme || 'standard',
+      statusBarHeight: win.statusBarHeight || 20,
+      navSafeRight: this._navSafeRight(win)
+    })
     this._asked = []
     this._history = []
     this._pendingNavDept = ''
@@ -149,6 +153,21 @@ Page({
   onShow() {
     const theme = app.globalData.theme || 'standard'
     if (theme !== this.data.theme) this.setData({ theme })
+    // 每次回到本页都重新拉预约进度：用户可能刚在挂号页完成预约/取号（D4）
+    this._loadProgress()
+  },
+
+  /**
+   * 计算导航栏右侧需要给微信胶囊让出的安全宽（px）。
+   * 依据：胶囊恒贴屏幕右边，故安全宽 = 屏宽 − 胶囊左边界 + 8px 呼吸位。
+   * 降级：取不到胶囊信息时返回 0 → 退回旧行为，不新增崩溃面。
+   */
+  _navSafeRight(win) {
+    try {
+      const mb = wx.getMenuButtonBoundingClientRect ? wx.getMenuButtonBoundingClientRect() : null
+      if (mb && mb.width) return (win.windowWidth || 375) - mb.left + 8
+    } catch (e) {}
+    return 0
   },
 
   // 隐私告知（首次进入，用户确认后才用；拒绝则只做本地分析、不发后端）
@@ -188,41 +207,12 @@ Page({
   _loadProgress() {
     req.ensureSessionReady().then((ready) => {
       if (!ready) return
-      // ⚠️ 契约 GET /api/v1/appointments/me 已按认证主体在服务端过滤，客户端不再传 phone
+      // ⚠️ 契约 GET /api/v1/appointments/me 已按认证主体在服务端过滤，客户端不再传 phone。
+      // ⚠️ 取数口径统一走 utils/flow-progress.js：后端按「新→旧」返回，
+      //    原实现取 list[list.length-1] 永远拿到最旧一条，提示不会更新（2026-11-15）。
       userService.listMyAppointments()
         .then((list) => {
-          if (!list || !list.length) return
-          const latest = list[list.length - 1]
-          // 契约 AppointmentStatus 是英文枚举，必须经 aptStatusText 转中文再判定
-          // ⚠️ 分支按契约英文枚举，不按展示文案（文案微调即静默失效，D-B-P2-03）
-          const raw = String(latest.status || '').trim().toUpperCase()
-          // ⚠️ 契约 Appointment 的科室字段是 **departmentName**；历史写法 latest.deptName
-          //    恒为 undefined → 副标题里的科室名一直是空的（此处修正）。
-          const dept = latest.departmentName || ''
-          const prefix = dept ? (dept + '门诊 | ') : ''
-          let step = 2
-          let subtitle = ''
-          // D-06：CONFIRMED 但时段已过 → 不能还显示「请按时到院取号」，否则用户白跑一趟。
-          // 判定先于状态分支，避免"过期单走进 CONFIRMED 正常分支"。
-          if ((raw === 'CONFIRMED' || raw === 'PENDING') && isPastVisit(latest.startTime, latest.endTime)) {
-            step = 1
-            subtitle = prefix + '上次预约已过期，可重新预约或继续咨询'
-          } else if (raw === 'CONFIRMED') {
-            step = 2
-            subtitle = prefix + '您好！您的预约已确认，请按时到院取号'
-          } else if (raw === 'CHECKED_IN') {
-            step = 3
-            subtitle = prefix + '您已取号，请前往诊室候诊'
-          } else if (raw === 'COMPLETED') {
-            step = 4
-            subtitle = prefix + '本次就诊已完成，祝您早日康复'
-          } else {
-            // 其余契约态（PENDING/CANCELLED/EXPIRED/NO_SHOW）→ 如实说明当前状态，
-            // 原实现对这些态一律留空副标题，卡片呈现为「有流程但一片空白」。
-            step = 1
-            subtitle = prefix + '当前预约状态：' + aptStatusText(raw)
-          }
-          this.setData({ progress: { title: 'AI 导诊陪您全流程就医', subtitle, step, hasFlow: true } })
+          this.setData({ progress: flowProgress.buildProgress(list, 'AI 导诊陪您全流程就医') })
         })
         .catch(() => {})
     })
@@ -257,6 +247,7 @@ Page({
         slotsText: this.data.slotsText,
         rounds: this.data.rounds,
         canReport: this.data.canReport,
+        generated: this.data.generated,
         lastResult: this.data.lastResult,
         emergency: this.data.emergency,
         // 下面几项挂在实例上（不是 data），一并存，否则恢复后 AI 会话会重新建
@@ -293,6 +284,7 @@ Page({
       slotsText: s.slotsText || '',
       rounds: Number(s.rounds) || 0,
       canReport: !!s.canReport,
+      generated: !!s.generated,
       lastResult: s.lastResult || null,
       emergency: s.emergency || null,
       status: 'IDLE'
@@ -429,11 +421,11 @@ Page({
     // 兜底不是结论（DEF-16）：不落"全科医学科"的导诊记录、不提供完整报告，
     // 否则报告页会把一次"没判断出来"渲染成白纸黑字的科室建议。
     if (result && result.noConclusion) {
-      this.setData({ lastResult: null, canReport: false })
+      this.setData({ lastResult: null, canReport: false, generated: true })
       this._persistSession()
       return
     }
-    this.setData({ lastResult: result, canReport: true })
+    this.setData({ lastResult: result, canReport: true, generated: true })
     triageService.saveSession(result, text)
     this._persistSession()
     this._speakAdvice(result)
@@ -635,14 +627,64 @@ Page({
     wx.navigateTo({ url: '/pages/triage/result/result' })
   },
 
-  /** 主动结束采集、直接出结果 */
+  /** 主动结束采集、直接出结果（一次会话只允许生成一次，重来须先清空） */
   onForceResult() {
+    // 分析中禁止再次触发：连点会重复建任务/重复出结论（2026-11-15）
+    if (this.data.status === 'THINKING') return
+    // 已生成过 → 本次会话不再生成：只再算一遍会重复烧 AI 推理、重复落记录，
+    // 结论也不会变；用户要重新导诊必须清空对话（2026-11-15）。
+    if (this.data.generated) {
+      wx.showToast({ title: '本次已生成结果，如需重新导诊请先点「清空」', icon: 'none', duration: 2600 })
+      return
+    }
     const last = this._history.length ? this._history[this._history.length - 1] : ''
     if (!last) {
       wx.showToast({ title: '请先描述症状', icon: 'none' })
       return
     }
     this._analyze(last, true)
+  },
+
+  /**
+   * 清空当前导诊会话。
+   * ⚠️ 必须同时丢弃 _consultationId 与本地 history/asked：
+   *    只清界面不清会话时，后端仍带着上一次症状（如咳嗽）做匹配，
+   *    用户换说「肚子疼」也会被旧上下文带跑（2026-11-15 D3）。
+   */
+  onClear() {
+    wx.showModal({
+      title: '清空对话',
+      content: '清空后本次症状记录无法恢复，将重新开始问诊，确定吗？',
+      confirmText: '清空',
+      confirmColor: '#D93025',
+      success: (res) => {
+        if (!res.confirm) return
+        speechService.stopRecord()
+        speechService.stopSpeak()
+        this._clearSession()
+        this._consultationId = ''
+        this._asked = []
+        this._history = []
+        this._pendingNavDept = ''
+        this._deptPushed = false
+        this._maxTipShown = false
+        this.setData({
+          messages: [],
+          msgId: 0,
+          slotsText: '',
+          rounds: 0,
+          canReport: false,
+          generated: false,
+          lastResult: null,
+          emergency: null,
+          input: '',
+          recording: false,
+          voiceHint: '',
+          status: 'IDLE'
+        })
+        this._greet()
+      }
+    })
   },
 
   _speakAdvice(result) {
@@ -661,30 +703,6 @@ Page({
     const t = e.currentTarget.dataset.type
     wx.showToast({ title: t === 'up' ? '感谢您的认可' : '感谢反馈，我们会持续优化', icon: 'none' })
   },
-
-  // ==================== 固定区服务入口 ====================
-  /**
-   * 「更多服务」＝ 动作面板（同首页 onMore 的既有手法）。
-   * 为什么收敛成 1 个入口：原来 4 个 pill 常驻固定在输入栏上方，
-   *   ① 窄屏（320px）总宽约 716rpx 放不下，view 上的 overflow-x:auto 不产生滚动 → 第 4 项被裁；
-   *   ② 固定区越厚，对话可视高度越小（UIUX §3.5）。
-   * 4 个去向与原 handler 一个不少，只是改为从面板进入。
-   */
-  onServices() {
-    wx.showActionSheet({
-      itemList: SERVICE_MENU,
-      success: (res) => {
-        const fn = [this.onQuickBook, this.onQuickReport, this.onQuickNav, this.onAllServices][res.tapIndex]
-        if (fn) fn.call(this)
-      },
-      fail: () => {}   // 用户自己取消，不提示（不是错误）
-    })
-  },
-
-  onQuickBook() { wx.switchTab({ url: '/pages/appointment/appointment' }) },
-  onQuickReport() { wx.navigateTo({ url: '/pages/profile/records/records' }) },
-  onQuickNav() { wx.navigateTo({ url: '/packageNav/pages/nav/nav' }) },   // 院内导航已上线
-  onAllServices() { wx.switchTab({ url: '/pages/home/home' }) },
 
   // ==================== 顶部导航 ====================
   // 返回上一页。⚠️ 若本页是栈首（如开发者工具「编译模式」直接打开本页）navigateBack 必失败，

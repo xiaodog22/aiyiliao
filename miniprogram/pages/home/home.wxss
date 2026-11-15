@@ -338,6 +338,52 @@
 /* 卡头与内容之间的呼吸位（「查看全部」自带 88rpx 命中高度，无需额外上边距） */
 .apt-card .apt-row { padding-top: var(--h-s2); }
 
+/* 在线问诊接单提示行（D6，2026-11-15）：卡内浅蓝底信息条 + 状态圆点 */
+.apt-consult {
+  display: flex;
+  align-items: center;
+  margin-top: 20rpx;
+  padding: 18rpx 20rpx;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+}
+
+.apt-consult-dot {
+  width: 14rpx;
+  height: 14rpx;
+  flex-shrink: 0;
+  margin-right: 14rpx;
+  border-radius: 50%;
+  background: var(--accent-amber);
+}
+
+/* 已接单：圆点转主色（与待接单的橙色区分，不新增色值） */
+.apt-consult-dot-on { background: var(--primary); }
+
+.apt-consult-body { flex: 1; min-width: 0; }
+
+.apt-consult-t {
+  font-size: var(--font-caption);
+  font-weight: 600;
+  color: var(--text-main);
+  line-height: 1.5;
+}
+
+.apt-consult-s {
+  margin-top: 2rpx;
+  font-size: calc(var(--font-caption) - 2rpx);
+  color: var(--text-weak);
+  line-height: 1.5;
+}
+
+.apt-consult-arrow {
+  width: 28rpx;
+  height: 28rpx;
+  flex-shrink: 0;
+  margin-left: 12rpx;
+  opacity: 0.5;
+}
+
 .apt-row {
   display: flex;
   align-items: center;
@@ -747,6 +793,10 @@
   .apt-left { margin-left: 10px; }
   .apt-line2-ic { width: 12px; height: 12px; margin-right: 3px; }
   .apt-arrow { width: 18px; height: 18px; }
+  .apt-consult { margin-top: 10px; padding: 9px 10px; }
+  .apt-consult-dot { width: 7px; height: 7px; margin-right: 7px; }
+  .apt-consult-s { margin-top: 1px; }
+  .apt-consult-arrow { width: 14px; height: 14px; margin-left: 6px; }
 
   .triage-card { border-left-width: 4px; padding: 16px; }
   .triage-icon { margin-right: 12px; }

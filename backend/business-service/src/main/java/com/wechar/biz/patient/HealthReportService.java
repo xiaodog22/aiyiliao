@@ -160,8 +160,17 @@ public class HealthReportService {
         }
 
         List<AttachmentData> files = attachments.listByRecord(recordId).stream()
-                .map(a -> new AttachmentData(a.id(), a.objectKey(), storage.signedUrl(a.objectKey()),
-                        a.fileName(), a.mime(), a.size(), a.sha256(), a.createdAt()))
+                .map(a -> {
+                    // 系统推送的报告图片：object_key = "res:<resourceKey>"，无磁盘对象
+                    String key = a.objectKey() == null ? "" : a.objectKey();
+                    if (key.startsWith("res:")) {
+                        String resourceKey = key.substring(4);
+                        return new AttachmentData(a.id(), null, "/api/v1/resources/" + resourceKey,
+                                a.fileName(), a.mime(), a.size(), a.sha256(), a.createdAt(), resourceKey);
+                    }
+                    return new AttachmentData(a.id(), a.objectKey(), storage.signedUrl(a.objectKey()),
+                            a.fileName(), a.mime(), a.size(), a.sha256(), a.createdAt(), null);
+                })
                 .toList();
 
         return new ReportDetailData(recordId, detail.reportNo(), record.title(),

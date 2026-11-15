@@ -637,6 +637,42 @@
   color: var(--text-weak);
 }
 
+/* 已预约、医生未接单：输入栏上方轻提示（输入栏保持可用，患者可继续补充病情/资料）
+   底距 = 输入栏高度（64rpx 控件 + 上下 20rpx 内边距） + Home 指示条 */
+.cs-wait-top {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(104rpx + env(safe-area-inset-bottom));
+  z-index: 49;
+  display: flex;
+  align-items: center;
+  padding: 14rpx 24rpx;
+  box-sizing: border-box;
+  background: var(--accent-soft);
+  border-top: 1rpx solid var(--border);
+}
+
+/* 键盘弹起：输入栏已取消 safe-area 内边距并整体上移，提示条同步贴到栏顶 */
+.cs-wait-top-kb { bottom: 104rpx; }
+
+.cs-wait-dot {
+  width: 16rpx;
+  height: 16rpx;
+  flex-shrink: 0;
+  margin-right: 16rpx;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+.cs-wait-top-t {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.5;
+}
+
 /* 键盘占位（高度由内联 style 给）：保证最后一条消息能滚到输入栏上方 */
 .cs-kb-spacer { width: 100%; }
 
@@ -821,6 +857,10 @@
   .cs-bar { gap: 12px; padding: 10px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
   .cs-bar-kb { padding-bottom: 10px; }
   .cs-closed { padding: 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom)); border-top-width: 1px; font-size: 12px; }
+  .cs-wait-top { bottom: calc(52px + env(safe-area-inset-bottom)); padding: 7px 12px; border-top-width: 1px; }
+  .cs-wait-top-kb { bottom: 52px; }
+  .cs-wait-top-t { font-size: 12px; }
+  .cs-wait-dot { width: 8px; height: 8px; margin-right: 8px; }
   .cs-bar-btn { width: 25px; height: 25px; }
   .cs-bar-btn::after { left: -9px; top: -9px; right: -9px; bottom: -9px; }
   .cs-bar-circle { width: 25px; height: 25px; border-width: 1px; }

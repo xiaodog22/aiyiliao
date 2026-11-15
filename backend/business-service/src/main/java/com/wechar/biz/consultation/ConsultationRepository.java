@@ -152,15 +152,17 @@ public class ConsultationRepository {
     }
 
     /**
-     * 接诊判定（V21+）：会话内是否已存在**非患者侧**消息（医生回复 / 接诊系统提示）。
+     * 医生接单判定（2026-11-15，在线问诊「先预约 → 医生接单 → 才可对话」）。
      *
-     * 与 findLastMessageRole 的区别：按「末条角色」判定会被患者后续发言翻转
-     * （医生已接诊 → 患者再问一句 → 末条变 user → 患者端回落「待接诊」，与会话真实状态矛盾）。
-     * 接诊是会话级事实，一旦发生过就不会逆转，因此改为「存在性」判定。
+     * 口径只认**医生侧**记录：role='doctor'（医生回复）或 role='system_notice' 且正文含「接诊」。
+     * ⚠️ 不能改成 `role <> 'user'`：AI 助手回复（role=assistant）也会命中，
+     *    会让「AI 先答过一句」的会话被误判成医生已接单，从而绕过接单闸门。
+     * 用「存在性」而非「末条角色」：患者后续发言不能把已接诊翻回待接诊。
      */
-    public boolean hasNonUserMessage(String consultationId) {
+    public boolean hasDoctorAcceptance(String consultationId) {
         Integer rows = jdbc.queryForObject("SELECT COUNT(1) FROM consultation_messages "
-                + "WHERE consultation_id = ? AND role <> 'user'", Integer.class, consultationId);
+                + "WHERE consultation_id = ? AND (role = 'doctor' "
+                + "OR (role = 'system_notice' AND content LIKE '%接诊%'))", Integer.class, consultationId);
         return rows != null && rows > 0;
     }
 

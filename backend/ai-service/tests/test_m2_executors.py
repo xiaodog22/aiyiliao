@@ -139,7 +139,34 @@ def test_chat_success_flow(tmp_path):
     assert result["refused"] is False
     assert result["hasTimestamps"] is False
     assert task["modelId"] == "qwen2.5:0.5b"
-    assert task["promptTemplateVersion"] == "consultation-chat-v5"
+    assert task["promptTemplateVersion"] == "consultation-chat-v6"
+
+
+def test_chat_post_triage_answer_mode(tmp_path):
+    """分诊结论已出（业务侧标记）→ 切答疑模式：只回答，不再追问症状细节。"""
+    settings = _settings(tmp_path)
+    probe = CapabilityProbe(settings, ollama_probe=fake_ollama_probe)
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={
+            "model": "qwen2.5:0.5b",
+            "response": json.dumps({"text": "好的，已了解。可按页面上方建议预约就诊。",
+                                    "language": "zh-CN", "refused": False,
+                                    "refusalReason": None}, ensure_ascii=False),
+        })
+
+    with _client(settings, _chat_executors(settings, probe, handler)) as client:
+        task = _wait_terminal(client, _submit(
+            client, "CHAT", key="chat-key-0003",
+            input_inline="【分诊建议已给出】不要再追问症状细节，直接回答患者最后一句话。\n"
+                         "患者：肚子疼\n你：疼了多久了？\n患者：三天了")["taskId"])
+
+    assert task["status"] == "SUCCEEDED"
+    system_prompt = captured["body"]["system"]
+    assert "绝不能再向患者追问" in system_prompt
+    assert "只输出**一个问句**" not in system_prompt
 
 
 def test_chat_structured_refusal(tmp_path):

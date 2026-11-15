@@ -175,12 +175,24 @@ page {
   align-items: center;
   justify-content: center;
   height: var(--btn-height);
+  padding: 0 32rpx;
   border-radius: var(--radius-md);
   font-size: var(--font-body);
   font-weight: 600;
+  /* 按钮作为 flex 子项时不被压扁，文字永远单行（大字档/平板档不破形） */
+  flex-shrink: 0;
+  white-space: nowrap;
   box-sizing: border-box;
   /* 按压反馈：底色（轻量重绘）+ 缩放（合成层，不触发布局） */
   transition: background-color 150ms ease, transform var(--dur-fast) ease;
+}
+
+/* 内容宽度按钮（错误态「重新加载 / 点击重试」等）：不再被块级 btn 拉成整行 */
+.btn-inline {
+  display: inline-flex;
+  width: auto;
+  min-width: 280rpx;
+  padding: 0 48rpx;
 }
 
 .btn:active { transform: scale(0.985); }
@@ -346,7 +358,7 @@ page {
   line-height: 1.6;
 }
 
-.state-btn { margin: 36rpx auto 0; width: 320rpx; }
+.state-btn { margin: 36rpx auto 0; width: 320rpx; white-space: nowrap; }
 
 /* ============ 紧凑行内错误（卡片内局部失败，如工作台"今日接诊概览"）============
    整屏状态卡塞不进卡片格子，局部失败用这组：图标 + 一句中文 + 右侧实心重试。

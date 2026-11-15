@@ -18,12 +18,13 @@
 const app = getApp()
 const icons = require('../../../utils/icons.js')
 const doctorService = require('../../../services/doctor.js')
+const userService = require('../../../services/user.js')
 const { errText } = require('../../../utils/err-text.js')
 const { fmtLocalDateTime, dayLabel } = require('../../../utils/datetime.js')
 
 const PAGE_SIZE = 50
-const CHAT_POLL = 4000   // 会话内新消息（对齐患者端 4s）
-const LIST_POLL = 8000   // 列表模式：患者新发起 / 新消息
+const CHAT_POLL = 2000   // 会话内新消息（2026-11-15：4s→2s，与患者端同步）
+const LIST_POLL = 4000   // 列表模式：患者新发起 / 新消息（8s→4s）
 
 Page({
   data: {
@@ -345,6 +346,19 @@ Page({
         out.push({ id: m.id || ('sys-' + out.length), kind: 'sys', content: m.content || '' })
         return
       }
+      // 图片消息（2026-11-15 上传合规）：服务端已按患者健康档案附件反查并下发签名 URL，
+      // 医生侧直接渲染同一张图；缺失 URL 时退化为文件卡，绝不显示裸 objectKey。
+      if (String(m.contentType || '') === 'IMAGE_NOTE') {
+        const name = m.attachmentName || '检查资料'
+        out.push({
+          id: m.id || ('img-' + out.length),
+          kind: 'patient-image',
+          url: m.attachmentUrl ? userService.resolveAttachmentUrl(m.attachmentUrl) : '',
+          fileName: name,
+          time: t.time || t.date || ''
+        })
+        return
+      }
       out.push({
         id: m.id || (role + '-' + out.length),
         kind: role === 'user' ? 'patient' : 'doctor',
@@ -353,6 +367,13 @@ Page({
       })
     })
     return out
+  },
+
+  /** 患者图片消息预览（医生侧） */
+  onPreviewMessageImage(e) {
+    const url = e.currentTarget.dataset.url
+    if (!url) return
+    wx.previewImage({ urls: [url], current: url })
   },
 
   loadMessages(arg) {

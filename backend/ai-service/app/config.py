@@ -73,24 +73,28 @@ class Settings:
     interpret_first_token_timeout: "float | None" = field(
         default_factory=lambda: _env_float_or_none("AI_INTERPRET_FIRST_TOKEN_TIMEOUT")
     )
-    # DeepSeek（第二级）：key 只从环境变量注入，**任何文件/日志都不得出现**
+    # DeepSeek（第二级兜底）：key 只从环境变量注入，**任何文件/日志都不得出现**。
+    # 模型名以官方当前列表为准（deepseek-flash / deepseek-v4-pro）；
+    # 旧默认值 deepseek-chat 已不在官方列表，2026-11-15 更正，详见 providers/deepseek.py 顶部说明。
     deepseek_base_url: str = field(
         default_factory=lambda: _env("AI_DEEPSEEK_BASE_URL", "https://api.deepseek.com")
     )
     deepseek_api_key: str = field(default_factory=lambda: _env("AI_DEEPSEEK_API_KEY", ""))
-    deepseek_model: str = field(default_factory=lambda: _env("AI_DEEPSEEK_MODEL", "deepseek-chat"))
-    # 逐任务第二级预算（与 B2.2 预算表一致；未配置则用任务自身 timeout）
+    deepseek_model: str = field(default_factory=lambda: _env("AI_DEEPSEEK_MODEL", "deepseek-flash"))
+    # 逐任务第二级预算（秒）。2026-11-15 调大：云端非流式 300~800 token 生成，
+    # 10/16/36/28s 在高峰期或队列波动时会先于模型返回超时，导致兜底形同虚设。
+    # 实际生效值 = min(该值, 任务自身 timeout)，见 deepseek_timeout_for()。
     triage_deepseek_timeout: float = field(
-        default_factory=lambda: float(_env("AI_TRIAGE_DEEPSEEK_TIMEOUT_SECONDS", "10"))
+        default_factory=lambda: float(_env("AI_TRIAGE_DEEPSEEK_TIMEOUT_SECONDS", "15"))
     )
     chat_deepseek_timeout: float = field(
-        default_factory=lambda: float(_env("AI_CHAT_DEEPSEEK_TIMEOUT_SECONDS", "16"))
+        default_factory=lambda: float(_env("AI_CHAT_DEEPSEEK_TIMEOUT_SECONDS", "20"))
     )
     careplan_deepseek_timeout: float = field(
-        default_factory=lambda: float(_env("AI_CAREPLAN_DEEPSEEK_TIMEOUT_SECONDS", "36"))
+        default_factory=lambda: float(_env("AI_CAREPLAN_DEEPSEEK_TIMEOUT_SECONDS", "45"))
     )
     interpret_deepseek_timeout: float = field(
-        default_factory=lambda: float(_env("AI_INTERPRET_DEEPSEEK_TIMEOUT_SECONDS", "28"))
+        default_factory=lambda: float(_env("AI_INTERPRET_DEEPSEEK_TIMEOUT_SECONDS", "35"))
     )
     # 熔断：连续失败 N 次 → 冷却 cooldown 秒内直接跳过该级（0 = 关闭熔断）
     breaker_failures: int = field(default_factory=lambda: int(_env("AI_BREAKER_FAILURES", "3")))

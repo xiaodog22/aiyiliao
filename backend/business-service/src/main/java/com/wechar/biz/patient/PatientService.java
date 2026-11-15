@@ -359,6 +359,13 @@ public class PatientService {
         String objectKey = attachmentStorage.save(file);
         // 摘要按已落盘文件流式计算（2026-11-04）：不再用 file.getBytes() 把 50MB 视频整份读回堆里。
         String sha256 = attachmentStorage.sha256Of(objectKey);
+        // 报告唯一性（2026-11-15）：同一记录下内容相同（sha256 一致）只保留一份。
+        // 命中时删掉刚落的重复文件并返回既有附件，客户端得到同一个 id/URL。
+        var dup = attachments.findByRecordAndSha(recordId, userId, sha256);
+        if (dup.isPresent()) {
+            attachmentStorage.delete(objectKey);
+            return toAttachment(dup.get());
+        }
         Instant now = clock.instant();
         String id = "hra-" + UUID.randomUUID();
         attachments.insert(new AttachmentRepository.AttachmentRow(
@@ -368,7 +375,7 @@ public class PatientService {
         return new AttachmentData(id, objectKey, attachmentStorage.signedUrl(objectKey),
                 file.getOriginalFilename(),
                 file.getContentType() == null ? "application/octet-stream" : file.getContentType(),
-                file.getSize(), sha256, now);
+                file.getSize(), sha256, now, null);
     }
 
     /** 附件列表（含短期签名 URL；过期时客户端重新拉取档案即得新 URL）。 */
@@ -382,9 +389,7 @@ public class PatientService {
             return List.of(); // 未出具报告不暴露任何附件
         }
         return attachments.listByRecord(recordId).stream()
-                .map(a -> new AttachmentData(a.id(), a.objectKey(),
-                        attachmentStorage.signedUrl(a.objectKey()),
-                        a.fileName(), a.mime(), a.size(), a.sha256(), a.createdAt()))
+                .map(this::toAttachment)
                 .toList();
     }
 
@@ -555,14 +560,32 @@ public class PatientService {
         boolean unpublished = isUnpublishedReport(r);
         List<AttachmentData> list = unpublished ? List.of()
                 : attachments.listByRecord(r.id()).stream()
-                .map(a -> new AttachmentData(a.id(), a.objectKey(),
-                        attachmentStorage.signedUrl(a.objectKey()),
-                        a.fileName(), a.mime(), a.size(), a.sha256(), a.createdAt()))
+                .map(this::toAttachment)
                 .toList();
         return new HealthRecordData(r.id(), r.familyMemberId(), r.category(), r.title(),
                 unpublished ? null : r.summary(),
                 r.recordedAt(), r.source(), r.doctorName(), r.abnormal(), r.reportStatus(), r.hospital(),
                 list, r.version());
+    }
+
+    /** 系统推送资源附件在 object_key 上的哨兵前缀（无磁盘对象，只有资源清单键）。 */
+    private static final String RESOURCE_PREFIX = "res:";
+
+    /**
+     * 附件行 → 契约 AttachmentData（2026-11-15）。
+     * object_key 以 res: 开头的是院内系统推送的报告图片：没有磁盘对象，
+     * 下发 resourceKey + 匿名资源端点 URL（/api/v1/resources/{key}）；
+     * 其余为患者上传文件，仍下发短期签名 URL。
+     */
+    private AttachmentData toAttachment(AttachmentRepository.AttachmentRow a) {
+        String objectKey = a.objectKey() == null ? "" : a.objectKey();
+        if (objectKey.startsWith(RESOURCE_PREFIX)) {
+            String resourceKey = objectKey.substring(RESOURCE_PREFIX.length());
+            return new AttachmentData(a.id(), null, "/api/v1/resources/" + resourceKey,
+                    a.fileName(), a.mime(), a.size(), a.sha256(), a.createdAt(), resourceKey);
+        }
+        return new AttachmentData(a.id(), a.objectKey(), attachmentStorage.signedUrl(a.objectKey()),
+                a.fileName(), a.mime(), a.size(), a.sha256(), a.createdAt(), null);
     }
 
     private static FamilyMemberData toMember(FamilyRepository.MemberRow m) {

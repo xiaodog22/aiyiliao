@@ -28,13 +28,61 @@ const {
 
 const FALLBACK_DEPT = '全科医学科'
 
+// 归一化短缓存必须先于 RED_FLAGS_N 初始化（下方预编译会调用 normalize，
+// 否则模块加载阶段就触发 TDZ ReferenceError，导诊页直接白屏）。
+const NORM_CACHE_MAX = 4
+const _normCache = []
+
+// ==================== 预编译（2026-11-15 性能优化）====================
+// 知识库是静态数据：归一化关键词、扁平化症状行、科室 key 在模块加载时算一次。
+// 原实现每轮 analyze 都在 matchRedFlags 里对上百个关键词重复 normalize → 纯浪费。
+const RED_FLAGS_N = RED_FLAGS.map((flag) => ({
+  flag: flag,
+  any: (flag.any || []).map((k) => normalize(k)),
+  all: (flag.all || []).map((k) => normalize(k)),
+  none: (flag.none || []).map((k) => normalize(k))
+}))
+
+// 症状知识条扁平化：一次遍历即可完成打分，避免三层嵌套 forEach 的重复建道具
+const SYMPTOM_ROWS = []
+SYMPTOM_KB.forEach((entry) => {
+  entry.keys.forEach((group) => {
+    group.k.forEach((k) => {
+      SYMPTOM_ROWS.push({ k: k, w: group.w, dept: entry.dept, system: entry.system, reason: entry.reason })
+    })
+  })
+})
+
+// 部位兜底校正时按科室回查知识条（原来每次 filter 全表）
+const SYMPTOM_BY_DEPT = {}
+SYMPTOM_KB.forEach((entry) => { if (!SYMPTOM_BY_DEPT[entry.dept]) SYMPTOM_BY_DEPT[entry.dept] = entry })
+
+const DEPT_KEYS = Object.keys(DEPARTMENT_INFO)
+
 // ==================== 文本归一化 / 命中判定 ====================
+/**
+ * 归一化结果短缓存（2026-11-15 性能优化）。
+ *
+ * 为什么需要：一次 analyze() 会对**同一段合并文本**归一化 3~4 次
+ * （extractSlots / matchRedFlags / scoreDepartments / decideLevel），
+ * 而 normalize 是「去空白 + 标点替换 + toLowerCase」三趟正则，长描述下开销明显。
+ * 只保留最近 4 条：内存恒定，输入变化后旧条目自然淘汰。
+ * ⚠️ 声明位置在文件顶部（RED_FLAGS_N 之前），见上。
+ */
+
 /** 归一化：去空白、全角→半角标点、统一小写（中文无大小写，但对英文症状词有用） */
 function normalize(text) {
-  return String(text || '')
+  const src = String(text || '')
+  for (let i = 0; i < _normCache.length; i++) {
+    if (_normCache[i].src === src) return _normCache[i].out
+  }
+  const out = src
     .replace(/\s+/g, '')
     .replace(/[，。！？、；：,.!?;:（）()【】\[\]“”"'’‘]/g, '')
     .toLowerCase()
+  _normCache.push({ src: src, out: out })
+  if (_normCache.length > NORM_CACHE_MAX) _normCache.shift()
+  return out
 }
 
 /**
@@ -64,10 +112,12 @@ const NEG_CONTRASTS = ['但', '不过', '却', '而是', '后来', '随后']
 function isNegated(text, idx) {
   const from = Math.max(0, idx - 6)
   let window = text.slice(from, idx)
-  NEG_CONTRASTS.forEach((c) => {
-    const i = window.lastIndexOf(c)
-    if (i >= 0) window = window.slice(i + c.length)
-  })
+  // 用 for 而非 forEach：本函数是命中判定的最内层热点，避免每次派生闭包
+  for (let c = 0; c < NEG_CONTRASTS.length; c++) {
+    const mark = NEG_CONTRASTS[c]
+    const i = window.lastIndexOf(mark)
+    if (i >= 0) window = window.slice(i + mark.length)
+  }
   for (let i = 0; i < NEGATIONS.length; i++) {
     if (window.indexOf(NEGATIONS[i]) >= 0) return true
   }
@@ -143,19 +193,27 @@ function slotFilled(slots, field) {
 function matchRedFlags(text) {
   const t = normalize(text)
   const hit = []
-  RED_FLAGS.forEach((flag) => {
+  for (let i = 0; i < RED_FLAGS_N.length; i++) {
+    const n = RED_FLAGS_N[i]
+    const flag = n.flag
     // 走 findKey：命中位置要被 isNegated 判过（"没有胸痛" 不算阳性，DEF-19）
-    const main = (flag.any || []).filter((k) => findKey(t, normalize(k)) >= 0)
-    if (!main.length) return
+    const main = []
+    for (let j = 0; j < n.any.length; j++) {
+      if (findKey(t, n.any[j]) >= 0) main.push(flag.any[j])
+    }
+    if (!main.length) continue
     // all：除主词外还需命中其中至少一个（如"全身皮疹 + 呼吸困难"）
-    if (flag.all && flag.all.length && !anyHit(t, flag.all)) return
+    if (n.all.length && !anyHit(t, n.all)) continue
     // none：明确否认则排除（如"没有胸痛"）
-    if (flag.none && flag.none.length) {
-      const denied = flag.none.filter((k) => t.indexOf(normalize(k)) >= 0)
-      if (denied.length) return
+    if (n.none.length) {
+      let denied = false
+      for (let j = 0; j < n.none.length; j++) {
+        if (t.indexOf(n.none[j]) >= 0) { denied = true; break }
+      }
+      if (denied) continue
     }
     hit.push({ id: flag.id, label: flag.label, advice: flag.advice, weight: flag.weight || 5, hits: main })
-  })
+  }
   return hit.sort((a, b) => b.weight - a.weight)
 }
 
@@ -176,41 +234,47 @@ function scoreDepartments(text, slots) {
   const t = normalizeLoose(text)              // ⚠️ 宽松归一化：忽略「有点/很/好」等程度副词（见 normalizeLoose 注释）
   const head = t.slice(0, 12)                 // 主诉区（句首权重更高）
   const isChild = slots.population === '儿童'
+  const isElder = slots.population === '老年人'
+  const byDept = {}
+  const order = []
+
+  // 扁平表一次遍历完打分（2026-11-15 性能优化：原三层嵌套 + 每科重建命中数组）
+  for (let i = 0; i < SYMPTOM_ROWS.length; i++) {
+    const row = SYMPTOM_ROWS[i]
+    const idx = findKey(t, row.k)
+    if (idx < 0) continue
+    let w = row.w
+    if (idx < 12 || head.indexOf(row.k) >= 0) w = Math.round(w * 1.3)   // 主诉强化 +30%
+    let item = byDept[row.dept]
+    if (!item) {
+      item = byDept[row.dept] = { dept: row.dept, system: row.system, score: 0, hits: [], reason: row.reason }
+      order.push(item)
+    }
+    item.score += w
+    item.hits.push({ k: row.k, w: w, pos: idx })
+  }
+
   const ranked = []
-
-  SYMPTOM_KB.forEach((entry) => {
-    let score = 0
-    const hits = []
-    entry.keys.forEach((group) => {
-      group.k.forEach((k) => {
-        const idx = findKey(t, k)
-        if (idx < 0) return
-        let w = group.w
-        if (idx < 12 || head.indexOf(k) >= 0) w = Math.round(w * 1.3)   // 主诉强化 +30%
-        score += w
-        hits.push({ k: k, w: w, pos: idx })
-      })
-    })
-    if (!score) return
-
+  for (let i = 0; i < order.length; i++) {
+    const item = order[i]
+    let score = item.score
     // 人群修正：儿童 → 儿科诊区加分，其它科室减半（儿童疾病谱与成人不同）
     if (isChild) {
-      if (entry.dept === '儿科诊区') score += 6
-      else if (entry.dept !== '全科医学科') score = Math.round(score * 0.5)
+      if (item.dept === '儿科诊区') score += 6
+      else if (item.dept !== '全科医学科') score = Math.round(score * 0.5)
     }
     // 老年人：内科系轻微加权（多病共存、症状不典型，避免直接给"居家观察"）
-    if (slots.population === '老年人' && ['心血管内科', '呼吸内科', '消化内科'].indexOf(entry.dept) >= 0) {
+    if (isElder && (item.dept === '心血管内科' || item.dept === '呼吸内科' || item.dept === '消化内科')) {
       score += 1
     }
-
     ranked.push({
-      dept: entry.dept,
-      system: entry.system,
+      dept: item.dept,
+      system: item.system,
       score: score,
-      hits: hits.sort((a, b) => b.w - a.w).slice(0, 5),
-      reason: entry.reason
+      hits: item.hits.sort((a, b) => b.w - a.w).slice(0, 5),
+      reason: item.reason
     })
-  })
+  }
 
   ranked.sort((a, b) => b.score - a.score)
   applyPartPrimary(ranked, slots, t)
@@ -254,7 +318,7 @@ function applyPartPrimary(ranked, slots, t) {
     //    里消化内科没有任何症状词命中）→ 找不到就按知识库补一条空条目，再填分。
     let target = ranked.filter((x) => x.dept === rule.dept)[0]
     if (!target) {
-      const kb = SYMPTOM_KB.filter((x) => x.dept === rule.dept)[0]
+      const kb = SYMPTOM_BY_DEPT[rule.dept]
       target = {
         dept: rule.dept,
         system: (kb && kb.system) || '',
@@ -353,7 +417,6 @@ function analyze(text, opts) {
   const o = opts || {}
   const history = o.history || []
   const merged = history.concat([text]).join('。')
-  const single = normalize(text)
 
   const slots = extractSlots(merged)
   const redFlags = matchRedFlags(merged)
@@ -553,9 +616,8 @@ function normalizeDept(name) {
   const s = String(name || '').trim().replace(/门诊$/, '')
   if (!s) return ''
   if (DEPARTMENT_INFO[s]) return s
-  const keys = Object.keys(DEPARTMENT_INFO)
-  for (let i = 0; i < keys.length; i++) {
-    if (s.indexOf(keys[i]) >= 0 || keys[i].indexOf(s) >= 0) return keys[i]
+  for (let i = 0; i < DEPT_KEYS.length; i++) {
+    if (s.indexOf(DEPT_KEYS[i]) >= 0 || DEPT_KEYS[i].indexOf(s) >= 0) return DEPT_KEYS[i]
   }
   return s
 }

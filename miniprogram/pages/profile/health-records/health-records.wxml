@@ -67,7 +67,8 @@
       <!-- 摘要（诊断摘要 / 医嘱）：契约可选字段，未返回时整行不显示 -->
       <view wx:if="{{item.summary}}" class="hrc-rec-sum">{{item.summary}}</view>
 
-      <!-- 检查资料附件（V9）：缩略图横滑 + 删除；url 为后端短期签名链接 -->
+      <!-- 系统推送资料（2026-11-15）：由院内系统推送，患者端只读，不提供上传/删除 -->
+      <view wx:if="{{item.attachments.length > 0}}" class="hrc-att-label">系统推送资料</view>
       <scroll-view wx:if="{{item.attachments.length > 0}}" class="hrc-att" scroll-x show-scrollbar="{{false}}">
         <view
           wx:for="{{item.attachments}}"
@@ -76,6 +77,7 @@
           class="hrc-att-item"
           data-url="{{att.url}}"
           data-pdf="{{att.isPdf}}"
+          data-bundle="{{att.bundle}}"
           bindtap="onPreviewAttachment"
         >
           <image wx:if="{{!att.isPdf}}" class="hrc-att-img" src="{{att.url}}" mode="aspectFill" />
@@ -83,27 +85,19 @@
             <image class="hrc-att-pdf-ic" src="{{icons.fileText}}" />
             <text class="hrc-att-pdf-t">PDF</text>
           </view>
-          <view class="hrc-att-del" catchtap="onDeleteAttachment"
-                data-recordid="{{item.id}}" data-id="{{att.id}}" data-name="{{att.fileName}}">
-            <image class="hrc-att-del-ic" src="{{icons.trashWhite}}" />
-          </view>
         </view>
       </scroll-view>
 
       <!-- 操作行（设计稿 05：两枚等宽胶囊按钮 —— 查看报告=描边 / AI解读=浅蓝底）。
            ⚠️ 设计稿按钮实高仅 43rpx，低于 88rpx 触控线 → 这里折中到 72rpx。 -->
       <view class="hrc-actions">
-        <view class="hrc-btn {{item.locked ? 'hrc-btn-locked' : 'hrc-btn-outline'}}"
+        <view wx:if="{{item.reportable || item.attachments.length > 0}}"
+              class="hrc-btn {{item.locked ? 'hrc-btn-locked' : 'hrc-btn-outline'}}"
               data-id="{{item.id}}" bindtap="onViewReport">查看报告</view>
         <view class="hrc-btn {{item.locked ? 'hrc-btn-locked-soft' : 'hrc-btn-soft'}} {{interpreting === item.id ? 'hrc-btn-busy' : ''}}"
               data-id="{{item.id}}" bindtap="onInterpret">
           {{interpreting === item.id ? '解读中…' : 'AI 解读'}}
         </view>
-      </view>
-
-      <!-- 上传检查资料（V9 既有能力；设计稿未画，弱化为卡内文字链接，见偏离项 3） -->
-      <view class="hrc-add {{uploading ? 'hrc-add-busy' : ''}}" data-id="{{item.id}}" bindtap="onUploadAttachment">
-        ＋ 上传检查资料
       </view>
 
       <!-- AI 解读结果：后端未实现时返回 501 → 显示可见中文降级提示，
@@ -133,6 +127,10 @@
     <view class="state-badge state-badge-gray"><image class="state-ic" src="{{icons.searchGray}}" /></view>
     <view class="state-title">暂无健康档案</view>
     <view class="state-sub">就诊后的记录与报告会显示在这里</view>
+  </view>
+  <!-- 包内图片全屏查看（系统推送资料是随包资源，wx.previewImage 不认包路径） -->
+  <view wx:if="{{viewerUrl}}" class="hrc-viewer" bindtap="onCloseViewer">
+    <image class="hrc-viewer-img" src="{{viewerUrl}}" mode="aspectFit" />
   </view>
 
 </view>

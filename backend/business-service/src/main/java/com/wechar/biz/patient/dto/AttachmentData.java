@@ -8,6 +8,11 @@ import java.time.Instant;
  * id 为附件行主键（删除时 DELETE .../attachments/{id} 使用）；
  * url 为短期签名 URL（HMAC + TTL），可能已过期；过期时客户端重新拉取档案即得新 URL。
  * fileName 为客户端原始文件名（仅展示）；sha256 供完整性校验。
+ *
+ * 2026-11-15：新增 resourceKey —— 院内系统推送的报告**图片**不是患者上传文件，
+ * 没有 object_key 磁盘对象，只有资源清单键（如 health.report-blood-routine）。
+ * 该类附件 objectKey 为 null、url 指向匿名资源端点 /api/v1/resources/{key}，
+ * 客户端按 resourceKey 识别来源（问诊选图也走该键）。
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record AttachmentData(
@@ -18,6 +23,7 @@ public record AttachmentData(
         String mime,
         long size,
         String sha256,
-        Instant createdAt
+        Instant createdAt,
+        String resourceKey
 ) {
 }

@@ -9,7 +9,7 @@
     <view class="rep-state-badge"><image class="rep-state-ic" src="{{icons.alertWhite}}" /></view>
     <view class="rep-state-t">报告加载失败</view>
     <view class="rep-state-s">{{error}}</view>
-    <view class="rep-state-btn" bindtap="fetch">重新加载</view>
+    <view class="btn btn-primary btn-inline rep-state-btn" bindtap="fetch">重新加载</view>
   </view>
 
   <block wx:else>

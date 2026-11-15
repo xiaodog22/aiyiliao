@@ -4984,6 +4984,9 @@ components:
         doctorId: {type: string, maxLength: 64}
         online: {type: boolean}
         accepting: {type: boolean, description: 是否可发起新的在线问诊。}
+        inSlot:
+          type: boolean
+          description: 当前时刻是否落在该医生今天的接诊时段内（患者端据此显示「在线接诊 / 今日可约」）。
         nextSlotAt:
           type: [string, 'null']
           format: date-time

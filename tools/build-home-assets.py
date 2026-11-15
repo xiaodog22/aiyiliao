@@ -4,7 +4,8 @@
 源图（设计交付，已归档到 tools/_assets_src/，不进小程序包）：
   src-doctor.jpg   小安 3D 头像卡          → ai-doctor.png      （圆形透明底）
   src-banner.jpg   智能导诊 banner 大图     → banner-hospital.jpg（医院插画，含天空/广场留白）
-  src-grid9.jpg    3×3 服务图标九宫格       → svc-*.png × 8      （圆形透明底）
+  src-grid9.jpg    3×3 服务图标九宫格       → 不落地（2026-11-15 起首页服务入口改用 utils/icons.js 线性图标，
+                                            包内 svc-*.png 已删除，避免主包/图片体积超标）
   src-bg.jpg       蓝色渐变背景             → 不落地（用 CSS 渐变模拟，省主包体积）
   src-icons4.jpg   底部导航线性图标         → 不落地（tabBar 已有等价蓝/灰双态 PNG）
   src-skeleton.jpg 版式骨架                 → 不落地（仅作布局参照）
@@ -23,21 +24,6 @@ from PIL import Image, ImageDraw, ImageFilter
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, 'tools', '_assets_src')
 OUT = os.path.join(ROOT, 'miniprogram', 'assets', 'home')
-
-# ---- grid9：8 个浅蓝圆底的圆心（实测，连通域 bbox 中心）----
-GRID_D = 400           # 裁切框边长
-GRID_SHRINK = 10       # 圆底实测直径 ≈ 376~390，蒙版取 380 落在渐变中（圆外不露背景）
-SVC = [
-    ('triage',  368,  342, '智能导诊'),
-    ('doctor',  958,  342, '找医生'),
-    ('dept',   1544,  342, '找科室'),
-    ('archive', 372,  920, '健康档案'),
-    ('checkup', 956,  920, '体检服务'),
-    ('care',   1542,  920, '居家护理'),
-    ('advice',  370, 1494, '健康咨询'),
-    ('more',    956, 1494, '更多服务'),
-]
-SVC_OUT = 132          # 输出边长（设计稿显示 44px @375 → 3x）
 
 # ---- 小安头像：圆心 + 裁切框边长 ----
 DOC_C = (968, 331)     # 圆心实测，(968,333) 略偏下会带出圆底白色装饰 → 上移 2px
@@ -113,13 +99,7 @@ def main():
     total += os.path.getsize(p)
     print('  banner-hospital.jpg      %5.1f KB  %dx%d' % (os.path.getsize(p) / 1024, ban.size[0], ban.size[1]))
 
-    # ③ 8 个服务图标（圆形透明底）
-    g9 = Image.open(os.path.join(SRC, 'src-grid9.jpg')).convert('RGB')
-    for key, cx, cy, name in SVC:
-        im = circle_crop(g9, cx, cy, GRID_D, SVC_OUT, GRID_SHRINK, 3)
-        p = os.path.join(OUT, 'svc-%s.png' % key)
-        total += save_png(im, p, 96)
-        print('  svc-%-14s.png   %5.1f KB  (%s)' % (key, os.path.getsize(p) / 1024, name))
+    # ③ 服务图标：已停用（改用 icons.js 线性图标，不再产出包内 svc-*.png）
 
     print('\n合计 %.1f KB → %s' % (total / 1024, os.path.relpath(OUT, ROOT)))
     return 0

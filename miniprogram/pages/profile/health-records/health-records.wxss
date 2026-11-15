@@ -222,9 +222,16 @@
   line-height: 1.6;
 }
 
-/* ================= 附件缩略（V9） ================= */
-.hrc-att {
+/* ================= 系统推送资料（2026-11-15 起患者端只读） ================= */
+.hrc-att-label {
   margin-top: 20rpx;
+  font-size: calc(var(--font-caption) - 2rpx);
+  color: var(--text-weak);
+  line-height: 1.5;
+}
+
+.hrc-att {
+  margin-top: 10rpx;
   white-space: nowrap;
 }
 
@@ -263,25 +270,6 @@
   font-size: calc(var(--font-caption) - 4rpx);
   color: var(--primary);
   line-height: 1.3;
-}
-
-/* 删除角标：右上角，热区 40rpx（视觉圆 32rpx） */
-.hrc-att-del {
-  position: absolute;
-  right: -8rpx;
-  top: -8rpx;
-  width: 40rpx;
-  height: 40rpx;
-  border-radius: 50%;
-  background: var(--accent-red);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.hrc-att-del-ic {
-  width: 22rpx;
-  height: 22rpx;
 }
 
 /* ================= 操作行（设计稿两枚等宽胶囊） ================= */
@@ -336,19 +324,6 @@
 .hrc-btn-locked-soft {
   background: var(--bg);        /* 用页底色当禁用底，不引入 #F2F3F5 这类字面色值 */
   color: var(--text-placeholder);
-}
-
-/* 上传检查资料（设计稿未画，弱化为文字链接） */
-.hrc-add {
-  margin-top: 20rpx;
-  text-align: center;
-  font-size: var(--font-caption);
-  color: var(--text-weak);
-  line-height: 1.6;
-}
-
-.hrc-add-busy {
-  opacity: 0.5;
 }
 
 /* ================= AI 解读结果 / 失败提示 ================= */
@@ -408,6 +383,25 @@
   margin-top: 18rpx;
 }
 
+/* 系统推送图片全屏查看（包内资源，wx.previewImage 不支持包路径） */
+.hrc-viewer {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 999;
+  background: rgba(0, 0, 0, .88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hrc-viewer-img {
+  width: 100%;
+  height: 100%;
+}
+
 /* ================= 平板断点（≥600px）：rpx → px（÷2）+ 主栏 375px 居中 ================= */
 @media (min-width: 600px) {
   .hrc-page {
@@ -446,16 +440,12 @@
   .hrc-att-img, .hrc-att-pdf { width: 84px; height: 63px; }
   .hrc-att-pdf-ic { width: 20px; height: 20px; }
   .hrc-att-pdf-t { margin-top: 2px; }
-  .hrc-att-del { right: -4px; top: -4px; width: 20px; height: 20px; }
-  .hrc-att-del-ic { width: 11px; height: 11px; }
 
   .hrc-actions { margin-top: 12px; }
   .hrc-btn { height: 36px; line-height: 36px; }
   .hrc-btn + .hrc-btn { margin-left: 10px; }
   .hrc-btn-outline { border-width: 1px; }
   .hrc-btn-locked { border-width: 1px; }
-
-  .hrc-add { margin-top: 10px; }
 
   .hrc-ai-fail { margin-top: 10px; padding: 10px 12px; }
   .hrc-ai-box { margin-top: 10px; padding: 12px; }

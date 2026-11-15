@@ -97,6 +97,7 @@ const CONSULT_DETAIL = {
   lastMessageAt: '2026-10-15T01:33:00Z',
   messages: [
     { id: 'm1', role: 'system_notice', contentType: 'TEXT', content: '问诊已开始，您可以描述症状或上传检查报告', provenance: 'SYSTEM', createdAt: '2026-10-15T01:30:00Z' },
+    { id: 'm1b', role: 'system_notice', contentType: 'TEXT', content: '陈医生已接诊', provenance: 'SYSTEM', createdAt: '2026-10-15T01:30:30Z' },
     { id: 'm2', role: 'user', contentType: 'TEXT', content: '医生您好，我咳嗽三天了', provenance: 'USER', createdAt: '2026-10-15T01:31:00Z' },
     { id: 'm3', role: 'user', contentType: 'IMAGE_NOTE', content: 'attachments/2026/10/a1b2c3.pdf', provenance: 'USER', createdAt: '2026-10-15T01:32:00Z' },
     { id: 'm4', role: 'assistant', contentType: 'TEXT', content: '建议先做血常规，暂不用抗生素。', provenance: 'AI', createdAt: '2026-10-15T01:33:00Z' },
@@ -407,9 +408,9 @@ async function testConsultRoom() {
   check('[问诊室] 回退后医生缺省为「接诊医生」', b.data.doctorName === '接诊医生', '实得 ' + b.data.doctorName)
   /* accepting 缺省语义拆两条：
      · 页面初始值必须是"未接诊"（不得默认接诊中）——判据取页面 data 定义，稳定可回归；
-     · 拿到含医生侧/系统消息的会话后按消息升级为"接诊中"，这是 2026-10-24 起的既定口径
-       （与后端 hasNonUserMessage 同源，见 consult.js:307-309、:359）。原断言把这两件事
-       混在一条里，夹具本身带 assistant 消息，故必然"失败"——属断言与实现口径不一致。 */
+     · 拿到含医生侧记录（role=doctor / 「已接诊」系统提示）的会话后按消息升级为"接诊中"，
+       这是 2026-11-15 起与后端 hasDoctorAcceptance 同源的口径（D6 预约制）：
+       AI 助手消息（role=assistant）不算接诊，否则「AI 先答一句」会绕过医生接单闸门。 */
   check('[问诊室] accepting 缺省不默认接诊中：初始 false + 「接诊后」提示',
     cfg.data.accepting === false && String(cfg.data.tipText || '').indexOf('接诊后') >= 0,
     '实得 ' + JSON.stringify({ accepting: cfg.data.accepting, tip: cfg.data.tipText }))

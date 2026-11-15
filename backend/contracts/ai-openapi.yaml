@@ -484,7 +484,7 @@ components:
           examples: [MODEL_UNAVAILABLE, MODEL_TIMEOUT, CONTEXT_TOO_LONG, RETRIEVAL_EMPTY,
                      ASR_BUSY, ASR_TIMEOUT, TTS_UNAVAILABLE, QUEUE_FULL, CAPABILITY_UNAVAILABLE]
         message: {type: string, maxLength: 300, description: 面向运维的说明。不得含堆栈、模型绝对路径、内网地址、第三方原始报文或用户原文。}
-        dependency: {type: [string, 'null'], enum: [ollama, redis, qdrant, tts_provider, asr_model, null], description: 降级来源，供上游决定隐藏入口还是仅保留文字。}
+        dependency: {type: [string, 'null'], enum: [ollama, deepseek, redis, qdrant, tts_provider, asr_model, null], description: 降级来源，供上游决定隐藏入口还是仅保留文字。}
         retryable: {type: boolean, description: 上游是否可复用同一 `Idempotency-Key` 重试。}
 
     ErrorResponse:
@@ -495,7 +495,7 @@ components:
         message: {type: string, description: 不含堆栈、内网地址或用户原文。}
         requestId: {type: string}
         traceId: {type: [string, 'null']}
-        dependency: {type: [string, 'null'], enum: [ollama, redis, qdrant, tts_provider, asr_model, null]}
+        dependency: {type: [string, 'null'], enum: [ollama, deepseek, redis, qdrant, tts_provider, asr_model, null]}
         retryable: {type: boolean}
         serverTime: {type: string, format: date-time}
 
