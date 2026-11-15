@@ -9,7 +9,7 @@ const { test } = require('node:test')
 const assert = require('node:assert')
 const path = require('path')
 
-const { aptStatusText, aptDisplayStatus, isPastVisit } = require(path.join(__dirname, '..', 'miniprogram', 'utils', 'apt-status.js'))
+const { aptStatusText, aptDisplayStatus, isPastVisit, markAptDirty, aptDirtyAt, APT_DIRTY_TTL_MS } = require(path.join(__dirname, '..', 'miniprogram', 'utils', 'apt-status.js'))
 
 test('AS-01 核心：契约 AppointmentStatus 七态逐值映射', () => {
   const expected = {
@@ -76,4 +76,56 @@ test('AS-09 边界：非「待就诊/待确认」状态不受时间影响（已�
   assert.strictEqual(aptDisplayStatus('CANCELLED', past), '已取消')
   assert.strictEqual(aptDisplayStatus('CHECKED_IN', past), '就诊中')
   assert.strictEqual(aptDisplayStatus('NO_SHOW', past), '未到诊')
+})
+
+// ============ 跨页取消同步标记（2026-11-15） ============
+// 用内存 Map 模拟 wx storage。⚠️ 语义是**广播**（只写不清），不是"读一次即删"：
+// 破坏性消费会让先到的页面（我的预约 onShow）把通知吃掉，挂号页就永远收不到 —— 真机上
+// 的表现就是"取消完还是显示挂号成功"。
+function stubWx() {
+  const box = new Map()
+  global.wx = {
+    setStorageSync: (k, v) => box.set(k, v),
+    getStorageSync: (k) => (box.has(k) ? box.get(k) : ''),
+    removeStorageSync: (k) => box.delete(k)
+  }
+  return box
+}
+
+test('AS-10 核心：一次取消，多个页面各读一次都能看到（谁都不许吞标记）', () => {
+  const box = stubWx()
+  const ts = markAptDirty()
+  assert.ok(box.get('wb_apt_dirty'), '标记应写入 storage')
+  // 模拟「我的预约」先 onShow 读一次
+  assert.strictEqual(aptDirtyAt(), ts, '第一个读者应拿到时间戳')
+  // 再模拟切到「预约挂号」onShow 又读一次 —— 必须仍在（这正是原 bug 的失效点）
+  assert.strictEqual(aptDirtyAt(), ts, '第二个读者仍应拿到同一次时间戳，不能被前一个吞掉')
+  assert.strictEqual(box.has('wb_apt_dirty'), true, '标记应保留（广播语义）')
+  delete global.wx
+})
+
+test('AS-11 边界：没有标记时 aptDirtyAt 返回 0 且不抛（进页不漏刷）', () => {
+  const box = stubWx()
+  assert.strictEqual(aptDirtyAt(), 0)
+  assert.strictEqual(box.size, 0)
+  delete global.wx
+})
+
+test('AS-12 边界：超过 TTL 的陈旧标记返回 0 并清键（避免每次进页白刷）', () => {
+  const box = stubWx()
+  box.set('wb_apt_dirty', Date.now() - APT_DIRTY_TTL_MS - 1000)
+  assert.strictEqual(aptDirtyAt(), 0, '过期标记不应触发刷新')
+  assert.strictEqual(box.has('wb_apt_dirty'), false, '过期标记应被清掉')
+  delete global.wx
+})
+
+test('AS-13 游标：第二次取消的时间戳大于第一次，页面能再次感知', () => {
+  const box = stubWx()
+  const t1 = markAptDirty()
+  box.set('wb_apt_dirty', t1 - 1) // 保证第二次严格更大（同毫秒内连调也不会漏判）
+  const t2 = markAptDirty()
+  assert.ok(t2 > t1 - 1, '第二次标记应更新')
+  const seen = t1 - 1
+  assert.ok(aptDirtyAt() > seen, '游标落后时应判定为有新变更')
+  delete global.wx
 })

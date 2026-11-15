@@ -264,10 +264,12 @@
 
 .msg-bubble {
   max-width: 78%;
-  padding: 22rpx 28rpx;
+  padding: 20rpx 26rpx;
   border-radius: var(--radius-md);
-  font-size: var(--font-body);
-  line-height: 1.7;
+  /* 2026-11-15：气泡正文由 30rpx 降到 28rpx（15px→14px）。问诊页是长段对话，
+     15px + 1.7 行高时一屏只放得下三四句，中老年读长文反而更累（用户反馈"字体太大"）。 */
+  font-size: calc(var(--font-body) - 2rpx);
+  line-height: 1.6;
   word-break: break-all;
 }
 
@@ -382,7 +384,8 @@
 }
 
 .res-dept {
-  font-size: calc(var(--font-body) + 2rpx);
+  /* 32rpx → 30rpx：结论卡科室名原比正文大半档，串在对话里显得过重 */
+  font-size: var(--font-body);
   font-weight: 700;
   color: var(--text-main);
   line-height: 1.4;
@@ -666,21 +669,22 @@
   box-shadow: var(--shadow-card);
 }
 
-/* ============ ⑤ 橙色警示条 ============ */
+/* ============ ⑤ 橙色警示条（2026-11-15 压成单行细条：原 16/22 内边距 + 64rpx 按钮
+   在对话页吃掉约 90rpx 高度，属于"底部不可输入区域"的主要来源） ============ */
 .safety-bar {
   display: flex;
   align-items: center;
-  margin: 0 24rpx 12rpx;
-  padding: 16rpx 22rpx;
+  margin: 0 20rpx 8rpx;
+  padding: 8rpx 16rpx;
   background: var(--amber-soft);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
 }
 
 .safety-ic {
-  width: 36rpx;
-  height: 36rpx;
-  margin-right: 12rpx;
+  width: 28rpx;
+  height: 28rpx;
+  margin-right: 10rpx;
   flex-shrink: 0;
 }
 
@@ -695,9 +699,9 @@
 
 .safety-call {
   flex-shrink: 0;
-  margin-left: 16rpx;
-  min-height: 64rpx;
-  padding: 0 28rpx;
+  margin-left: 12rpx;
+  min-height: 52rpx;
+  padding: 0 20rpx;
   border-radius: 999rpx;
   background: var(--accent-amber);
   color: #FFFFFF;
@@ -748,7 +752,8 @@
   flex: 1;
   min-width: 0;
   height: var(--btn-height);
-  font-size: var(--font-body);
+  /* 与气泡同口径降到 28rpx：输入的是同一段对话内容，字号不一致会显得突兀 */
+  font-size: calc(var(--font-body) - 2rpx);
   color: var(--text-main);
 }
 
@@ -917,8 +922,8 @@
   .helper-head { font-size: 13px; }
   .qs-item { font-size: 13px; }
   .safety-call { font-size: 13px; }
-  .res-dept { font-size: 16px; }
-  .res-reason { font-size: 14px; }
+  .res-dept { font-size: 13px; }
+  .res-reason { font-size: 13px; }
 
   .nav-bar { padding-left: 12px; padding-right: 12px; padding-bottom: 8px; }
   .nav-tabs { gap: 24px; }
@@ -943,7 +948,8 @@
   .msg-row { gap: 6px; }
   .ai-avatar { width: 28px; height: 28px; margin-top: 2px; }
   .ai-avatar text { font-size: 10px; letter-spacing: 0.5px; }
-  .msg-bubble { padding: 11px 14px; }
+  .msg-bubble { padding: 10px 13px; font-size: 12px; }
+  .input-field { font-size: 12px; }
   .bubble-user::after {
     right: 0;
     border-left: 7px solid var(--primary);

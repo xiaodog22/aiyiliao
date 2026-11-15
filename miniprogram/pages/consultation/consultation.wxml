@@ -233,15 +233,16 @@
         <view class="notice-bar-text">AI 建议仅供参考，不能替代线下医师诊断</view>
       </view>
 
-      <!-- 快捷服务行 -->
-      <view class="quick-services">
+      <!-- 快捷服务行（2026-11-15：只在首屏出现。进入对话后这四颗胶囊纯占高度，
+           一屏能看到的对话被压掉两行 —— 用户反馈"底部不可输入的部分占比过高"） -->
+      <view class="quick-services" wx:if="{{messages.length <= 1 && status === 'IDLE'}}">
         <view class="qs-item pressable" bindtap="onQuickBook" aria-role="button"><image class="ic-xs" src="{{icons.calendar}}" /> 预约挂号</view>
         <view class="qs-item pressable" bindtap="onQuickReport" aria-role="button"><image class="ic-xs" src="{{icons.fileText}}" /> 报告查询</view>
         <view class="qs-item pressable" bindtap="onQuickNav" aria-role="button"><image class="ic-xs" src="{{icons.mapPin}}" /> 来院导航</view>
         <view class="qs-item pressable" bindtap="onAllServices" aria-role="button"><image class="ic-xs" src="{{icons.layoutGrid}}" /> 全部服务</view>
       </view>
 
-      <!-- ⑤ 常驻安全提醒条（浅橙底 + 一键拨 120） -->
+      <!-- ⑤ 常驻安全提醒条（浅橙底 + 一键拨 120）—— 医疗安全提示保留，但压成单行细条 -->
       <view class="safety-bar">
         <image class="safety-ic" src="{{icons.alert}}" />
         <text class="safety-text">如遇紧急情况，请立即寻求急救</text>

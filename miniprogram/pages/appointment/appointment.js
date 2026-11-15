@@ -12,6 +12,7 @@ const { withFallback } = require('../../services/request.js')
 const icons = require('../../utils/icons.js')
 const { errText } = require('../../utils/err-text.js')
 const { parseAptDate } = require('../../utils/apt-date.js')
+const { aptDirtyAt } = require('../../utils/apt-status.js')
 
 /**
  * 科室 → 图标底板 + 字形（纯视觉映射，不参与业务判断）：
@@ -156,6 +157,47 @@ Page({
     // tab 页常驻（onLoad 只触发一次），必须在 onShow 消费，否则再次跳转不生效。
     const pending = this._takePendingDept()
     if (pending && pending !== this.data.selDept) this.loadDepartments(pending)
+    // 取消同步（2026-11-15）：在「我的预约」取消后切回本页，不能还停在「挂号成功」页，
+    // 余号也不能沿用取消前那份 —— 状态机退回选科室，号源强制绕过短缓存重拉一次。
+    // 用游标比较而非"读一次即删"：标记是广播，别的页面读走不影响本页（见 utils/apt-status.js）。
+    const dirtyAt = aptDirtyAt()
+    if (dirtyAt > (this._aptSeen || 0)) {
+      this._aptSeen = dirtyAt
+      this._syncAfterCancel()
+    }
+    // 兜底：标记只覆盖「本机 10 分钟内的变更」。成功页常驻时再直接问服务端这一单还在不在，
+    // 否则用户在别处取消、或隔很久才切回来，仍会看到旧的「挂号成功」。
+    this._verifyDoneStillValid()
+  },
+
+  /**
+   * 成功页兜底校验（2026-11-15）：不依赖任何本地标记。
+   * 判据：本人预约列表里找不到这一单，或状态已是 CANCELLED → 退回选科室。
+   * ⚠️ 接口失败一律保持现状 —— 宁可多显示一次成功页，也不能把有效预约误退掉。
+   */
+  _verifyDoneStillValid() {
+    if (this.data.step !== 'done' || !this._lastAptId) return
+    const id = this._lastAptId
+    userService.listMyAppointments()
+      .then((list) => {
+        // 期间用户可能已经重新挂号/退出成功页，别用过期的响应改状态
+        if (this.data.step !== 'done' || this._lastAptId !== id) return
+        const hit = (list || []).filter((it) => String((it && it.id) || '') === id)[0]
+        const cancelled = String((hit && hit.status) || '').toUpperCase() === 'CANCELLED'
+        if (hit && !cancelled) return
+        this.setData({ step: 'dept', stepIndex: 0, orderNo: '', submitting: false, selTime: '', selSlotId: '', showConfirm: false })
+        wx.showToast({ title: '该预约已取消', icon: 'none' })
+      })
+      .catch(() => { /* 校验失败不改状态：没证据就不动 */ })
+  },
+
+  /** 别处取消了预约：退回选科室 + 刷新当前医生/日期余号 */
+  _syncAfterCancel() {
+    if (this.data.step === 'done') {
+      this.setData({ step: 'dept', stepIndex: 0, orderNo: '', submitting: false, selTime: '', selSlotId: '', showConfirm: false })
+      wx.showToast({ title: '预约已取消，可重新选择', icon: 'none' })
+    }
+    if (this.data.selDoctorId && this.data.selDate) this._loadSlots(this.data.selDate, true)
   },
 
   onLoad(options) {
@@ -309,11 +351,12 @@ Page({
     if (this.data.selDoctorId) this._loadSlots(value)
   },
 
-  /** 拉取所选日期的真实号源（来自契约 slots 接口，含 slotId 与余号） */
-  _loadSlots(date) {
+  /** 拉取所选日期的真实号源（来自契约 slots 接口，含 slotId 与余号）
+   *  @param {boolean} [force] true = 跳过 15s GET 短缓存（取消预约后余号要立刻反映） */
+  _loadSlots(date, force) {
     this.setData({ loadingSlots: true })
     const fetch = withFallback(
-      appointmentService.listDoctorSlotsC(this.data.selDoctorId, date, date),
+      appointmentService.listDoctorSlotsC(this.data.selDoctorId, date, date, force ? { cacheTtl: 0 } : undefined),
       () => (app.MOCK.TIME_SLOTS || []).map((t) => ({
         id: 'mock-slot-' + date + '-' + t,
         startTime: date + ' ' + t + ':00',
@@ -510,7 +553,11 @@ Page({
         const orderNo = (qn === 0 || qn) ? String(qn).padStart(3, '0') : ''
         const orderLabel = orderNo ? '取号' : '预约单号'
         const orderText = orderNo || ((res && res.id) || '').slice(-8)
-        this.setData({ orderNo: orderText, orderLabel, step: 'done', stepIndex: 4, submitting: false })
+        // 记住这一单：成功页可能在后台常驻很久，onShow 要能回头校验它是否已被取消
+        this._lastAptId = (res && res.id) ? String(res.id) : ''
+        // showConfirm 必须一起关：成功页是整屏遮罩，抽屉只是被压在下面；
+        // 若不关，取消后退出成功页时抽屉会带着空的「预约时间」露出来。
+        this.setData({ orderNo: orderText, orderLabel, step: 'done', stepIndex: 4, submitting: false, showConfirm: false })
       })
       .catch((err) => {
         this.setData({ submitting: false })

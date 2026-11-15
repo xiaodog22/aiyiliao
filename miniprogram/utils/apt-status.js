@@ -53,4 +53,44 @@ function aptDisplayStatus(s, startTime, endTime) {
   return isPastVisit(startTime, endTime) ? '已过期' : text
 }
 
-module.exports = { aptStatusText, aptDisplayStatus, isPastVisit }
+/**
+ * 跨页同步标记（2026-11-15）：在「我的预约」取消成功后写这个键，
+ * 「预约挂号」/「我的预约」等页面 onShow 看到就重拉数据 —— 否则用户取消完切回挂号页，
+ * 还停在「挂号成功」页、余号也还是取消前那份。
+ *
+ * ⚠️ 这是**广播**，不是「读一次即删」（2026-11-15 修正）：
+ *    最初写成破坏性消费，结果是「我的预约」自己的 onShow 先把它吃掉（用户取消后
+ *    往往要回列表确认一次），再切「预约挂号」时标记已空 → 成功页照旧显示，
+ *    看着像完全没修。现改为：写入只更新时间戳，每个页面各持 `_aptSeen` 游标做比较，
+ *    谁都不会把别人的通知吞掉。
+ * ⚠️ 10 分钟 TTL：太老的标记不认（进页本来就会拉数据），避免残留导致每次进页白刷。
+ */
+const APT_DIRTY_KEY = 'wb_apt_dirty'
+const APT_DIRTY_TTL_MS = 10 * 60 * 1000
+
+/** 写标记（取消/改约等变更后调用）；只写不清，可重复调用，返回写入的时间戳 */
+function markAptDirty() {
+  const ts = Date.now()
+  try { wx.setStorageSync(APT_DIRTY_KEY, ts) } catch (e) {}
+  return ts
+}
+
+/**
+ * 读标记时间戳（**不删除**，供多个页面各自消费）。
+ * @returns {number} 0 = 无标记 / 已超 TTL；否则为标记写入的毫秒时间戳
+ */
+function aptDirtyAt() {
+  let v = 0
+  try { v = Number(wx.getStorageSync(APT_DIRTY_KEY)) || 0 } catch (e) { v = 0 }
+  if (!v) return 0
+  if (Date.now() - v > APT_DIRTY_TTL_MS) {
+    try { wx.removeStorageSync(APT_DIRTY_KEY) } catch (e) {}
+    return 0
+  }
+  return v
+}
+
+module.exports = {
+  aptStatusText, aptDisplayStatus, isPastVisit,
+  markAptDirty, aptDirtyAt, APT_DIRTY_KEY, APT_DIRTY_TTL_MS
+}

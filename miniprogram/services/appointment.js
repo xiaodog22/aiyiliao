@@ -69,14 +69,15 @@ function listDeptDoctorsC(deptId, date) {
  * @param {string} doctorId
  * @param {string} [from] YYYY-MM-DD
  * @param {string} [to]   YYYY-MM-DD
+ * @param {Object} [opts] 透传给 GET（`{cacheTtl: 0}` = 跳过 15s 短缓存，取最新余号）
  * @returns {Promise<Array<{id,doctorId,startTime,endTime,remaining,fee}>>}
  */
-function listDoctorSlotsC(doctorId, from, to) {
+function listDoctorSlotsC(doctorId, from, to, opts) {
   const spec = withPath(API.DOCTOR_SLOTS, { id: String(doctorId || '') })
   const query = {}
   if (from) query.from = from
   if (to) query.to = to
-  return get(spec, Object.keys(query).length ? query : undefined).then((data) => {
+  return get(spec, Object.keys(query).length ? query : undefined, opts).then((data) => {
     return asList(data).map((s) => ({
       id: String(s.id || ''),
       doctorId: String(s.doctorId || ''),

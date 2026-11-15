@@ -110,6 +110,8 @@ Page({
     // 页面存活标记：AI 任务轮询是异步长链路，卸载后回调不得再 setData
     this._gone = false
     this._turns = 0
+    this._deptPushed = false    // 结论卡是否已出（只出一次）
+    this._triageBusy = false    // TRIAGE 是否在途（防重复请求）
     this._idemKey = ''
     this._taskId = ''
     this.setData({
@@ -319,6 +321,8 @@ Page({
     this._emergencyShown = false
     this._pendingNavDept = ''
     this._turns = 0
+    this._deptPushed = false
+    this._triageBusy = false
     this._idemKey = ''
     this._taskId = ''
   },
@@ -486,8 +490,11 @@ Page({
       }
       const reply = String((task.result && task.result.text) || '').trim()
       if (!reply) throw { code: 'EMPTY_RESULT', message: 'AI 没有返回内容' }
-      this._typeAi(reply)
-      return this._afterReply()
+      // ⚠️ 顺序红线（2026-11-15）：必须等打字机把这句话**输出完**再请求分诊结论。
+      //    原实现是 `this._typeAi(reply); return this._afterReply()` 两条并行跑 ——
+      //    TRIAGE 只要比打字机快，结论卡就会插在"AI 还在追问"的半句话后面，
+      //    用户看到的就是「先弹结果卡、再冒追问」的乱序。
+      return new Promise((resolve) => { this._typeAi(reply, resolve) }).then(() => this._afterReply())
     })
   },
 
@@ -497,9 +504,17 @@ Page({
    */
   _afterReply() {
     const turns = (this._turns = (this._turns || 0) + 1)
+    // 结论卡只出一次（2026-11-15）：给过科室建议后每轮再跑 TRIAGE，会在同一段对话里
+    // 反复冒出结论卡，与后续追问交错 —— 这正是用户反馈的"追问和结论顺序乱"。
+    // 出过卡就只继续正常问答，不再追加第二张卡。
+    if (this._deptPushed) return Promise.resolve()
+    // 上一轮 TRIAGE 还没回来就别再发一个：两次结论卡会一前一后重复出现
+    if (this._triageBusy) return Promise.resolve()
     if (turns < 2) return Promise.resolve()
     const id = this.data.activeId
     if (!id || this._gone) return Promise.resolve()
+    this._triageBusy = true
+    const release = () => { this._triageBusy = false }
     return aiService.requestConsultationTriage(id)
       .then((task) => {
         if (!task || !task.taskId || this._gone) return null
@@ -507,6 +522,7 @@ Page({
       })
       .then((task) => { this._renderTriage(task) })
       .catch(() => { /* 分诊失败不打断问诊：下一轮会再试，期间 AI 继续追问 */ })
+      .then(release, release)
   },
 
   /** TRIAGE 结果 → 达标出卡 / 不达标继续问 */
@@ -607,6 +623,8 @@ Page({
    *   result.levelAdvice / result.departmentInfo{intro,floor} / result.navigable
    */
   _pushDeptCard(result) {
+    // 结论卡只出一次（见 _afterReply 的守卫）：置位后本页不再请求 TRIAGE
+    this._deptPushed = true
     const p = result.primary || {}
     const info = result.departmentInfo || {}
 

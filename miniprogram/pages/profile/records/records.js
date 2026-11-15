@@ -12,7 +12,7 @@ const { withFallback } = require('../../../services/request.js')
 const userService = require('../../../services/user.js')
 const { paginate } = require('../../../utils/paginate.js')
 const { errText } = require('../../../utils/err-text.js')
-const { aptDisplayStatus } = require('../../../utils/apt-status.js')
+const { aptDisplayStatus, markAptDirty, aptDirtyAt } = require('../../../utils/apt-status.js')
 const { fmtLocalDateTime } = require('../../../utils/datetime.js')
 const icons = require('../../../utils/icons.js')
 
@@ -99,6 +99,45 @@ Page({
   onLoad() {
     this.setData({ theme: app.globalData.theme || 'standard' })
     this.fetch()
+  },
+
+  /**
+   * 取消成功后就地把该行改成「已取消」（重新 decorate，isActive/isDone/徽章一起换算）。
+   * 这一段不依赖网络：即使随后的 fetch 失败（弱网/后端抖动），用户也不会再看到「待就诊」。
+   */
+  _applyCancelled(id) {
+    if (!id) return
+    const all = (this.data.all || []).map((it) => (
+      it.id === id ? decorate(Object.assign({}, it, { status: '已取消' })) : it
+    ))
+    const doneCount = all.filter(isHistory).length
+    this.setData({ all })
+    const p = paginate(this._filtered(), 1)
+    this.setData({
+      counts: { all: all.length, active: all.length - doneCount, done: doneCount },
+      displayed: p.displayed,
+      page: p.page,
+      hasMore: p.hasMore,
+      total: p.total
+    })
+  },
+
+  /**
+   * 从别处回来时按需刷新（2026-11-15）。
+   * 取消预约发生在别的页面（例如挂号成功页引导）/或用户手动清掉某条后，
+   * 本页若无 onShow 就会一直显示旧状态 —— 用户看到的就是"列表状态没变"。
+   * 只在真的发生过变更（wb_apt_dirty）时拉一次，不做无脑轮询。
+   */
+  onShow() {
+    const theme = app.globalData.theme || 'standard'
+    if (theme !== this.data.theme) this.setData({ theme })
+    // 别处（或本页刚才）发生过变更才回源，不做无脑轮询；
+    // 游标比较而非"读一次即删"——否则本页会把标记吞掉，挂号页就收不到通知了。
+    const dirtyAt = aptDirtyAt()
+    if (dirtyAt > (this._aptSeen || 0)) {
+      this._aptSeen = dirtyAt
+      this.fetch()
+    }
   },
 
   // 上拉触底：首屏只渲染部分，触底追加下一页
@@ -238,6 +277,11 @@ Page({
           .cancelAppointment(row.id)
           .then(() => {
             wx.showToast({ title: '已取消', icon: 'success' })
+            // 先本地落定，再回源校准：接口已经成功时，界面不能还挂着「待就诊」。
+            // 同时写跨页标记，首页与挂号页 onShow 会自行重拉（余号也就跟着刷新了）。
+            this._applyCancelled(row.id)
+            // 记账自己写的时间戳：标记是广播，本页已经自己刷过，不必等 onShow 再刷一次
+            this._aptSeen = markAptDirty()
             this.fetch()
           })
           .catch((err) => {
