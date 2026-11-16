@@ -576,6 +576,18 @@
   text-align: center;
 }
 
+/* REQ-14（V1.20）：预约页首屏常驻演示标识。进门即见，不依赖 step；跟随主题令牌。 */
+.ap-demo-bar {
+  margin: 0 0 16rpx;
+  padding: 12rpx 20rpx;
+  border-radius: 12rpx;
+  background: var(--accent-soft);
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.5;
+  text-align: center;
+}
+
 /* REQ-14（V1.20）：未接真实 HIS 的演示预约提示。跟随主题令牌，不写死色值/字号。 */
 .ap-demo-hint {
   margin: 20rpx 0 0;
@@ -736,6 +748,7 @@
   .ap-seg { min-width: 70px; height: 32px; padding: 0 12px; border-width: 1px; }
   .ap-disclaimer { margin-top: 10px; }
   .ap-demo-hint { margin-top: 10px; }
+  .ap-demo-bar { margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; }
   .ap-confirm-btn { margin-top: 10px; }
 
   /* 成功态 */
