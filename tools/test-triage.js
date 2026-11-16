@@ -244,6 +244,53 @@ check('追问-达到上限后不再问', r2.question === null, JSON.stringify(r2
 const urgent = E.analyze('胸口压榨样疼痛')
 check('追问-红旗时不再追问', urgent.question === null)
 
+// ==================== ⑤b 「不」不再吞掉整句（2026-11-16 真机「逻辑有误」）====================
+// 背景：真机上用户说「不是你的阿狸只是你慌」，AI 却追问「这个情况持续多久了？」；
+//      答完「3 天左右」后采集条仍只有「时长」。根因是「不」和「没有」共用 6 字否定窗口 ——
+//      「不舒服3天」里的「3天」因为前面 6 字内有「不」被判成否定。
+section('否定词「不」的作用范围（不舒服3天 不该把时长吞掉）')
+check('不-「不舒服3天」仍能抽到时长', E.extractSlots('不舒服3天').duration === '数天',
+  '实得=' + JSON.stringify(E.extractSlots('不舒服3天').duration))
+check('不-「不舒服，头疼」仍能判科室', E.analyze('不舒服，头疼').primary.dept === '神经内科',
+  '实得=' + E.analyze('不舒服，头疼').primary.dept)
+check('不-紧邻否定仍生效（不发烧）', E.extractSlots('不发烧，就是咳嗽').associated.indexOf('发热') < 0,
+  JSON.stringify(E.extractSlots('不发烧，就是咳嗽').associated))
+check('不-紧邻否定仍生效（不咳嗽）', E.extractSlots('不咳嗽').associated.length === 0,
+  JSON.stringify(E.extractSlots('不咳嗽').associated))
+check('不-「不太」按程度轻处理，不当否认', E.extractSlots('不太疼').severity === '程度轻',
+  JSON.stringify(E.extractSlots('不太疼').severity))
+
+// ==================== ⑤c 追问选项必须能被自己抽回来 ====================
+// 用户点选项 = 原样把选项文案当输入发出去（onAskOption → send(v)）。
+// 选项文案若和 SLOT_DICT 对不上，点了等于没答：槽位空、问题却被标记"问过"，只能一路追到上限。
+section('追问选项能填槽（点了就要算"答过"）')
+// ⚠️ 这里的 KB 是**局部** require：文件后面还有一个 `const KB`（导航知识库），
+//    直接引用会踩 TDZ（Cannot access 'KB' before initialization）。
+const KBQ = require(path.join(ROOT, 'utils', 'triage-kb.js'))
+const OPT_FILLED = {
+  duration: (s) => !!s.duration,
+  severity: (s) => !!s.severity,
+  associated: (s) => s.associated.length > 0,
+  part: (s) => s.part.length > 0
+}
+Object.keys(KBQ.FOLLOWUPS).forEach((slot) => {
+  KBQ.FOLLOWUPS[slot].options.forEach((opt) => {
+    if (/^没有/.test(opt)) return   // 「没有其他」是"没有别的症状"的否定回答，本就不该填槽
+    check('选项可填槽 ' + slot + '「' + opt + '」', OPT_FILLED[slot](E.extractSlots(opt)),
+      JSON.stringify(E.extractSlots(opt)))
+  })
+})
+
+// ==================== ⑤d 非症状输入：不假装听懂 ====================
+// 原实现：识别不出任何症状词也照问「持续多久」，最后把「全科医学科 + 居家观察」写进导诊记录。
+section('非症状输入（不追问、不出兜底结论）')
+const nonsense = E.analyze('不是你的阿狸只是你慌')
+check('没听懂-不追问', nonsense.question === null, JSON.stringify(nonsense.question))
+check('没听懂-标记 unrecognized', nonsense.unrecognized === true)
+check('没听懂-不出科室结论', nonsense.noConclusion === true)
+check('没听懂-正常主诉不误标', E.analyze('嗓子疼三天').unrecognized === false)
+check('没听懂-「就是有点不舒服」仍算症状（不误标）', E.analyze('就是有点不舒服').unrecognized === false)
+
 // ==================== ⑥ 多轮上下文累积 ====================
 section('多轮上下文（症状累积理解）')
 const turn2 = E.analyze('还有反酸和烧心', { history: ['胃那块不舒服'] })
@@ -426,6 +473,14 @@ NONE_CASES.forEach((t) => check('应答-非应答「' + t + '」', S1.answerNav(
 check('应答-「不要」不能判成 yes', S1.answerNav('不要') === 'no')
 check('应答-「不用了」不能判成 yes', S1.answerNav('不用了') === 'no')
 check('应答-长句不当应答', S1.answerNav('我不想去了，我明天再看吧') === '')
+// ⚠️ 2026-11-16 回归（真机「逻辑有误」）：原实现是**子串**命中，
+//    结果卡之后用户再补一句「嗓子好疼」会被判成"要导航"直接跳走。
+;['嗓子好疼', '肚子好痛', '去了医院', '今天好多了'].forEach((t) => {
+  check('应答-症状句不当应答「' + t + '」', S1.answerNav(t) === '', '实得=' + S1.answerNav(t))
+})
+check('应答-「要，带我去」算 yes', S1.answerNav('要，带我去') === 'yes', '实得=' + S1.answerNav('要，带我去'))
+check('应答-「好的谢谢」算 yes', S1.answerNav('好的谢谢') === 'yes', '实得=' + S1.answerNav('好的谢谢'))
+check('应答-「不用了谢谢」算 no', S1.answerNav('不用了谢谢') === 'no', '实得=' + S1.answerNav('不用了谢谢'))
 
 // 场景 2：红旗输入 → 应"不等后端"
 calls.length = 0

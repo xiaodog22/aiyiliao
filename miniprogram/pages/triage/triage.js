@@ -41,6 +41,8 @@ const REPORT_KEY = 'wb_triage_report'
  * 6 小时覆盖一次完整门诊（取号 → 候诊 → 检查 → 复诊），过期即丢弃。
  */
 const SESSION_KEY = 'wb_triage_live_session_v1'
+// ⚠️ 键名保持不变、**版本号升到 2**：v1 快照没有"离场即清空"的语义，还可能带着上一轮的
+//    「已生成」状态 —— 升级后一律按 v!==2 丢弃，用户第一次进来就是干净的新会话。
 const SESSION_TTL = 6 * 60 * 60 * 1000
 
 /**
@@ -57,6 +59,19 @@ const INPUT_MAX_TIP = '已达字数上限，可先发送再补充'
  * 也避免 setData 载荷随对话长度无限增长。
  */
 const MSG_CAP = 60
+
+/**
+ * 「没有其他 / 没有了」这类对追问的否定回答（2026-11-16）。
+ * 它本身没有任何症状词，但对「还有别的伴随症状吗？」是**有效回答** ——
+ * 不能按"没听懂"处理，否则用户点了「没有其他」反而被要求重说症状。
+ */
+const NO_MORE_RE = /^(没有其他|没有别的|没有别的了|没有其他了|没有|没有了|没了|别的没有了|无其他|没有没有)$/
+function isNoMoreAnswer(text) {
+  return NO_MORE_RE.test(String(text || '').replace(/[，。！？、,.!?~～\s]/g, ''))
+}
+
+// 「没听懂」的引导语：给例子，长者照着说一句就能继续（不追问、不假装理解）
+const GUIDE_TEXT = '我没太听懂这句。说说具体哪里不舒服就行，比如「嗓子疼三天」「胸口闷」「肚子疼还拉肚子」。'
 
 function nowTime() {
   const d = new Date()
@@ -121,6 +136,9 @@ Page({
     this._asked = []
     this._history = []
     this._pendingNavDept = ''
+    // 本轮快照要不要留到下次进入：只有「去预约」（switchTab 会销毁本页）需要接上，
+    // 其它离场（返回/关闭）一律视为本次导诊结束，onUnload 会清掉快照（2026-11-16）。
+    this._keepSession = false
     // AI 分诊会话 id：首轮由 services/triage.js 建会话后回传，后续轮次复用（见 _ctx）
     this._consultationId = ''
     this._initUser()
@@ -144,8 +162,13 @@ Page({
   },
 
   onUnload() {
-    // switchTab 离场会销毁本页：离场前落一次快照，回来才能接上（DEF-07）
-    this._persistSession()
+    // 离场即结束本次导诊（2026-11-16「不会自动清空」修复）：
+    // 原实现无条件落快照 → 用户返回首页/切别的页面再进导诊，看到的是上一次的旧对话、
+    // 旧采集条甚至「已生成」按钮，像卡在上一轮里。
+    // 唯一例外是「去预约」：走 switchTab 会销毁所有非 tab 页，用户看完号回来要能接上（DEF-07），
+    // 所以那一处显式把 _keepSession 置 true。
+    if (this._keepSession) this._persistSession()
+    else this._clearSession()
     speechService.stopRecord()
     speechService.stopSpeak()
   },
@@ -240,7 +263,7 @@ Page({
     try {
       if (!this.data.messages.length) return
       wx.setStorageSync(SESSION_KEY, {
-        v: 1,
+        v: 2,
         at: Date.now(),
         messages: this.data.messages,
         msgId: this.data.msgId,
@@ -269,7 +292,7 @@ Page({
   _restoreSession() {
     let s = null
     try { s = wx.getStorageSync(SESSION_KEY) } catch (e) { s = null }
-    if (!s || s.v !== 1 || !Array.isArray(s.messages) || !s.messages.length) return false
+    if (!s || s.v !== 2 || !Array.isArray(s.messages) || !s.messages.length) return false
     if (!s.at || (Date.now() - Number(s.at)) > SESSION_TTL) {
       this._clearSession()
       return false
@@ -278,17 +301,29 @@ Page({
     this._asked = Array.isArray(s.asked) ? s.asked : []
     this._history = Array.isArray(s.history) ? s.history : []
     this._pendingNavDept = s.pendingNavDept || ''
+    // 快照可能是异常退出/旧版本写的：最后一条是**追问卡**说明还在采集，
+    // 此时「已生成」是上一轮残留 —— 不能让它把「生成结果」按钮继续锁死（2026-11-16）。
+    const lastMsg = s.messages[s.messages.length - 1]
+    const generated = !!s.generated && !(lastMsg && lastMsg.type === 'ask')
     this.setData({
       messages: s.messages,
       msgId: Number(s.msgId) || s.messages.length,
       slotsText: s.slotsText || '',
       rounds: Number(s.rounds) || 0,
       canReport: !!s.canReport,
-      generated: !!s.generated,
+      generated: generated,
       lastResult: s.lastResult || null,
       emergency: s.emergency || null,
       status: 'IDLE'
     })
+    // 恢复后必须回到底部（2026-11-16）：不回底时进来看到的是旧对话的**开头**，
+    // 最后一条追问的选项被挡在视口外，看起来像"AI 问了个没法回答的问题"。
+    const toBottom = () => {
+      this._scrollTick = (this._scrollTick || 0) + 10000
+      this.setData({ scrollTop: this._scrollTick })
+    }
+    if (wx.nextTick) wx.nextTick(toBottom)
+    else setTimeout(toBottom, 60)
     return true
   },
 
@@ -360,13 +395,24 @@ Page({
 
     const msgId = this.data.msgId + 1
     this.setData({ input: '' })
-    // 症状一被接受就进 _history：原实现只在 _finish() 里 push，走"补问"分支时永远为空，
-    // 于是追问阶段点「生成结果」误报"请先描述症状"（D-02）。
-    this._history.push(t)
     this._appendMsg({ id: msgId, role: 'user', type: 'text', content: t, time: nowTime() })
 
     // ① 本地即时理解（0ms 出结果）→ 回执"我理解到了什么"，让用户能纠错
     const local = triageService.parse(t, this._ctx())
+
+    // ①-2 完全没听懂（2026-11-16）→ 只给「换个说法」引导：
+    //   不追问（原实现会对「不是你的阿狸只是你慌」问「这个情况持续多久了？」）、
+    //   不写进 _history（否则这句会污染后面所有轮次的合并文本）、不烧一次 AI 推理。
+    //   ⚠️ 例外：「没有其他」这类对追问的否定回答是有效的，不能按"没听懂"处理。
+    if (local.unrecognized && !isNoMoreAnswer(t)) {
+      this._guideUnrecognized()
+      return
+    }
+
+    // 症状一被接受就进 _history：原实现只在 _finish() 里 push，走"补问"分支时永远为空，
+    // 于是追问阶段点「生成结果」误报"请先描述症状"（D-02）。
+    // 2026-11-16：挪到 parse 之后 —— 听不懂的句子不该进上下文。
+    this._history.push(t)
     if (local.slotsText) {
       this.setData({ slotsText: local.slotsText })
       this._push({ type: 'slots', slotsText: local.slotsText })
@@ -391,7 +437,8 @@ Page({
 
   _analyze(text, force) {
     // 本地大模型在 CPU 上推理，首次要加载权重：如实告知等待时长，避免用户以为卡死
-    this.setData({ status: 'THINKING', thinkingText: 'AI 正在分析（约 30~60 秒）…' })
+    // generated 同步回落：新一轮分析开始，上一轮的「已生成」不再代表当前对话。
+    this.setData({ status: 'THINKING', thinkingText: 'AI 正在分析（约 30~60 秒）…', generated: false })
     triageService.analyze(text, this._ctx({ forceResult: !!force }))
       .then((result) => {
         this.setData({ status: 'IDLE' })
@@ -467,13 +514,27 @@ Page({
   /** 多轮补问（带快捷选项，长者可直接点） */
   _ask(q) {
     this._asked.push(q.slot)
-    this.setData({ rounds: this.data.rounds + 1, status: 'IDLE' }, () => this._persistSession())
+    // generated 必须跟着"进入下一轮采集"回落（2026-11-16）：
+    // 否则会出现「AI 还在追问、采集条却写着已生成」的自相矛盾状态。
+    this.setData({ rounds: this.data.rounds + 1, status: 'IDLE', generated: false }, () => this._persistSession())
     this._push({
       type: 'ask',
       content: q.question,
       options: q.options || [],
       slot: q.slot
     })
+  },
+
+  /**
+   * 完全没听懂时的引导（2026-11-16）。
+   * 连续两次没听懂不刷屏：同一句引导只保留最后一条。
+   */
+  _guideUnrecognized() {
+    this.setData({ status: 'IDLE' })
+    const list = this.data.messages
+    const last = list.length ? list[list.length - 1] : null
+    if (last && last.role === 'ai' && last.content === GUIDE_TEXT) return
+    this._push({ type: 'text', content: GUIDE_TEXT })
   },
 
   onAskOption(e) {
@@ -571,6 +632,9 @@ Page({
     const dept = e.currentTarget.dataset.dept
     // appointment 是 tabBar 页（navigateTo 会被微信静默拒绝）：switchTab + 缓存传预选科室
     if (dept) wx.setStorageSync('wb_appoint_dept', dept)
+    // 唯一需要"离场仍保留对话"的出口（DEF-07）：switchTab 会销毁本页，
+    // 用户看完号/挂完号回来必须还能看到刚才的结论，否则要重说一遍症状。
+    this._keepSession = true
     wx.switchTab({ url: '/pages/appointment/appointment' })
   },
 
@@ -662,6 +726,7 @@ Page({
         speechService.stopRecord()
         speechService.stopSpeak()
         this._clearSession()
+        this._keepSession = false
         this._consultationId = ''
         this._asked = []
         this._history = []

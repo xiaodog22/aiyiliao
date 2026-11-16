@@ -109,6 +109,20 @@ function normalizeLoose(text) {
  * 吞掉真阳性比多报一次急症危险得多，所以转折一律按"重新肯定"处理（DEF-19）。
  */
 const NEG_CONTRASTS = ['但', '不过', '却', '而是', '后来', '随后']
+
+/**
+ * 弱否定「不」的作用范围：只认紧邻（1~2 字），不再用 6 字窗口。
+ *
+ * 为什么改（2026-11-16 真机反馈「逻辑有误」）：
+ *   原来「不」和「没有」共用 6 字窗口 → `不舒服3天` 里 `3天` 因为前面 6 字内有「不」被判成否定，
+ *   时长/部位/伴随整段抽不出来，用户答完“3 天左右”采集条仍是空的，AI 只能反复追问。
+ *   「不舒服」是最高频主诉开头，这条几乎命中所有口语描述。
+ * 现在的口径：
+ *   - 「没有 / 无 / 否认 / 不是 / 未见…」保持 6 字窗口（这些词本身就带明确的否定语义）；
+ *   - 「不」只在**紧邻症状词**（`不发烧`）或**隔一个程度词**（`不太疼` / `不怎么咳` / `不明显发热`）时才算否定；
+ *   - 「不舒服 / 不适」里的「不」是构词成分，不再参与否定。
+ */
+const NEG_WEAK_TAIL_RE = /不[太怎么大很明]{0,2}$/
 function isNegated(text, idx) {
   const from = Math.max(0, idx - 6)
   let window = text.slice(from, idx)
@@ -121,7 +135,8 @@ function isNegated(text, idx) {
   for (let i = 0; i < NEGATIONS.length; i++) {
     if (window.indexOf(NEGATIONS[i]) >= 0) return true
   }
-  return false
+  // 弱否定「不」：看紧挨着症状词的 3 个字（不能用 window，window 会把「不舒服」也算进来）
+  return NEG_WEAK_TAIL_RE.test(text.slice(Math.max(0, idx - 4), idx))
 }
 
 /** 在文本中查找关键词，返回首个未被否定的命中位置（-1 = 未命中） */
@@ -465,8 +480,22 @@ function analyze(text, opts) {
   //   **只要匹配到任何科室（非兜底科室）就直接出结论** —— 用户说完不适立刻拿到推荐科室，
   //   不再逐轮追问；只有"完全没识别出症状归属"这一种情况才补问一个关键问题，
   //   避免把"答非所问"的科室卡推给用户。
+  // 「完全没听懂」判定（2026-11-16 真机反馈「逻辑有误」）：
+  // 输入里既没有任何症状词（ranked 为空），也没有部位/时长/程度/伴随/人群任一个槽位时，
+  // 原实现照样追问「这个情况持续多久了？」—— 对用户是"假装听懂"，对本机是白烧一轮追问，
+  // 最后还会把「全科医学科 + 居家观察」写进导诊记录。
+  // 现在显式标记 unrecognized：页面改为「请换个说法」引导，**不追问、不出结论、不落记录**。
+  const hasSignal = redFlags.length > 0
+    || ranked.length > 0
+    || slots.part.length > 0
+    || slots.associated.length > 0
+    || !!slots.duration
+    || !!slots.severity
+    || !!slots.population
+  const unrecognized = !hasSignal
+
   const matched = primary.dept !== FALLBACK_DEPT && primary.score > 0
-  const stopAsk = level.key === 'emergency' || level.key === 'urgent' || matched
+  const stopAsk = unrecognized || level.key === 'emergency' || level.key === 'urgent' || matched
   const question = stopAsk ? null : nextQuestion(slots, o.asked, o.rounds)
 
   // 兜底科室不是"结论"（DEF-16）：只要主推荐落回 `全科医学科`，就说明**没有识别出系统归属**
@@ -497,6 +526,9 @@ function analyze(text, opts) {
     needMoreInfo: !!(question || needMoreInfo),
     // true = 页面**不得**渲染科室卡与「去预约」入口，改为「暂无法判断科室，建议到院咨询导诊台」
     noConclusion: noConclusion,
+    // true = 这句话里没有任何医学信号（不是症状描述）→ 页面只给"换个说法"引导，
+    // 不追问、不出结论、不写导诊记录（见 hasSignal 注释）
+    unrecognized: unrecognized,
     navigable: !!(info && info.navigable) && !noConclusion,
     departmentInfo: info,
     // 合规口径统一在这里产出，页面照抄即可
