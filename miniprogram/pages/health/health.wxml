@@ -3,7 +3,7 @@
 
   版式逐项对照 design-output/患者端/B-TabBar补充/05-AI养生.png
   与「页面复刻文档」§四.5：
-    ① 顶部 Hero：大标题「通小安 AI 养生助手」+ 白色圆角气泡（带小尾巴）+ 右侧机器人插画
+    ① 顶部 Hero：大标题「小安 AI 养生助手」+ 白色圆角气泡（带小尾巴）+ 右侧机器人插画
     ② 快捷功能宫格（2×2）：图标底板 88rpx / 圆角 24rpx（浅蓝、薄荷交替）+ 文案
     ③ 对话气泡区（复用问诊页气泡规范）：AI 左浅蓝气泡 + 小安圆形头像 / 用户右蓝色气泡 /
        选项 chip 浅蓝胶囊
@@ -24,7 +24,7 @@
     <!-- ============ ① Hero：标题 + 白气泡 + 机器人 ============ -->
     <view class="hx-hero anim-rise">
       <view class="hx-hero-body">
-        <view class="hero-title-lg hx-hero-title">通小安 AI 养生助手</view>
+        <view class="hero-title-lg hx-hero-title">小安 AI 养生助手</view>
         <view class="hero-bubble hx-bubble">今天想从哪里开始照顾自己？</view>
       </view>
       <image class="hx-mascot" src="/assets/home/xiaoan-robot.png" mode="aspectFit" />

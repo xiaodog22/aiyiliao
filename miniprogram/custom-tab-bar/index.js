@@ -10,7 +10,7 @@ const app = getApp()
 // 标准模式 4 项配置
 const TABS_STANDARD = [
   { pagePath: '/pages/home/home',       text: '首页',   icon: '/assets/icons/home_gray.png',  activeIcon: '/assets/icons/home.png' },
-  { pagePath: '/pages/consultation/consultation', text: 'AI问诊', icon: '/assets/icons/chat_gray.png', activeIcon: '/assets/icons/chat.png' },
+  { pagePath: '/pages/consultation/consultation', text: 'AI 问诊', icon: '/assets/icons/chat_gray.png', activeIcon: '/assets/icons/chat.png' },
   { pagePath: '/pages/appointment/appointment', text: '预约挂号', icon: '/assets/icons/calendar_gray.png', activeIcon: '/assets/icons/calendar.png' },
   { pagePath: '/pages/profile/profile', text: '我的',   icon: '/assets/icons/user_gray.png',  activeIcon: '/assets/icons/user.png' }
 ]
@@ -59,8 +59,12 @@ Component({
       // 先确保列表与当前主题同步（设置页切主题后 tab 页 onShow 会走到这里）
       this._syncTheme()
       const idx = this.data.list.findIndex(t => t.pagePath === pagePath)
-      if (idx >= 0 && idx !== this.data.selected) {
-        this.setData({ selected: idx })
+      // B1-02：找不到映射时**清除高亮**（selected=-1），不能保留上一项——
+      // 否则会出现「在 A 页却高亮 B 项」的错亮（真机 T33 的根因形态）。
+      // 当前 4 项列表已覆盖全部 tabBar 页；此分支防未来新增页/主题差异再次错亮。
+      const next = idx >= 0 ? idx : -1
+      if (next !== this.data.selected) {
+        this.setData({ selected: next })
       }
     },
 

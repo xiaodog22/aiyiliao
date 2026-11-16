@@ -71,9 +71,12 @@ Page({
       rateLabel: RATE_LABELS[idx]
     })
     this._refresh()
-    // 远端音色目录（契约 GET /api/v1/voice/voices）覆盖本地首屏；失败回落本地目录
+    // 远端音色目录（契约 GET /api/v1/voice/voices）覆盖本地首屏；失败回落本地目录。
+    // B1-01 代次守卫：请求发起后用户若已「设为默认/保存」，迟到的响应整体丢弃，
+    // 不得覆盖用户刚建立的 current/pending（service 层另有 _writeGen 双保险）。
+    const gen = (this._userGen = this._userGen || 0)
     voice.catalogRemote().then((c) => {
-      if (this._gone) return
+      if (this._gone || (this._userGen || 0) !== gen) return
       const pending = this.data.pending
       const okPending = c.rows.some((r) => r.id === pending) ? pending : ''
       const rows = c.rows.map((r) => ({
@@ -174,6 +177,8 @@ Page({
     this.setData({ playingId: '', engineHint: '' })
     voice.save({ voiceId, rate: RATES[this.data.rateIndex] })
       .then((res) => {
+        // B1-01：保存成功 = 用户写入，作废飞行中的目录响应（避免其回来后覆盖本次选择）
+        this._userGen = (this._userGen || 0) + 1
         this._refresh({ pending: '' })
         // 本地已生效；云端同步失败时如实说清"本机仍生效"，不报"保存失败"（那不是事实）
         if (res && res.synced === false) {

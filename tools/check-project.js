@@ -210,5 +210,111 @@ if (!bigImages.length) console.log('   无 >100KB 单图')
 for (const [f, s] of mainMedia) { bad++; console.log('   ✗ 主包内含音视频 ' + f + '（' + (s / 1024).toFixed(1) + 'KB），禁止入包') }
 for (const [f, s] of subMedia) console.log('   ⚠ 分包内存量音视频 ' + f + '（' + (s / 1024).toFixed(1) + 'KB），F2 网络化后消除')
 
+// ⑦ 事实源一致性（2026-11-16 审查整改 D-05）：
+//    文档里的页数/库表数必须与 app.json、Flyway 迁移的实测值一致，防止再次漂移。
+//    只扫"当前事实源"文档，不扫历史归档（历史文档允许保留当时口径）。
+{
+  const REPO = path.join(__dirname, '..')
+  const app = JSON.parse(fs.readFileSync(path.join(ROOT, 'app.json'), 'utf8'))
+  const realMain = app.pages.length
+  const realTotal = realMain + (app.subPackages || []).reduce((n, s) => n + (s.pages ? s.pages.length : 0), 0)
+
+  // 页数：只认「主包 N 页 / 全量 N 页 / 当前 N 页」三种句式，避免误伤其它"页"表述
+  const docs = ['README.md', 'AI_CONTEXT.md', 'docs/v4/06-测试矩阵与发布检查表.md', 'RELEASE_STATUS.md']
+  const pats = [
+    { re: /主包\s*\*{0,2}(\d+)\s*\*{0,2}\s*页/g, want: realMain, label: '主包页数' },
+    { re: /全量\s*\*{0,2}(\d+)\s*\*{0,2}\s*页/g, want: realTotal, label: '全量页数' },
+    { re: /当前\s*\*{0,2}(\d+)\s*\*{0,2}\s*页/g, want: realTotal, label: '当前页数' },
+  ]
+  let pageSeen = 0
+  for (const d of docs) {
+    const p = path.join(REPO, d)
+    if (!fs.existsSync(p)) { bad++; console.log('   ✗ ⑦ 事实源文档缺失：' + d); continue }
+    const t = fs.readFileSync(p, 'utf8')
+    for (const { re, want, label } of pats) {
+      re.lastIndex = 0
+      let m
+      while ((m = re.exec(t))) {
+        pageSeen++
+        if (Number(m[1]) !== want) {
+          bad++
+          console.log('   ✗ ⑦ ' + d + ' 声明' + label + ' ' + m[1] + '，app.json 实测 ' + want)
+        }
+      }
+    }
+  }
+  if (!pageSeen) { bad++; console.log('   ✗ ⑦ 未在任何事实源文档找到页数声明（门禁失效）') }
+
+  // 库表数：Flyway 迁移的唯一 CREATE TABLE 数 vs RELEASE_STATUS.md 声明
+  const migDir = path.join(REPO, 'backend/business-service/src/main/resources/db/migration')
+  const tables = new Set()
+  if (fs.existsSync(migDir)) {
+    for (const f of fs.readdirSync(migDir).filter((x) => x.endsWith('.sql'))) {
+      const s = fs.readFileSync(path.join(migDir, f), 'utf8')
+      const re = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([A-Za-z0-9_]+)`?/gi
+      let m
+      while ((m = re.exec(s))) tables.add(m[1].toLowerCase())
+    }
+  }
+  if (!tables.size) {
+    bad++
+    console.log('   ✗ ⑦ 未从 Flyway 迁移解析到任何表（门禁失效）')
+  } else {
+    const st = path.join(REPO, 'RELEASE_STATUS.md')
+    if (!fs.existsSync(st)) { bad++; console.log('   ✗ ⑦ 发布状态表缺失：RELEASE_STATUS.md') }
+    else {
+      const m = /库表数\*{0,2}\s*[:：]\s*\*{0,2}(\d+)/.exec(fs.readFileSync(st, 'utf8'))
+      if (!m) { bad++; console.log('   ✗ ⑦ RELEASE_STATUS.md 未声明库表数') }
+      else if (Number(m[1]) !== tables.size) {
+        bad++
+        console.log('   ✗ ⑦ 库表数不一致：文档 ' + m[1] + '，迁移实测 ' + tables.size)
+      }
+    }
+  }
+  console.log('   页面 ' + realMain + '+' + (realTotal - realMain) + '=' + realTotal + '；库表 ' + tables.size + '（实测）')
+}
+
+// ⑧ 品牌名唯一性（2026-11-16 定稿）：运行时只允许「康诊云」
+// 正向断言窗口标题，反向扫描旧名残留。旧版设计稿/历史归档里的旧名不在此列（那些文件不在 miniprogram/ 内）。
+{
+  const BRAND = '康诊云'
+  const BANNED = ['AI 智慧医疗', 'AI智慧医疗', '楚大夫', '省二医']
+  const REPO = path.join(__dirname, '..')
+
+  const appJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'app.json'), 'utf8'))
+  const winTitle = (appJson.window && appJson.window.navigationBarTitleText) || ''
+  if (winTitle !== BRAND) {
+    bad++
+    console.log('   ✗ ⑧ app.json 窗口标题为「' + winTitle + '」，应为「' + BRAND + '」')
+  }
+
+  const exts = new Set(['.wxml', '.js', '.json', '.wxss'])
+  let hit = 0
+  ;(function walkBrand(d) {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name)
+      if (e.isDirectory()) { walkBrand(p); continue }
+      if (!exts.has(path.extname(e.name).toLowerCase())) continue
+      const s = fs.readFileSync(p, 'utf8')
+      for (const w of BANNED) {
+        let i = -1
+        while ((i = s.indexOf(w, i + 1)) >= 0) {
+          hit++
+          if (hit <= 6) {
+            const ln = s.slice(0, i).split('\n').length
+            console.log('   ✗ ⑧ 旧品牌名「' + w + '」：' + path.relative(REPO, p) + ':' + ln)
+          }
+        }
+      }
+    }
+  })(ROOT)
+
+  if (hit) {
+    bad += hit
+    console.log('   ✗ ⑧ 运行时共 ' + hit + ' 处旧品牌名残留，一律统一为「' + BRAND + '」')
+  }
+  console.log('   品牌名「' + BRAND + '」（窗口标题 + 运行时全文扫描 ' + BANNED.length + ' 个黑名单词）')
+}
+
 console.log(bad ? '\n✗ check-project：共 ' + bad + ' 处问题' : '\n✓ check-project：全部通过')
 process.exit(bad ? 1 : 0)

@@ -1,0 +1,26 @@
+{
+  "name": "his-booking-fields",
+  "description": "契约字段断言（REQ-14）：预约列表返回 bookingSource；有预约时进一步断言来源枚举合法。账号无预约时按 SKIP 处理（不把「没数据」判成缺陷）。",
+  "steps": [
+    {
+      "type": "assertHttp",
+      "name": "01-预约列表含bookingSource",
+      "method": "GET",
+      "path": "/api/v1/appointments/me",
+      "expectStatus": 200,
+      "expectBodyContains": ["bookingSource"],
+      "skipIfNoToken": true,
+      "skipIfBodyMatches": "\"data\":\\s*\\[\\s*\\]"
+    },
+    {
+      "type": "assertHttp",
+      "name": "02-来源枚举合法",
+      "method": "GET",
+      "path": "/api/v1/appointments/me",
+      "expectStatus": 200,
+      "expectBodyContains": ["LOCAL_DEMO"],
+      "skipIfNoToken": true,
+      "skipIfBodyMatches": "\"data\":\\s*\\[\\s*\\]"
+    }
+  ]
+}

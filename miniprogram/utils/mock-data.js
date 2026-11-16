@@ -187,7 +187,7 @@ const TV_DEVICES = [
 
 // 电视端大屏预览（叫号屏演示）
 const TV_PREVIEW = {
-  title: '省二医治管家 · 候诊叫号大屏',
+  title: '康诊云 · 候诊叫号大屏',
   current: { no: '001 号', name: '张*国', room: '1 号诊室', dept: '呼吸内科' },
   waiting: ['002 号 李*英', '003 号 王*强']
 }

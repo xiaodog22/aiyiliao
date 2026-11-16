@@ -130,20 +130,15 @@ function homeBody() {
   <view class="shell-cols">
     <view class="shell-main">
       <view class="hm-hero">
-        <view class="hm-brand">
-          <view class="hm-logo"><img class="hm-logo-ic" /></view>
+        <view class="hm-brand-row pressable">
           <view class="hm-brand-text">
-            <view class="hm-brand-name">AI 健康助手</view>
-            <view class="hm-brand-slogan">让就医更简单</view>
+            <view class="hm-brand-name">小安 AI 助手</view>
+            <view class="hm-brand-hint"><text>导诊 · 报告解读</text><img class="hm-brand-arrow" src="../miniprogram/assets/icons/chevronRight.png" /></view>
           </view>
+          <view class="hm-ai"><img class="hm-ai-img" src="../miniprogram/assets/home/ai-doctor.png" /></view>
         </view>
-        <view class="hm-ai pressable">
-          <view class="hm-ai-tag"><text>有问题</text><text>问小安</text></view>
-          <img class="hm-ai-arrow" />
-          <view class="hm-ai-face"><img class="hm-ai-face-img" src="../miniprogram/assets/home/ai-doctor.png" /></view>
-        </view>
-        <view class="hm-greet">张三，您好！</view>
-        <view class="hm-sub">今天身体有什么不舒服吗？</view>
+        <view class="hm-greet">张三，晚上好！</view>
+        <view class="hm-sub">今日温差大，注意保暖</view>
         <view class="hm-ask pressable">
           <view class="hm-ask-mic"><img class="hm-ask-mic-ic" /></view>
           <view class="hm-ask-ph">请用一句话描述您的症状...</view>

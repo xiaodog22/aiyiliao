@@ -16,6 +16,12 @@ app:
 # 代价与边界：H2 档没有报告新表，报告列表/详情的验收不由单测覆盖，
 #   改由真实 MySQL + 启动后 HTTP 实测（阶段 07 交付报告如实标注）。
 # 后续若新增 V28+ 通用 DDL，需同步调高本 target 并确认 H2 兼容性。
+#
+# 2026-11-16（REQ-14）：H2 档补一个 V26.1 迁移（db/migration-h2），只做 V31 的等价加列
+# （his_order_no / booking_source）。原因：通用 APPT_COLS 已含这两列，而 target=26 时
+# V31 不会执行 → 全部预约相关单测「Column not found」。locations 多目录只在本档生效，
+# 生产 locations 不含 migration-h2，仍由 V31 落库（两边字段语义一致，不是绕过断言）。
 spring:
   flyway:
-    target: 26
+    locations: classpath:db/migration,classpath:db/migration-h2
+    target: 26.1

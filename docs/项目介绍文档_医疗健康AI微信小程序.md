@@ -384,7 +384,7 @@ flowchart TD
 flowchart TB
     subgraph CLIENT["客户端层（微信小程序）"]
         direction LR
-        subgraph MAIN["主包（21 页）"]
+        subgraph MAIN["主包（33 页）"]
             H["首页"]
             C["AI问诊"]
             W["AI养生"]
@@ -447,7 +447,7 @@ flowchart TB
 
 | 层 | 组成 | 职责 |
 | --- | --- | --- |
-| 页面层 | pages/（主包 21 页）+ packageNav/ + packageContent/ | 界面渲染与交互，不直连网络 |
+| 页面层 | pages/（主包 33 页）+ packageNav/ + packageContent/ | 界面渲染与交互，不直连网络 |
 | 服务层 | services/（request/triage/voice/speech/appointment/user/doctor/gateway） | 全部网络调用与业务编排的唯一出口 |
 | 配置层 | config/env.js、config/api.js | 唯一 baseURL、唯一路径表、分档超时 |
 | 工具层 | utils/（triage-kb、triage-engine、mock-data、knowledge-kb、icons、err-text、paginate） | 纯函数引擎、演示数据、内容库、图标、错误中文化、分页 |

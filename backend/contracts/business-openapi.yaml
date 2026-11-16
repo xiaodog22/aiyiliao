@@ -2866,6 +2866,54 @@ paths:
         '409': {$ref: '#/components/responses/Conflict'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
 
+  /api/v1/beds/applications:
+    get:
+      operationId: listBedApplications
+      tags: [doctor]
+      summary: 我的床位申请
+      description: |
+        申请制（2026-11-15）：只返回登录医生本人提交的申请，按任职关系过滤。
+        审批不在客户端也不在本组接口——由病区护士站/住院处执行。
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: {type: string, enum: [PENDING, APPROVED, REJECTED, CANCELLED]}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 申请列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkBedApplicationList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      operationId: submitBedApplication
+      tags: [doctor]
+      summary: 提交床位申请
+      description: |
+        `patientRef` 使用内部患者 ID（与 `beds.occupant_user_id` 同口径），姓名/手机号一律 `422`。
+        `bedId` 与 `wardId` 二选一：指定床位需「属于当前医生授权病区 + 当前空闲」；只给病区则由护士站排床。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BedApplicationRequest'}
+      responses:
+        '200':
+          description: 已受理的申请（初始状态 `PENDING`）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkBedApplication'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
   # ==========================================================================
   # home
   # ==========================================================================
@@ -3708,6 +3756,8 @@ components:
         replayed: {type: boolean, description: 仅创建接口返回：本次是否为幂等重放。}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: [string, 'null'], format: date-time}
+        hisOrderNo: {type: [string, 'null'], maxLength: 64, description: "HIS 业务单号（REQ-14 受限接入）；LOCAL_DEMO 时为 null。"}
+        bookingSource: {type: string, enum: [LOCAL_DEMO, HIS_MOCK, HIS_LIVE], description: "预约来源（REQ-14）：本地演示/模拟受理/真实受理；页面据此标「演示预约」。"}
       additionalProperties: false
 
     OkAppointment:
@@ -4675,6 +4725,42 @@ components:
 
     OkBedList:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/Bed'}}}}]
+
+    BedApplicationRequest:
+      type: object
+      required: [patientRef]
+      properties:
+        patientRef: {type: string, maxLength: 64, description: 内部患者 ID，与 `beds.occupant_user_id` 同口径；不接受姓名或手机号（422）。}
+        bedId: {type: [string, 'null'], maxLength: 64, description: 指定床位；需属于当前医生授权病区且当前空闲。}
+        wardId: {type: [string, 'null'], maxLength: 64, description: 只申请病区时不指定床位，由护士站排床。}
+        reason: {type: [string, 'null'], maxLength: 200}
+        priority: {type: [string, 'null'], maxLength: 16, description: "`NORMAL` / `URGENT`；无法识别一律按 `NORMAL`，不臆造新档位。"}
+
+    BedApplication:
+      type: object
+      required: [id, status]
+      properties:
+        id: {type: string}
+        doctorId: {type: [string, 'null']}
+        doctorName: {type: [string, 'null']}
+        departmentId: {type: [string, 'null']}
+        wardId: {type: [string, 'null']}
+        wardName: {type: [string, 'null']}
+        bedId: {type: [string, 'null']}
+        bedLabel: {type: [string, 'null'], description: 只申请病区、尚未排床时为空。}
+        patientDisplayName: {type: [string, 'null'], description: 写入时已脱敏，出参不再二次加工。}
+        reason: {type: [string, 'null']}
+        priority: {type: string, enum: [NORMAL, URGENT]}
+        status: {type: string, enum: [PENDING, APPROVED, REJECTED, CANCELLED]}
+        reviewNote: {type: [string, 'null']}
+        reviewedAt: {type: [string, 'null'], format: date-time}
+        createdAt: {type: [string, 'null'], format: date-time}
+
+    OkBedApplication:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/BedApplication'}}}]
+
+    OkBedApplicationList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/BedApplication'}}}}]
 
     # ---------- 首页 ----------
 

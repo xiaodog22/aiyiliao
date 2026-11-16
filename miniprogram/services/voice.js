@@ -28,6 +28,14 @@ const DEFAULT_VOICE = 'preset_gentle'
 let _remoteRows = []
 
 /**
+ * 用户写入代次（B1-01 竞态守卫，2026-11-16）。
+ * save() 每次 +1；catalogRemote() 在请求发起时记录代次，响应回来若代次已变
+ * （用户在本页刚改过默认音色），**不得**用本次响应复位 current ——
+ * 否则「设默认」会被迟到的目录响应覆盖（voice.js:156-158 → 101-104 连锁复位）。
+ */
+let _writeGen = 0
+
+/**
  * 内置音色目录 —— 名称/描述取自设计稿，顺序与设计稿一致。
  * custom=true 的音色可删除（设计稿第三个音色带「删除」）；内置三项不可删。
  */
@@ -87,18 +95,20 @@ function _writeHidden(arr) {
  */
 function catalog() {
   const hidden = hiddenIds()
-  const rows = CATALOG
-    .filter((v) => !(v.custom && hidden.indexOf(v.id) >= 0))
-    .map((v) => ({
-      id: v.id,
-      name: v.name,
-      desc: v.desc,
-      custom: !!v.custom
-    }))
+  // B1-01：目录 = 本地内置 ∪ 最近远端。只用 CATALOG 会把**远端音色**当成"已删除"，
+  // 用户刚设的远端默认音色会被回落成 CATALOG[0]，storage 也被重写。
+  // ⚠️ 判断"是否还存在"必须排除用户已删除（hidden）的音色，否则删除后不会回落（test ⑥）。
+  const known = _knownRows().filter((v) => !(v.custom && hidden.indexOf(v.id) >= 0))
+  const rows = known.map((v) => ({
+    id: v.id,
+    name: v.name,
+    desc: v.desc,
+    custom: !!v.custom
+  }))
 
   let current = currentVoice()
-  // 当前音色已被删除（或 storage 里的 id 不在目录里）→ 回落到第一个可用音色并重写记忆
-  if (!rows.some((r) => r.id === current)) {
+  // 只有连「本地 ∪ 最近远端」的可见项都没有时才回退：本地不认识 ≠ 已删除
+  if (!known.some((r) => r.id === current)) {
     current = rows.length ? rows[0].id : ''
     speech.setCurrentVoice(current)
   }
@@ -136,6 +146,7 @@ function _groups(rows) {
  * @returns {Promise<{rows, current, currentName, currentDesc, hiddenCount, source}>}
  */
 function catalogRemote() {
+  const genAtRequest = _writeGen
   return get(API.VOICE_LIST)
     .then((list) => {
       const rows = (Array.isArray(list) ? list : [])
@@ -153,7 +164,9 @@ function catalogRemote() {
       // 记住远端全集（含已隐藏的），供 save/remove 校验与删除判断使用
       _remoteRows = visible.slice()
       let current = currentVoice()
-      if (!visible.some((r) => r.id === current)) {
+      // B1-01：请求飞行期间用户保存过（代次已变）→ 本次响应不得复位 current。
+      // 远端目录里没有用户刚选的音色时，保留用户选择（宁可名称空着，也不静默改回去）。
+      if (_writeGen === genAtRequest && !visible.some((r) => r.id === current)) {
         current = visible.length ? visible[0].id : ''
         speech.setCurrentVoice(current)
       }
@@ -222,6 +235,8 @@ function save(cfg) {
   }
   if (voiceId) speech.setCurrentVoice(voiceId)
   if (c.rate !== undefined) speech.setCurrentRate(c.rate)
+  // B1-01：标记"用户已写入"，飞行中的目录响应回来后不得复位本次选择
+  _writeGen++
   const local = { voiceId: voiceId || currentVoice(), rate: speech.currentRate() }
 
   const body = { voiceId: local.voiceId }

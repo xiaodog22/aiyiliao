@@ -41,6 +41,14 @@ page {
   /* —— 参考图基调组件令牌（hero / 底板 / 装饰）—— */
   --hero-grad: linear-gradient(135deg, #D9EEFE 0%, #B6DDFE 100%);  /* 淡蓝渐变 hero */
   --section-bar: #BDE0FA;    /* 区块标题浅蓝竖条 */
+  /* —— 品牌渐变固定基色（2026-11-16）：.theme-xlarge 把 --primary 压成纯黑以取最大对比，
+     但登录页天空、AI 徽标等**装饰性渐变**若跟着变，会得到「黑→蓝」的脏渐变（配色异常）。
+     这两个令牌在全部档位恒定，只供渐变使用；正文/按钮仍走 --primary。 */
+  --brand-grad-from: #0B6EF8;
+  --brand-grad-to: #3E8CFF;
+  /* 底部导航选中色（文字）：图标是蓝色 PNG 位图、无法跟随 --primary 变色，
+     所以选中文字必须留在蓝色系，不能跟着超大字档的黑色主色走（否则蓝图标配黑字＝两套配色）。 */
+  --tab-active: #0B6EF8;
   --tile-blue: #B2D8F9;      /* 图标底板五色（参考图实测 pastel） */
   --tile-mint: #CDF1E6;
   --tile-pink: #FBCBD5;
@@ -95,7 +103,36 @@ page {
   --font-body: 38rpx;
   --font-caption: 30rpx;
   --btn-height: 128rpx;
-  --bg: #FFFFFF;
+  /* ⚠️ 下面这组是"线条与边界"口径，与字号放大配套（2026-11-16）：
+     原实现只放大字号、把 --bg 改纯白，却没跟着压深 --border —— #E4E9F0 在纯白上
+     对比仅 ≈1.2:1，1rpx 分割线/白卡边缘等于消失（真机表现就是"线条看不清"）。
+     只在本档覆盖，不改色相：标准/大字档与 .high-contrast 都不受影响。 */
+  --bg: #F7FAFF;             /* 近白但保留一档蓝调：白卡不再与页面同色（纯白会吞掉卡片边界） */
+  --border: #7E8DA1;         /* 本档底色上 ≈3.2:1 / 白卡上 ≈3.4:1（非文本边界线可辨），替代 1.2:1 的 #E4E9F0 */
+  --text-weak: #5A6478;      /* 辅助文字：原 #828CA0 在白卡仅 3.1:1 → ≈6:1 */
+  --text-placeholder: #6F7C90;
+  --section-bar: #5B8FC7;    /* 区块竖条：原 #BDE0FA 在白底 1.4:1，缩到 8rpx 就看不清 */
+  --space-page: 40rpx;       /* 38rpx 正文下 32rpx 页边距偏挤 */
+  --shadow-card: 0 4rpx 16rpx rgba(11, 110, 248, 0.14);
+  --tab-label-size: 30rpx;   /* 组件（医生端 tabBar）通过 var 继承：本档标签不再固定 22rpx */
+  --tab-active: #0055FF;     /* 与 --accent 同值：本档主色是纯黑，选中文字留蓝色系并达 ≈5.7:1 */
+}
+
+/* 超大字档的结构补偿：细线加粗、留白同步放大（选择器只在本档命中，其它档零影响） */
+.theme-xlarge .divider { height: 2rpx; margin: 28rpx 0; }
+.theme-xlarge .card { border: 2rpx solid var(--border); }
+.theme-xlarge .row { padding: 28rpx 0; border-bottom-width: 2rpx; }
+.theme-xlarge .seg-tabs { border-bottom-width: 2rpx; }
+.theme-xlarge .li-row { padding: 28rpx 0; }
+.theme-xlarge .li-row + .li-row { border-top-width: 2rpx; }
+.theme-xlarge .li-arrow,
+.theme-xlarge .img-arrow { opacity: 0.7; }
+.theme-xlarge .section-header { margin: 12rpx 0 24rpx; }
+.theme-xlarge .section-header::before {
+  width: 10rpx;
+  height: 40rpx;
+  border-radius: 5rpx;
+  margin-right: 18rpx;
 }
 
 /* ============ 布局基础 ============ */
@@ -1099,6 +1136,22 @@ page {
     --font-body: 19px;
     --font-caption: 15px;
     --btn-height: 64px;
+    --tab-label-size: 15px;
+  }
+
+  /* 超大字档的结构补偿在宽屏必须折成 px（rpx 会按视口等比放大，2rpx 在 1200pt 上≈3px） */
+  .theme-xlarge .divider { height: 1px; margin: 14px 0; }
+  .theme-xlarge .card { border-width: 1px; }
+  .theme-xlarge .row { padding: 14px 0; border-bottom-width: 1px; }
+  .theme-xlarge .seg-tabs { border-bottom-width: 1px; }
+  .theme-xlarge .li-row { padding: 14px 0; }
+  .theme-xlarge .li-row + .li-row { border-top-width: 1px; }
+  .theme-xlarge .section-header { margin: 6px 0 12px; }
+  .theme-xlarge .section-header::before {
+    width: 5px;
+    height: 20px;
+    border-radius: 3px;
+    margin-right: 9px;
   }
 
   /* —— 图标类全局工具类（非变量）rpx → px ——

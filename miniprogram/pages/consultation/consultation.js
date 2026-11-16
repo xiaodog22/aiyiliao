@@ -92,7 +92,7 @@ Page({
     navSafeRight: 0,
     user: { maskName: '用户', gender: '', maskId: '' },
     progress: {
-      title: 'AI 助手陪您全流程就医',
+      title: '小安陪您全流程就医',
       subtitle: '暂无进行中的就医流程，咨询 AI 为您推荐科室',
       step: 1,
       hasFlow: false
@@ -244,7 +244,7 @@ Page({
             return sa < sb ? 1 : (sa > sb ? -1 : 0)
           })
         this.setData({
-          progress: flowProgress.buildProgress(apts, 'AI 助手陪您全流程就医', list[0] || null)
+          progress: flowProgress.buildProgress(apts, '小安陪您全流程就医', list[0] || null)
         })
       })
     })
@@ -347,7 +347,7 @@ Page({
       triagePending: false,
       messages: [{
         id: msgId, role: 'ai', type: 'text', time: nowTime(),
-        content: '您好，我是 AI 导诊助手。请先说说哪里不舒服、多久了，我会再问几个关键问题，信息够了给您推荐就诊科室。'
+        content: '您好，我是小安，AI 导诊助手。请先说说哪里不舒服、多久了，我会再问几个关键问题，信息够了给您推荐就诊科室。'
       }]
     })
     this._emergencyShown = false

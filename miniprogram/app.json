@@ -62,7 +62,7 @@
   },
   "lazyCodeLoading": "requiredComponents",
   "window": {
-    "navigationBarTitleText": "AI 智慧医疗",
+    "navigationBarTitleText": "康诊云",
     "navigationBarBackgroundColor": "#0B6EF8",
     "navigationBarTextStyle": "white",
     "backgroundColor": "#F3F8FF",
@@ -83,7 +83,7 @@
       },
       {
         "pagePath": "pages/consultation/consultation",
-        "text": "AI问诊",
+        "text": "AI 问诊",
         "iconPath": "assets/icons/chat_gray.png",
         "selectedIconPath": "assets/icons/chat.png"
       },

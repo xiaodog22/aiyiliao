@@ -84,8 +84,10 @@ class HealthArticleVideoTest {
         Matcher m = EXPIRES.matcher(videoUrl);
         assertThat(m.find()).isTrue();
         long ttl = Long.parseLong(m.group(1)) - Instant.now().getEpochSecond();
-        // 默认 app.attachment.video-ttl-seconds=7200；留 100s 容差
-        assertThat(ttl).as("视频 TTL 应约 7200 秒，而不是默认 900").isBetween(7100L, 7210L);
+        // 默认 app.attachment.video-ttl-seconds=7200；留 100s 容差。
+        // ⚠️ 过期时间按 300s 窗口**向上取整**（2026-11-15 修图片轮询 URL 抖动），
+        //    实际值落在 (7200, 7500]，上界必须含取整余量；下界 7100 仍能挡住"误用默认 900"。
+        assertThat(ttl).as("视频 TTL 应约 7200 秒，而不是默认 900").isBetween(7100L, 7500L);
     }
 
     @Test

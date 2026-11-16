@@ -576,6 +576,15 @@
   text-align: center;
 }
 
+/* REQ-14（V1.20）：未接真实 HIS 的演示预约提示。跟随主题令牌，不写死色值/字号。 */
+.ap-demo-hint {
+  margin: 20rpx 0 0;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.5;
+  text-align: center;
+}
+
 .ap-confirm-btn { margin-top: 20rpx; }
 
 /* ============ 成功态（整页浮层，保证流程闭环） ============ */
@@ -636,6 +645,13 @@
   font-size: calc(var(--font-caption) + 2rpx);
   font-weight: 600;
   color: var(--primary-dark);
+}
+
+/* REQ-14：成功页「演示预约」标识（服务端 bookingSource 非 HIS_LIVE 时显示）。 */
+.success-demo {
+  margin-top: 12rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
 }
 
 /* 页面根：给底部抽屉 + TabBar 留出呼吸位（抽屉 fixed，不占位；TabBar 高 100rpx + 安全区） */
@@ -719,6 +735,7 @@
   .ap-segs { gap: 8px; }
   .ap-seg { min-width: 70px; height: 32px; padding: 0 12px; border-width: 1px; }
   .ap-disclaimer { margin-top: 10px; }
+  .ap-demo-hint { margin-top: 10px; }
   .ap-confirm-btn { margin-top: 10px; }
 
   /* 成功态 */
@@ -728,4 +745,5 @@
   .success-title { margin-top: 12px; }
   .success-line { margin-top: 6px; }
   .success-no { margin-top: 12px; padding: 5px 12px; }
+  .success-demo { margin-top: 6px; }
 }

@@ -47,7 +47,7 @@
 
 | 层级 | 文件 | 用途 |
 |---|---|---|
-| 机器可读契约 | `backend/contracts/business-openapi.yaml` / `ai-openapi.yaml` | 路径、信封、字段、错误语义的**唯一权威** |
+| 机器可读契约 | `backend/contracts/business-openapi.yaml` / `ai-openapi.yaml` | 路径、信封、字段、错误语义的**目标态（to-be）定义**；⚠️ **不是当前实现事实**——两份 yaml 自述为 draft/to-be，判断实现进度只认代码、测试、运行结果（2026-11-16 审查整改 D-01/D-02） |
 | 实施指南 | `docs/v4/03`（业务）/ `04`（AI）/ `05`（运维）/ `07`（隐私） | 约束与边界；不重复契约 |
 | 门禁与纪律 | `docs/v4/06`、`WORKBODY_AGENT_RULES.md`、`AI_CONTEXT.md` | 测试矩阵；低 Token 与真实性红线 |
 | 本文档系列 | `08 / 08A / 08B` | 分工与执行细则；与契约冲突时同样让位于契约 |

@@ -87,7 +87,7 @@ Page({
     user: { maskName: '用户', gender: '', maskId: '' },
     // 就医进度
     progress: {
-      title: 'AI 导诊陪您全流程就医',
+      title: '小安陪您全流程就医',
       subtitle: '暂无进行中的就医流程，咨询 AI 为您推荐科室',
       step: 1,
       hasFlow: false
@@ -212,7 +212,7 @@ Page({
       //    原实现取 list[list.length-1] 永远拿到最旧一条，提示不会更新（2026-11-15）。
       userService.listMyAppointments()
         .then((list) => {
-          this.setData({ progress: flowProgress.buildProgress(list, 'AI 导诊陪您全流程就医') })
+          this.setData({ progress: flowProgress.buildProgress(list, '小安陪您全流程就医') })
         })
         .catch(() => {})
     })

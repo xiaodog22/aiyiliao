@@ -8,24 +8,35 @@
 
       <!-- ============================================================
            ① 顶部（参考图 01-首页 / 08-适老化首页）：
-           品牌小标 → 问候行（问候语 + 右侧圆形 AI 徽章）→ 后端问候语
-           ⚠️ 徽章与问候语同一行：参考图里圆徽章垂直居中于大问候语，而不是品牌行。
+           品牌行（小安身份 + 能力说明 + 头像徽章，整行即入口）→ 大问候 → 运营副句
+           ⚠️ 2026-11-16 优化：原来「小安 · AI 健康助手」是一行裸蓝字，
+              既没有可点反馈，也不说明"点它能干嘛"；徽章里是"+"（语义偏"添加"）。
+              现改为：品牌行整行可点 + 明写能力 + 换成小安头像，指向性来自视觉与文字双线索。
+           ⚠️ 大字档/超大字档整行隐藏（设计稿 08 首屏第一行就是问候）。
            ============================================================ -->
       <view class="hm-hero">
 
-        <view class="hm-brand-name">AI 健康助手</view>
-
-        <view class="hm-hero-row">
-          <view class="hm-greet">{{greetText}}</view>
-          <!-- AI 徽章：浅蓝圆底 + 医疗加号线性图标；此元素同时是导诊入口 -->
-          <view class="hm-ai pressable" bindtap="goTriage"
-                aria-role="button" aria-label="进入 AI 智能导诊">
-            <image class="hm-ai-img" src="{{icons.plus}}" mode="aspectFit" />
+        <view class="hm-brand-row pressable" bindtap="goTriage"
+              aria-role="button" aria-label="问小安：AI 智能导诊与报告解读">
+          <view class="hm-brand-text">
+            <view class="hm-brand-name">小安 AI 助手</view>
+            <view class="hm-brand-hint">
+              <text>导诊 · 报告解读</text>
+              <!-- 小箭头 = 全站通用的「可进入」信号，补上"这一行能点"的视觉暗示 -->
+              <image class="hm-brand-arrow" src="{{icons.chevronRight}}" mode="aspectFit" />
+            </view>
+          </view>
+          <!-- 小安头像：自带浅蓝圆底，裁成圆形嵌入徽章；加载失败时保留浅蓝圆兜底 -->
+          <view class="hm-ai">
+            <image class="hm-ai-img" src="{{aiAvatar}}" mode="aspectFill" />
           </view>
         </view>
 
-        <!-- 副问候语：
-             标准档 = 后端 GET /api/v1/home/summary → data.greeting（无值时不占位）
+        <!-- 主问候：姓名 + 时段问候（本地时间算，不依赖网络，格式统一） -->
+        <view class="hm-greet">{{greetText}}</view>
+
+        <!-- 运营副句：仅当后端 greeting 承载额外信息（如「夜深了，注意休息」）时展示；
+             与主句重复的纯问候（「晚上好」「您好」）不占位，避免同一句问候说两遍。
              大字档 = 设计稿 08 的固定文案「今天感觉怎么样？」（页面静态文案，非用户数据） -->
         <view class="hm-sub" wx:if="{{subText}}">{{subText}}</view>
 
@@ -267,10 +278,10 @@
        ⚠️ 波浪为纯 CSS 近似（两层椭圆），0 素材字节、pointer-events:none、不吃点击。 -->
   <view class="notice-bar home-guard">
     <image class="notice-bar-ic" src="{{icons.shield}}" />
-    <view class="notice-bar-text">您的健康，我们始终守护</view>
+    <view class="notice-bar-text">健康数据加密存储，仅本人可查看</view>
   </view>
   <view class="page-wave home-wave">
-    <view class="wave-slogan">智能 · 专业 · 便捷 · 温暖</view>
+    <view class="wave-slogan">导诊 · 挂号 · 报告 · 科普</view>
   </view>
 
 </view>

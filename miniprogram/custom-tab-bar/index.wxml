@@ -2,7 +2,7 @@
   <view
     wx:for="{{list}}"
     wx:key="pagePath"
-    class="tab-item {{selected === index ? 'active' : ''}} {{theme === 'large' || theme === 'xlarge' ? 'tab-elder' : ''}}"
+    class="tab-item {{selected === index ? 'active' : ''}} {{theme === 'large' || theme === 'xlarge' ? 'tab-elder' : ''}} {{theme === 'xlarge' ? 'tab-xlarge' : ''}}"
     data-index="{{index}}"
     bindtap="onTap"
   >

@@ -57,7 +57,7 @@ function pickFocus(list) {
  *   没有预约时用它兜底，避免「全程陪诊」在问诊进行中完全不更新（2026-11-15）。
  */
 function buildProgress(list, title, consult) {
-  const t = title || 'AI 导诊陪您全流程就医'
+  const t = title || '小安陪您全流程就医'
   const latest = pickFocus(list)
   if (!latest) {
     const c = consult && consult.id ? consult : null

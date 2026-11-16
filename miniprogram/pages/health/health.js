@@ -68,7 +68,7 @@ Page({
     this.setData({
       msgId,
       flowStarted: false,
-      messages: [{ id: msgId, role: 'ai', content: '您好，我是 AI 养生助手。为了给您定制合适的调理方案，我先了解一下您的情况。' }]
+      messages: [{ id: msgId, role: 'ai', content: '您好，我是小安，AI 养生助手。为了给您定制合适的调理方案，我先了解一下您的情况。' }]
     })
   },
 

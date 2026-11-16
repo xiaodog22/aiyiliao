@@ -10,6 +10,9 @@
 const fs=require('fs'),path=require('path'),vm=require('vm')
 const ROOT=path.resolve(__dirname,'..'),WEB=path.join(ROOT,'prototype-web'),APP=path.join(ROOT,'miniprogram','app.json'),MF=path.join(WEB,'pages.manifest.json'),SS=path.join(WEB,'screenshots')
 const errors=[],warn=[];const fail=x=>errors.push(x)
+// prototype-web/ 在 .gitignore（早期原型已被 miniprogram/ 取代）：干净 clone 下无可校验内容。
+// 显式 SKIP，避免 CI 每次假红；本机存在目录时仍执行全部严格校验。
+if(!fs.existsSync(WEB)){console.log('CHECK_SKIP prototype-web/ 未随仓库发布（.gitignore:81）——干净 clone 无原型存档，跳过');process.exit(0)}
 function read(p){try{return fs.readFileSync(p,'utf8')}catch(e){fail('缺少文件 '+path.relative(ROOT,p));return''}}
 function pngSize(p){try{const b=fs.readFileSync(p);if(b.length<24||b.toString('ascii',1,4)!=='PNG')throw 0;return [b.readUInt32BE(16),b.readUInt32BE(20)]}catch(e){fail('截图无效 '+path.relative(ROOT,p));return[0,0]}}
 /** 校验一张截图存在且尺寸与期望视口一致 */
@@ -24,7 +27,17 @@ const routes=[...(app.pages||[]),...(app.subPackages||[]).flatMap(sp=>(sp.pages|
 // 路由数常量（原 `!==24`）已移除：24 是 V4 冻结快照，产品扩到 36 后必然红且报错方向误导。
 // 下面第 25 行才是真不变量 —— app.json（真源）与清单双向集合相等，比总数断言更严。
 if(!routes.length)fail('app.json 未读到任何路由')
-const mr=manifest.pages.map(x=>x.route);for(const r of routes)if(!mr.includes(r))fail('清单遗漏路由 '+r);for(const r of mr)if(!routes.includes(r))fail('清单存在未知路由 '+r)
+const mr=manifest.pages.map(x=>x.route)
+// 冻结后新增路由（personal-info + 26–36）：显式登记为"无原型"，不追认 V4 视觉基线。
+// 真不变量：任何路由要么有原型，要么被显式登记 —— 不允许"悄悄多出一页、门禁不知道"。
+const postFreeze=(manifest.postFreezeRoutes&&manifest.postFreezeRoutes.routes)||[]
+for(const r of routes)if(!mr.includes(r)&&!postFreeze.includes(r))fail('清单遗漏路由 '+r+'（既无原型，也未登记为冻结后新增）')
+for(const r of mr)if(!routes.includes(r))fail('清单存在未知路由 '+r)
+for(const r of postFreeze){
+  if(!routes.includes(r))fail('postFreezeRoutes 登记了不存在的路由 '+r+'（僵尸条目，应删除）')
+  if(mr.includes(r))fail('postFreezeRoutes 与原型页重复 '+r+'（有原型就该从该表移除）')
+}
+if(new Set(postFreeze).size!==postFreeze.length)fail('postFreezeRoutes 存在重复路由')
 if(new Set(mr).size!==mr.length)fail('清单存在重复路由');if(new Set(manifest.pages.map(x=>x.file)).size!==manifest.pages.length)fail('清单存在重复 HTML 文件')
 const required=[path.join(WEB,'index.html'),path.join(WEB,'shared','tokens.css'),path.join(WEB,'shared','components.css'),path.join(WEB,'shared','prototype.js')]
 for(const p of required)if(!fs.existsSync(p))fail('缺少文件 '+path.relative(ROOT,p))
@@ -73,5 +86,6 @@ const index=read(path.join(WEB,'index.html'))
 const indexLoadsManifest=/fetch\(['"]pages\.manifest\.json['"]\)/.test(index)
 if(!indexLoadsManifest){for(const p of manifest.pages)if(!index.includes(p.file))fail('index 未链接 '+p.file)}
 if(!/prefers-reduced-motion/.test(read(path.join(WEB,'shared','tokens.css'))))fail('缺少减少动画支持');if(!/:focus-visible/.test(read(path.join(WEB,'shared','tokens.css'))))fail('缺少可见焦点');if(!/prototypeImageFallback/.test(index))warn.push('总览页未提供图像失败回退（当前原型无业务图片依赖）')
+if(postFreeze.length)warn.push(`${postFreeze.length} 条冻结后路由无原型/截图（不纳入 V4 视觉基线）：${postFreeze.join(', ')}`)
 if(errors.length){console.error('CHECK_FAIL '+errors.length);errors.forEach(x=>console.error(' - '+x));if(warn.length)warn.forEach(x=>console.warn(' WARN '+x));process.exit(1)}
-console.log(`CHECK_OK routes=${routes.length} html=${manifest.pages.length} standardScreenshots=${manifest.pages.length} tabletScreenshots=${manifest.pages.filter(x=>x.tablet).length} variantScreenshots=${variantTotal} totalScreenshots=${manifest.pages.length+manifest.pages.filter(x=>x.tablet).length+variantTotal} warnings=${warn.length}`);warn.forEach(x=>console.warn('WARN '+x))
+console.log(`CHECK_OK routes=${routes.length} html=${manifest.pages.length} postFreeze=${postFreeze.length} standardScreenshots=${manifest.pages.length} tabletScreenshots=${manifest.pages.filter(x=>x.tablet).length} variantScreenshots=${variantTotal} totalScreenshots=${manifest.pages.length+manifest.pages.filter(x=>x.tablet).length+variantTotal} warnings=${warn.length}`);warn.forEach(x=>console.warn('WARN '+x))

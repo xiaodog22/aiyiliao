@@ -174,7 +174,12 @@ Page({
     deptError: '',
     loadingDoctors: false,
     loadingSlots: false,
-    submitting: false
+    submitting: false,
+    /* REQ-14（V1.20 受限接入）：预约来源与演示标识。
+       LOCAL_DEMO / HIS_MOCK → 成功页必须显示「演示预约」；仅 HIS_LIVE（真实受理）隐藏。
+       默认 false：选号阶段还没发生受理，不提前给结论。 */
+    bookingSource: '',
+    isDemo: false
   },
 
   onShow() {
@@ -229,14 +234,14 @@ Page({
 
   /** 成功页退回选科室（终态收口共用），tip 为提示文案 */
   _leaveDone(tip) {
-    this.setData({ step: 'dept', stepIndex: 0, orderNo: '', submitting: false, selTime: '', selSlotId: '', selTimeText: '', showConfirm: false })
+    this.setData({ step: 'dept', stepIndex: 0, orderNo: '', submitting: false, selTime: '', selSlotId: '', selTimeText: '', showConfirm: false, isDemo: false, bookingSource: '' })
     if (tip) wx.showToast({ title: tip, icon: 'none' })
   },
 
   /** 别处取消了预约：退回选科室 + 刷新当前医生/日期余号 */
   _syncAfterCancel() {
     if (this.data.step === 'done') {
-      this.setData({ step: 'dept', stepIndex: 0, orderNo: '', submitting: false, selTime: '', selSlotId: '', selTimeText: '', showConfirm: false })
+      this.setData({ step: 'dept', stepIndex: 0, orderNo: '', submitting: false, selTime: '', selSlotId: '', selTimeText: '', showConfirm: false, isDemo: false, bookingSource: '' })
       wx.showToast({ title: '预约已取消，可重新选择', icon: 'none' })
     }
     if (this.data.selDoctorId && this.data.selDate) this._loadSlots(this.data.selDate, true)
@@ -644,9 +649,12 @@ Page({
         const orderText = orderNo || ((res && res.id) || '').slice(-8)
         // 记住这一单：成功页可能在后台常驻很久，onShow 要能回头校验它是否已被取消
         this._lastAptId = (res && res.id) ? String(res.id) : ''
+        // REQ-14⑧：来源由服务端下发（LOCAL_DEMO/HIS_MOCK/HIS_LIVE），前端不猜。
+        // 未接真实 HIS 时成功页必须标「演示预约」，只有真实受理才隐藏。
+        const bookingSource = (res && res.bookingSource) || 'LOCAL_DEMO'
         // showConfirm 必须一起关：成功页是整屏遮罩，抽屉只是被压在下面；
         // 若不关，取消后退出成功页时抽屉会带着空的「预约时间」露出来。
-        this.setData({ orderNo: orderText, orderLabel, step: 'done', stepIndex: 4, submitting: false, showConfirm: false })
+        this.setData({ orderNo: orderText, orderLabel, step: 'done', stepIndex: 4, submitting: false, showConfirm: false, bookingSource, isDemo: bookingSource !== 'HIS_LIVE' })
       })
       .catch((err) => {
         this.setData({ submitting: false })

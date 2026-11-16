@@ -39,7 +39,7 @@ const A = {
 /* 四宫格与设计效果图 01-首页.png 一致：
    AI 智能导诊 / 预约挂号 / 在线问诊(薄荷底) / 报告查询 */
 const QUAD = [
-  { key: 'triage', icon: 'stethoscope', tint: 'blue', title: 'AI 智能导诊', desc: '智能推荐科室医生' },
+  { key: 'triage', icon: 'stethoscope', tint: 'blue', title: '智能导诊', desc: '智能推荐科室医生' },
   { key: 'appoint', icon: 'calendar', tint: 'blue', title: '预约挂号', desc: '预约专家门诊' },
   { key: 'consult', icon: 'chat', tint: 'mint', title: '在线问诊', desc: '图文电话咨询' },
   { key: 'reports', icon: 'fileText', tint: 'blue', title: '报告查询', desc: '检验检查结果' }
@@ -64,6 +64,23 @@ const QUICK_SYMPTOMS = ['咳嗽', '头晕', '睡眠不好']
 /* 大字档副问候语（设计稿 08-适老化首页）：固定页面文案，不伪造后端问候 */
 const SUB_GREETING_LARGE = '今天感觉怎么样？'
 
+/* 纯问候句：主句已经说了"姓名 + 时段问候"，后端 greeting 若也是这类，
+   副句再说一遍就是同一句话重复两次（2026-11-16 用户反馈）。
+   只有它承载额外信息（如「夜深了，注意休息」）时，才值得占一行。 */
+const PURE_GREETING = /^(早上好|上午好|中午好|下午好|傍晚好|晚上好|晚安|夜深了|您好|你好|哈喽|hello)[。！!～~，,\s]*$/i
+
+/** 时段问候：按本地时间算，不等网络也不依赖后端格式，保证「姓名，××好！」永远成立 */
+function periodGreeting(now) {
+  const h = (now || new Date()).getHours()
+  if (h < 5) return '夜深了'
+  if (h < 9) return '早上好'
+  if (h < 11) return '上午好'
+  if (h < 13) return '中午好'
+  if (h < 18) return '下午好'
+  if (h < 23) return '晚上好'
+  return '夜深了'
+}
+
 /* 「更多服务」/「全部服务」共用的动作面板。
    项目里没有"服务大全"页，与其编造跳转目标，不如把真实入口列出来给用户选。 */
 const MORE_MENU = ['智能导诊', '预约挂号', '院内导航', '健康科普', 'AI 问诊', 'AI 养生']
@@ -81,10 +98,12 @@ Page({
   data: {
     theme: 'standard',
     patient: { name: '' },
-    // 主问候语（姓名 + 您好）：姓名缺失时退化为「您好！」，不出现「，您好！」这种破句
-    greetText: '您好！',
-    // 副问候语：标准档=后端 greeting；大字档=设计稿 08 固定文案
+    // 主问候语（姓名 + 时段问候）：时段由本地时间算，姓名缺失时退化为「晚上好！」，不出现「，晚上好！」
+    greetText: periodGreeting() + '！',
+    // 副句：标准档=后端 greeting（仅当它不重复主句时）；大字档=设计稿 08 固定文案
     subText: '',
+    // 品牌行右侧的小安头像（复用 A.doctor，主包 assets/home）
+    aiAvatar: A.doctor,
     home: { greeting: '', appointment: {} },
     // 是否展示预约动态卡（数据源=后端 NEXT_APPOINTMENT 块；无数据/未返回时不伪造）
     hasApt: false,
@@ -131,10 +150,10 @@ Page({
       // D-10：高对比开关映射到根节点 class（原来只在设置页生效，其它页无反应）
       hc: !!app.globalData.highContrast,
       patient,
-      // 主问候语：参考图为一句大号问候（「您好，今天感觉怎么样？」），
-      // 本项目把「姓名 + 您好」作为主句、后端 greeting（早上好/下午好…）作为副句，
-      // 名字缺失时退化为「您好！」，避免出现「，您好！」。
-      greetText: isLarge ? '您好' : (patient.name ? patient.name + '，您好！' : '您好！'),
+      // 主问候语：姓名 + 时段问候合成一句（「张三，晚上好！」）。
+      // 时段用本地时间算：不等网络、不受后端文案格式影响，避免出现「张三，！这种破句」。
+      // 大字档沿用设计稿 08 的「您好」，不含姓名（适老化首屏字号更大，姓名单独成句会换行）。
+      greetText: isLarge ? '您好' : (patient.name ? patient.name + '，' + periodGreeting() + '！' : periodGreeting() + '！'),
       subText: isLarge ? SUB_GREETING_LARGE : '',
       // ⚠️ 首页属于主包，**不能引用分包 packageContent 内的封面图**（分包未下载时会裂图），
       // 所以这里只取图标 + 文字；封面与视频本体在详情/列表页（同包）里用。
@@ -232,10 +251,20 @@ Page({
     })
   },
 
-  /** 副问候语取值：大字档固定设计稿文案；标准档用后端 greeting（空串 = 不占位） */
+  /**
+   * 副句取值：大字档固定设计稿文案；标准档只有后端 greeting "说了新东西"时才展示。
+   *
+   * 为什么不再无条件展示 greeting：主句已经是「姓名 + 时段问候」，
+   * 而后端 greeting 常常就是「晚上好」「您好」这类纯问候 —— 两行一起渲染，
+   * 用户看到的就是「张三，您好！」下面再来一句「晚上好」，同一句问候说两遍。
+   * 所以纯问候一律不占位，只有承载额外信息的文案（「夜深了，注意休息」）才展示。
+   */
   _subTextOf(greeting) {
     const t = this.data.theme
-    return (t === 'large' || t === 'xlarge') ? SUB_GREETING_LARGE : (greeting || '')
+    if (t === 'large' || t === 'xlarge') return SUB_GREETING_LARGE
+    const g = (greeting || '').trim()
+    if (!g || PURE_GREETING.test(g)) return ''
+    return g
   },
 
   /* ==================== 在线问诊接单提示（D6，2026-11-15）==================== */

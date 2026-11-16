@@ -5,6 +5,8 @@ import com.wechar.biz.appointment.dto.AppointmentData;
 import com.wechar.biz.appointment.dto.AppointmentStatsData;
 import com.wechar.biz.appointment.dto.AppointmentUpdateRequest;
 import com.wechar.biz.appointment.dto.CreateResult;
+import com.wechar.biz.appointment.his.HisClient;
+import com.wechar.biz.appointment.his.HisGateway;
 import com.wechar.biz.catalog.CatalogRepository;
 import com.wechar.biz.common.ApiException;
 import com.wechar.biz.common.Digests;
@@ -42,16 +44,18 @@ public class AppointmentService {
     private final PhoneCrypto phoneCrypto;
     private final MessageService messageService;
     private final FamilyProxyGuard proxyGuard;
+    private final HisGateway hisGateway;
     private final Clock clock;
 
     public AppointmentService(AppointmentRepository repository, CatalogRepository catalog,
                               PhoneCrypto phoneCrypto, MessageService messageService,
-                              FamilyProxyGuard proxyGuard, Clock clock) {
+                              FamilyProxyGuard proxyGuard, HisGateway hisGateway, Clock clock) {
         this.repository = repository;
         this.catalog = catalog;
         this.phoneCrypto = phoneCrypto;
         this.messageService = messageService;
         this.proxyGuard = proxyGuard;
+        this.hisGateway = hisGateway;
         this.clock = clock;
     }
 
@@ -130,14 +134,27 @@ public class AppointmentService {
         }
 
         String id = "ap-" + UUID.randomUUID();
+        // REQ-14：HIS 受限接入。开关关闭 → LOCAL_DEMO（零外部调用）；开启且受理失败 →
+        // 503 HIS_UNAVAILABLE，本方法事务整体回滚（含上面的号源扣减），前端只会看到失败提示，
+        // 不会出现「提示预约成功、实际未成立」。
+        HisClient.HisBookingResult his = hisGateway.book(new HisClient.HisBookingCommand(
+                id, request.slotId(), request.patientName(), slot.doctorId(), doctor.departmentId()));
         // D-07：成功页原先把裸 UUID 当「预约号」（ap-04c6a996-…，两行还抄不全）。
         // 这里分配「取号序号」= 该号源已建单数 + 1，前端展示「第 003 号」供报号/叫号；
         // 内部主键仍是 UUID，不对外当业务号使用。
         int queueNo = repository.countBySlot(request.slotId()) + 1;
-        repository.insertAppointment(new AppointmentRepository.AppointmentRow(
-                id, userId, request.familyMemberId(), request.slotId(), slot.doctorId(), doctor.departmentId(),
-                request.patientName(), phoneCipher, request.symptomSummary(), "PENDING",
-                queueNo, null, idempotencyKey, digest, 1, now, null), location, hospitalName);
+        try {
+            repository.insertAppointment(new AppointmentRepository.AppointmentRow(
+                    id, userId, request.familyMemberId(), request.slotId(), slot.doctorId(), doctor.departmentId(),
+                    request.patientName(), phoneCipher, request.symptomSummary(), "PENDING",
+                    queueNo, null, idempotencyKey, digest, 1, now, null,
+                    his.hisOrderNo(), his.source()), location, hospitalName);
+        } catch (RuntimeException e) {
+            // 本地落单失败 → 尽力撤销已受理的 HIS 单，避免「院内有单、平台无单」；
+            // 补偿自身失败只记日志（cancelQuietly），不改变本次失败的结论。
+            hisGateway.cancelQuietly(his.hisOrderNo(), "local insert failed");
+            throw e;
+        }
 
         var view = repository.findViewById(id)
                 .orElseThrow(() -> new ApiException("INTERNAL_ERROR", HttpStatus.INTERNAL_SERVER_ERROR,
@@ -321,7 +338,10 @@ public class AppointmentService {
                 maskedContactPhone(a.contactPhoneCipher()), normalizeAvatarUrl(view.patientAvatarKey()),
                 view.startTime(), view.endTime(),
                 a.queueNumber(), view.location(), view.hospitalName(), a.symptomSummary(), a.version(),
-                replayed, a.createdAt(), a.updatedAt());
+                replayed, a.createdAt(), a.updatedAt(),
+                // REQ-14：hisOrderNo 为 null 时由于 DTO 的 NON_NULL 策略不会下发；
+                // bookingSource 恒有值，页面据此决定是否标「演示预约」。
+                a.hisOrderNo(), a.bookingSource());
     }
 
     /** 联系手机号脱敏（138****1234）；密文缺失/密钥轮换解密失败 → null（不猜、不渲染）。 */

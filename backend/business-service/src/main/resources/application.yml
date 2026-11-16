@@ -92,6 +92,14 @@ app:
   ai:
     triage-profile: ${APP_AI_TRIAGE_PROFILE:large-upgrade}
     careplan-profile: ${APP_AI_CAREPLAN_PROFILE:large-upgrade}
+  # HIS 受限接入（REQ-14，V1.20）：
+  #   enabled 默认 **false** —— 关闭时不触达任何外部系统，预约按 LOCAL_DEMO 落库、页面标「演示预约」。
+  #   开启后仅允许 mock 适配器（生成 HIS-MOCK-* 模拟单号）；sandbox/live 需先过
+  #   PRODUCTION_GATE.md 与真实凭据评审，配了不支持的 mode 会启动失败（fail-fast，不静默降级）。
+  #   受理失败 → 503 HIS_UNAVAILABLE，事务整体回滚（含号源扣减），绝不显示「预约成功」。
+  his:
+    enabled: ${APP_HIS_ENABLED:false}
+    mode: ${APP_HIS_MODE:mock}
   # 健康档案附件签名与限额（V9；2026-10-19 阶段一支持 mp4）
   # ⚠️ sign-secret 生产必须固定且多实例一致（2026-10-23 收口）：缺省空值时代码**启动即失败**
   #    （fail-fast，不再生成进程内随机密钥），必须用 APP_ATTACHMENT_SIGN_SECRET 注入强随机值。

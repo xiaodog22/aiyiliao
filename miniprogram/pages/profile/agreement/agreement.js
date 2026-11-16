@@ -8,7 +8,7 @@ const app = getApp()
 Page({
   data: {
     theme: 'standard',
-    updatedAt: '2026-11-15'
+    updatedAt: '2026-11-16'
   },
 
   onLoad() {

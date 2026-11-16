@@ -6,7 +6,7 @@
     <view class="kb-hero-top">
       <view class="kb-hero-body">
         <view class="kb-hero-title">健康科普</view>
-        <view class="kb-hero-sub">了解健康知识，养成良好生活习惯</view>
+        <view class="kb-hero-sub">门诊科普文章与短视频，内容供健康参考</view>
       </view>
       <!-- 装饰：白色心形描边 + 叶片（复用现有图标，0 新增素材；对应设计稿右侧「心+叶」插画） -->
       <view class="kb-hero-art">

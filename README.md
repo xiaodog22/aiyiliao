@@ -72,7 +72,8 @@ flowchart LR
 
 ```
 miniprogram/          原生小程序前端
-  pages/              主包 31 页（首页 / 导诊 / 问诊 / 养生 / 挂号 / 我的 / 医生工作台 等）
+  pages/              主包 33 页（首页 / 导诊 / 问诊 / 养生 / 挂号 / 我的 / 医生工作台 等）；
+                      加 2 个分包共 3 页 = 全量 **36 页**（以 app.json 实测为准，2026-11-16）
   packageNav/         分包：院内导航
   packageContent/     分包：健康科普
   services/           数据访问层，页面不直接发请求
@@ -148,7 +149,8 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 ## 已知限制
 
 - 导诊、问诊结论来自本地规则引擎与大模型，属演示性质，不能替代医生面诊
-- 挂号流程用的是本地预约号，未对接医院 HIS
+- 挂号流程用的是本地预约号，未对接医院 HIS；V1.20 只做**受限接入**（`HisClient` 接口 + Mock 适配器，
+  `app.his.enabled` 默认关闭，模拟单号前缀 `HIS-MOCK-`，不接真实凭据、不承诺真实号源），预约页与成功页标「演示预约」
 - 电视投屏为本地模拟，DLNA / 局域网协议尚未接入
 - 院内导航为 1F 示意平面图，不是全院楼层
 - 语音能力依赖后端在线，失败时自动退回文字输入
@@ -183,18 +185,20 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 
 | 层 | 载体 | 规模 |
 | --- | --- | --- |
-| Java 单元/契约/集成 | `backend/business-service/src/test` | 48 个测试类 / 322 项（`mvnw -o test` 实测，2026-11-12） |
+| Java 单元/契约/集成 | `backend/business-service/src/test` | 50 个测试类 / 338 项（`mvnw -o test` 实测，2026-11-16） |
 | 网关行为 | `backend/edge-gateway/tests` | 132 项 pytest |
 | SQL 次数预算（防 N+1） | `DoctorQueryBudgetTest` + `QueryCounter` | 5 项 |
 | 端点级 SQL 画像 | `EndpointSqlProfileTest` | 2 项（逐端点上限 + 与数据量无关） |
-| **小程序逻辑层（并发）** | `miniprogram/tests/` + `tools/test-fe.js` | **14 项**（零依赖 `node:test`） |
+| **小程序逻辑层（并发）** | `miniprogram/tests/` + `tools/test-fe.js` | **25 项**（零依赖 `node:test`） |
 | **前后端契约快照** | `tools/contract-snapshot.js` + `contracts/snapshots/` | **5 端点**结构快照 |
 | 性能回归门禁 | `tools/perf-gate.js` | 25VU/20s，支持 `--rounds=N` + 配置指纹 |
 | **真库验证（MySQL）** | `tools/db-verify.js` | **37 项**（连接/Schema/约束/原子性/时区/Flyway/索引/权限），报告 `backend/deploy/DB_VERIFY_20261112.md` |
 | **站点首页合规回归** | `tools/test-site-index.js` | **16 项**（免责声明原样展示 / 手机号·验证码控件缺失 / 原有结构交互 / 静态服务），报告 `docs/回归测试_站点首页_20261113.md` |
 
 - 分层现状、技术选型取舍（为什么 Pact / MSW 在本项目用不了）与补齐顺序：`docs/测试体系_分层现状与补齐计划_20261101.md`。
-- 日常门禁：`node tools/check-project.js`（路径/禁址/图标/类名）+ `mvnw -o test` + `pytest tests` + `node tools/test-fe.js` + `node tools/contract-snapshot.js --token=…`
+- 日常门禁：`node tools/check-project.js`（路径/禁址/图标/类名/事实源一致性/品牌名唯一性）+ `node tools/check-v4-docs.js`（路由登记与提示词结构）+ `mvnw -o test` + `pytest tests` + `node tools/test-fe.js` + `node tools/contract-snapshot.js --token=…`
+  - `check-v4-docs` 自 2026-10-14 起长期因「路由登记缺口」红，**2026-11-16 已清零**（`DOC_CHECK_OK routes=36 prompts=24`）；它不并入 `check-project` 的原因是要读 `design-output/` 大文档，单跑更清晰——但必须与 `check-project` 同批执行，否则会再次静默漂移。
+  - ⚠️ `check-v4-docs` / `check-v4-prototypes` 校验的 `design-output/`、`prototype-web/` **在 `.gitignore` 内**（设计存档与早期原型不入库）。干净 clone 下两者输出 `*_SKIP` 并 exit 0（不假红、也不冒充通过）；只有本机存在存档时才执行严格校验。因此这两项**不能作为 CI 阻断项**，只能作本地质量门禁。
 - **契约快照语义**：只比结构与类型、不比值；字段消失/类型变化 → FAIL；**新增字段 → WARN 不阻断**。`--update` 会先打印差异，必须人工 review。
 - **组件测试与 E2E 仍空白**（小程序原生栈无 DOM，需 `miniprogram-simulate`，代价高、优先级 P3）。
 - **PERF-11（未修，P1）**：每请求**固定 5 次会话语句**（`Com_set_option` 4.08 + `Com_commit` 1.00），占 SQL 报文 83%。连接复用已证（`Threads_created` 40 次请求零增长），非建连成本；`useLocalSessionState` / `elideSetAutoCommits` 两个常见参数**实测无效**。端点自身只 1~4 次（`home/summary` 最贵），无 N+1 形态。
@@ -230,7 +234,7 @@ voice.js:156-158 → 101-104 连锁复位，登记 V1.20 T1-1）；3 项登记�
 
 - [DEV_LOG_README.md](DEV_LOG_README.md)：2026-10-30 之前的 README，已归档
 - `DEV_LOG.md`、`AI_CONTEXT.md`：本地开发日志与上下文索引，含内部联调信息，不随仓库发布
-- `artifacts/db-doc/wechar数据库说明文档.docx`（2026-11-05）：完整数据库说明文档，覆盖 36 张表的字段/索引/约束、
+- `artifacts/db-doc/wechar数据库说明文档.docx`（2026-11-05）：完整数据库说明文档，覆盖**当时 36 张表**的字段/索引/约束、
   真实数据样例与枚举、库表设计说明、跨服务关联与「待补充」清单；只读采集，业务库零写入。
   可复现链：`artifacts/db-doc/export_db_data.py` → `facts.json` → `build_doc.py` → `final_draft.md` → `md_to_html.py`。
   ⚠️ `artifacts/` 是本地生成目录（含数据采集结果与全库基线 SQL），**不入库**；克隆后需按需自行重建。
@@ -243,10 +247,11 @@ voice.js:156-158 → 101-104 连锁复位，登记 V1.20 T1-1）；3 项登记�
 
 按「设计 → 架构 → 数据库 → 测试 → 部署」分层，完整索引见 **[docs/INDEX.md](docs/INDEX.md)**。
 
+- **发布状态唯一汇总：[RELEASE_STATUS.md](RELEASE_STATUS.md)** —— 每个功能的实现程度 / 证据 / 责任人 / 最后验证时间；本文与之冲突时以状态表为准。
 - 设计规范：[`docs/历史设计规范/1.md`](docs/历史设计规范/1.md)~[`5.md`](docs/历史设计规范/5.md)
   <sub>（仅本地保留，属早期乱码草稿，未入库）</sub>、[`LAYOUT_PLAN.md`](docs/历史设计规范/LAYOUT_PLAN.md)、
   [UIUX 说明书 V4](design-output/医疗_AI_智能健康小程序_UIUX_原型设计与界面说明书_V4.md)（界面规范唯一真源）
-- 架构与契约：[`docs/v4/`](docs/v4/)、[`backend/contracts/business-openapi.yaml`](backend/contracts/business-openapi.yaml)
+- 架构与契约：[`docs/v4/`](docs/v4/)、[`backend/contracts/business-openapi.yaml`](backend/contracts/business-openapi.yaml)（⚠️ **to-be 目标态契约，不是当前实现事实**，见 AGENTS.md 红线）
 - 数据库：[`数据库表结构总览`](docs/交付文档/数据库表结构总览_20261022.md)、[`DATA_GOVERNANCE.md`](backend/deploy/DATA_GOVERNANCE.md)、[检查报告体系交付报告](backend/deploy/REPORT_DELIVERY_20261105.md)
 - 协作规范：[`AGENTS.md`](AGENTS.md)、[`WORKBODY_AGENT_RULES.md`](WORKBODY_AGENT_RULES.md)
 
@@ -259,6 +264,16 @@ voice.js:156-158 → 101-104 连锁复位，登记 V1.20 T1-1）；3 项登记�
 - 测试套件零业务代码改动；网关地址取自 `config/env.js`、健康路径取自 `config/api.js`，JMX 只用内置组件、不依赖第三方插件。`check-project` 门禁全绿，主包 1.363MB 不变。
 - USB 真机实测（2026-11-14，Xiaomi M2007J17C / Android 16）报告见 **[artifacts/e2e-weapp/device-20261114-1737/device-test-report.md](artifacts/e2e-weapp/device-20261114-1737/device-test-report.md)**：42 项 PASS 34 / FAIL 2 / BLOCKED 2 / 观察 4，含逐项预期与实际、复现步骤、日志线索与问题清单。
 - 已接入 Postman CLI / Newman 适配器与统一结果 `artifacts/e2e-weapp/report-latest.json`（ui / api / load 三段 schema）；DSH NEXT 集成见 `.agents/skills/wechar-unified-test/SKILL.md`（工作区级 skill）与 `tools/e2e-weapp/mcp/`（零依赖 stdio MCP server）。
+
+## 真机 adb 测试（device-test）
+
+与上面的开发者工具链路互补：只依赖 adb，跑真机维度断言。说明见 **[tools/device-test/README.md](tools/device-test/README.md)**，
+skill 见 `.workbuddy/skills/wechar-device-test/SKILL.md`。
+
+- `node tools/device-test/run.js --list`：列出用例（`cases/*.json`）。
+- `node tools/device-test/run.js --case appointment-demo`：连设备 → 截图 → logcat 无崩溃 → 预约列表接口可读。
+- `node tools/device-test/run.js --case his-booking-fields --token <bearer>`：断言 REQ-14 的 `bookingSource` 契约字段。
+- 无 adb / 无设备 / 无 token 一律 SKIP（退出码 2），不写成 PASS；证据落 `artifacts/device-test/<case>-<时间戳>/`。
 
 ## 贡献
 

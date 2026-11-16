@@ -1,0 +1,24 @@
+{
+  "name": "appointment-demo-flag",
+  "description": "真机冒烟（REQ-14）：小程序在前台无崩溃 + 预约列表接口可读。演示标识由 wxml 静态文案与 bookingSource 双保险，本用例负责「设备侧确实没崩、接口确实通」。",
+  "steps": [
+    { "type": "wake", "name": "01-唤醒屏幕", "waitMs": 500 },
+    { "type": "shot", "name": "02-当前界面" },
+    { "type": "assertScreenshot", "name": "03-界面非空白", "minBytes": 20000 },
+    {
+      "type": "assertLogcat",
+      "name": "04-无崩溃或ANR",
+      "pattern": "FATAL EXCEPTION|ANR in com.tencent.mm",
+      "absent": true
+    },
+    {
+      "type": "assertHttp",
+      "name": "05-预约列表接口可读",
+      "method": "GET",
+      "path": "/api/v1/appointments/me",
+      "expectStatus": 200,
+      "expectBodyContains": ["\"code\":\"OK\""],
+      "skipIfNoToken": true
+    }
+  ]
+}

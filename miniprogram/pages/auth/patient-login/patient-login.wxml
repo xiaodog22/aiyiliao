@@ -11,7 +11,7 @@
     <view class="pl-logo">
       <image class="pl-logo-img" src="/assets/brand/logo-mark.png" mode="aspectFit" />
     </view>
-    <view class="pl-title">欢迎使用 AI 智慧医疗</view>
+    <view class="pl-title">欢迎使用康诊云</view>
     <view class="pl-subtitle">登录后管理您的健康服务</view>
   </view>
 

@@ -31,8 +31,7 @@
   --h-r-sm: 18rpx;
   --h-r-tile: 24rpx;          /* 参考图图标底板为「圆角方形」 */
   /* 尺寸 */
-  --h-ai: 128rpx;             /* hero 右侧圆形 AI 徽章（参考图 ≈64rpx 直径的图标 + 大留白） */
-  --h-ai-ic: 56rpx;           /* 徽章内医疗加号字形（不铺满圆底，留出呼吸位） */
+  --h-ai: 128rpx;             /* 品牌行右侧的小安头像徽章（直径） */
   --h-bar: 88rpx;             /* 症状输入行高（与 .btn 同高，触控达标） */
   --h-bar-mic: 36rpx;
   --h-send-h: 80rpx;          /* 输入行内「发送」胶囊高：嵌在 88rpx 行内，上下各留 4rpx（原 72rpx=36px 触控偏小，D-B-P2-04） */
@@ -63,11 +62,26 @@
   padding-bottom: calc(124rpx + env(safe-area-inset-bottom));
 }
 
-/* ==================== ① 顶部（品牌小标 → 问候行 → 后端问候语） ==================== */
+/* ==================== ① 顶部（品牌行 → 大问候 → 运营副句） ==================== */
 .hm-hero {
   position: relative;
   padding-top: var(--h-s3);
-  padding-bottom: var(--h-s4);
+  /* 末行是副句（运营文案），与下方症状输入卡之间留出呼吸位，否则两行小字贴在一起 */
+  padding-bottom: var(--h-s6);
+}
+
+/* 品牌行：左=身份 + 能力说明，右=小安头像徽章；整行是导诊入口（点按有反馈）
+   ⚠️ 徽章挪到这一行后，大问候才能独占整行宽；原来徽章与问候同行会吃掉约 1/4 字宽。 */
+.hm-brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--h-s3);
+}
+
+.hm-brand-text {
+  flex: 1;
+  min-width: 0;
 }
 
 .hm-brand-name {
@@ -78,47 +92,58 @@
   line-height: 1.3;
 }
 
-/* 问候行：左=大问候语（可长可换行，flex:1 保证不顶破徽章）／右=圆形 AI 徽章。
-   ⚠️ 参考图里徽章垂直居中于大问候语（不是品牌行），故徽章放这一行。 */
-.hm-hero-row {
+/* 能力说明：回答"点它能干嘛"。弱化处理，不与下面的主问候争视线。
+   末尾跟一个小箭头，与全站「可进入」的信号保持一致。 */
+.hm-brand-hint {
+  margin-top: 4rpx;
   display: flex;
   align-items: center;
-  gap: var(--h-s3);
-  margin-top: var(--h-s4);
+  gap: 4rpx;
+  font-size: calc(var(--font-caption) - 2rpx);
+  color: var(--text-sub);
+  line-height: 1.3;
 }
 
-/* 问候：参考图首页最大的一行字 */
+.hm-brand-arrow {
+  width: 20rpx;
+  height: 20rpx;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+/* 问候：参考图首页最大的一行字，独占整行。
+   间距层级：品牌行 →(16rpx)→ 主问候 →(8rpx)→ 副句，避免两行字挤成一块。 */
 .hm-greet {
-  flex: 1;
-  min-width: 0;
+  margin-top: var(--h-s6);
   font-size: calc(var(--font-title) + 4rpx);
   font-weight: 700;
   color: var(--text-main);
   line-height: 1.3;
 }
 
-/* AI 徽章：浅蓝圆底 + 柔和白色外环（参考图的"光晕"）+ 品牌蓝阴影 */
+/* AI 徽章：小安头像铺满圆 + 柔和白色外环（参考图的"光晕"）+ 品牌蓝阴影。
+   background 仅作头像加载失败时的浅蓝圆兜底。 */
 .hm-ai {
   width: var(--h-ai);
   height: var(--h-ai);
   border-radius: 50%;
+  overflow: hidden;
   background: var(--accent-soft);
   box-shadow: 0 0 0 10rpx rgba(255, 255, 255, 0.55), 0 10rpx 24rpx rgba(11, 110, 248, 0.16);
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
-/* 徽章内字形：居中且不铺满圆底（原先铺满 100% 会顶到圆边） */
+/* 头像：180×180 方图裁圆铺满（原先是 56rpx 的加号字形，居中不铺满） */
 .hm-ai-img {
-  width: var(--h-ai-ic);
-  height: var(--h-ai-ic);
+  width: 100%;
+  height: 100%;
   display: block;
 }
 
 .hm-sub {
-  margin-top: var(--h-s1);
+  /* 注意：主句已含时段问候，副句是独立的运营信息，不再是"第二句问候"。
+     4rpx 会让两行几乎贴在一起（截图复核 2026-11-16），按层级给 8rpx。 */
+  margin-top: var(--h-s3);
   font-size: var(--font-body);
   color: var(--text-sub);
   line-height: 1.5;
@@ -701,7 +726,6 @@
     --h-r-sm: 9px;
     --h-r-tile: 12px;
     --h-ai: 64px;
-    --h-ai-ic: 28px;
     --h-bar: 44px;
     --h-bar-mic: 18px;
     --h-send-h: 40px;
@@ -784,6 +808,13 @@
   .apt-card { padding: 14px 16px 16px; }
   .apt-head { min-height: 28px; }
   .hm-ai { box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.55), 0 5px 12px rgba(11, 110, 248, 0.16); }
+
+  /* 顶部品牌行/问候：rpx 在 ≥600px 会按屏宽放大（2rpx≈1.4px），此处按 ÷2 折成 px。
+     大字档整行隐藏，不必再分主题给值。 */
+  .hm-brand-name { font-size: calc(var(--font-caption) + 1px); }
+  .hm-brand-hint { margin-top: 2px; gap: 2px; font-size: calc(var(--font-caption) - 1px); }
+  .hm-brand-arrow { width: 10px; height: 10px; }
+  .hm-greet { font-size: calc(var(--font-title) + 2px); }
 
   /* 列表/卡片元素尺寸 px 化（布局内边距仍走 rpx，见 app.wxss 纪律） */
   .apt-date { width: 56px; padding: 6px 0 5px; }
@@ -909,11 +940,10 @@
   border-radius: 0;
 }
 
-.theme-large .hm-hero-row,
-.theme-xlarge .hm-hero-row { margin-top: 0; }
-
 .theme-large .hm-greet,
 .theme-xlarge .hm-greet {
+  /* 品牌行已整行隐藏，问候成为首行 → 去掉为"分隔品牌行"准备的顶部间距 */
+  margin-top: 0;
   font-size: var(--h-greet-lg);
   line-height: 1.25;
 }
@@ -925,11 +955,10 @@
   line-height: 1.5;
 }
 
-/* 品牌行与 AI 徽章在大字档隐去（把首屏留给问候与输入） */
-.theme-large .hm-brand-name,
-.theme-xlarge .hm-brand-name,
-.theme-large .hm-ai,
-.theme-xlarge .hm-ai { display: none; }
+/* 品牌行整行在大字档隐去（把首屏留给问候与输入；设计稿 08 第一行就是「您好」）。
+   ⚠️ 必须隐藏整行：只隐藏 .hm-brand-name 会留下"能力说明"的文字残行与空 flex 留白。 */
+.theme-large .hm-brand-row,
+.theme-xlarge .hm-brand-row { display: none; }
 
 .theme-large .hm-quick,
 .theme-xlarge .hm-quick { display: none; }

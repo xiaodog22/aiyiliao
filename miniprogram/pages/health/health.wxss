@@ -1,5 +1,5 @@
 /**
- * health.wxss —— AI 养生（通小安 · 对话 + 三天方案）
+ * health.wxss —— AI 养生（小安 · 对话 + 三天方案）
  *
  * 版式对齐 design-output/患者端/B-TabBar补充/05-AI养生.png（逐项见 WXML 顶部注释）。
  * 色彩纪律：只引用 app.wxss 令牌；仅语义白 #FFFFFF 与遮罩类出现字面色。

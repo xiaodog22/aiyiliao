@@ -22,11 +22,16 @@ public class AppointmentRepository {
         this.jdbc = jdbc;
     }
 
+    /**
+     * hisOrderNo / bookingSource：REQ-14 受限接入字段（V31）。
+     * bookingSource 取值 LOCAL_DEMO / HIS_MOCK / HIS_LIVE；历史行默认 LOCAL_DEMO。
+     */
     public record AppointmentRow(String id, String userId, String familyMemberId, String slotId, String doctorId,
                                  String departmentId, String patientName, byte[] contactPhoneCipher,
                                  String symptomSummary, String status, Integer queueNumber, String cancelReason,
                                  String idempotencyKey, String requestDigest, int version,
-                                 Instant createdAt, Instant updatedAt) {
+                                 Instant createdAt, Instant updatedAt,
+                                 String hisOrderNo, String bookingSource) {
     }
 
     public record SlotRow(String id, String doctorId, Instant startTime, Instant endTime, int capacity,
@@ -44,12 +49,13 @@ public class AppointmentRepository {
                 (Integer) rs.getObject("queue_number"), rs.getString("cancel_reason"),
                 rs.getString("idempotency_key"), rs.getString("request_digest"), rs.getInt("version"),
                 created == null ? null : created.toInstant(),
-                updated == null ? null : updated.toInstant());
+                updated == null ? null : updated.toInstant(),
+                rs.getString("his_order_no"), rs.getString("booking_source"));
     }
 
     private static final String APPT_COLS = "id, user_id, family_member_id, slot_id, doctor_id, department_id, "
             + "patient_name, contact_phone_cipher, symptom_summary, status, queue_number, cancel_reason, "
-            + "idempotency_key, request_digest, version, created_at, updated_at";
+            + "idempotency_key, request_digest, version, created_at, updated_at, his_order_no, booking_source";
 
     /**
      * 演示库压测/冒烟残留排除（2026-11-05）：idempotency_key 以 m1-smoke / smoke- / gate-m1 / m1c-
@@ -144,15 +150,18 @@ public class AppointmentRepository {
     public void insertAppointment(AppointmentRow row, String location, String hospitalName) {
         jdbc.update("INSERT INTO appointments (id, user_id, family_member_id, slot_id, doctor_id, department_id, "
                         + "patient_name, contact_phone_cipher, symptom_summary, status, queue_number, cancel_reason, "
-                        + "location, hospital_name, idempotency_key, request_digest, version, created_at) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 1, ?)",
+                        + "location, hospital_name, idempotency_key, request_digest, version, created_at, "
+                        + "his_order_no, booking_source) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 1, ?, ?, ?)",
                 row.id(), row.userId(), row.familyMemberId(), row.slotId(), row.doctorId(), row.departmentId(),
                 row.patientName(), row.contactPhoneCipher(), row.symptomSummary(), row.status(),
                 // D-07：queue_number 原先写死 NULL，成功页只能拿 UUID 当预约号（难念难抄）。
                 // 现由 Service 按号源已建单数分配「取号序号」，这里如实落库。
                 row.queueNumber(),
                 location, hospitalName, row.idempotencyKey(), row.requestDigest(),
-                Timestamp.from(row.createdAt()));
+                Timestamp.from(row.createdAt()),
+                // REQ-14：LOCAL_DEMO 时 his_order_no 为 NULL（确实没有外部单号，不造一个假的）
+                row.hisOrderNo(), row.bookingSource());
     }
 
     /**
@@ -235,6 +244,7 @@ public class AppointmentRepository {
             + "a.id, a.user_id, a.family_member_id, a.slot_id, a.doctor_id, a.department_id, a.patient_name, "
             + "a.contact_phone_cipher, a.symptom_summary, a.status, a.queue_number, a.cancel_reason, "
             + "a.idempotency_key, a.request_digest, a.version, a.created_at, a.updated_at, "
+            + "a.his_order_no, a.booking_source, "
             + "s.start_time, s.end_time, d.name AS doctor_name, d.title AS doctor_title, dep.name AS department_name, "
             + "u.avatar_key AS patient_avatar_key, "
             + "COALESCE(a.location, dep.location) AS location, "

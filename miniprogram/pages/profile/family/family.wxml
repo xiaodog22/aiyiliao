@@ -10,7 +10,7 @@
   <view class="fm-hero">
     <view class="fm-tip">
       <image class="fm-tip-ic" src="{{icons.users}}" mode="aspectFit" />
-      <view class="fm-tip-text">可为家人管理健康档案与预约挂号，让家人的就医安排更省心。</view>
+      <view class="fm-tip-text">可为家人管理健康档案与预约挂号。</view>
     </view>
   </view>
 

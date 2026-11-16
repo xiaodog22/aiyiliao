@@ -269,6 +269,16 @@ async function testHome() {
   check('[首页] 无 NEXT_APPOINTMENT 块 → hasApt=false（空态）', a.data.hasApt === false, '实得 ' + a.data.hasApt)
   check('[首页] 空态时 aptDate=null', a.data.aptDate === null)
 
+  /* 2026-11-16 问候语改版：
+     主句 = 姓名 + 时段问候（本地时间算，不依赖后端），后端 greeting 只在"说了新东西"时作副句。
+     旧实现是「姓名，您好！」+ 后端 greeting 各占一行 → 用户看到「张三，您好！」下面再来「晚上好」，
+     同一句问候说两遍。这里锁住新口径，防止回退。 */
+  check('[首页] 主问候 = 姓名 + 时段问候（不再是固定「您好」）',
+    /^开发用户甲，(早上好|上午好|中午好|下午好|晚上好|夜深了)！$/.test(a.data.greetText),
+    '实得 ' + a.data.greetText)
+  check('[首页] 后端 greeting 承载额外信息 → 作副句展示',
+    a.data.subText === '夜深了，注意休息', '实得 ' + JSON.stringify(a.data.subText))
+
   // 场景 B：有预约 → 契约字段映射
   SCENARIO.home = 'withapt'
   const b = instantiate(cfg)
@@ -284,6 +294,9 @@ async function testHome() {
   check('[首页] location → place', apt.place === '门诊楼 3 楼 302 诊室', '实得 ' + apt.place)
   check('[首页] 日期徽章已解析（parseAptDate）', !!b.data.aptDate && b.data.aptDate.day === FUT_START.day,
     '实得 ' + JSON.stringify(b.data.aptDate))
+  /* 本桩 greeting = 「下午好」= 纯问候，与主句重复 → 副句必须不占位（否则又变成两行问候） */
+  check('[首页] 后端 greeting 只是纯问候 → 副句不占位',
+    b.data.subText === '', '实得 ' + JSON.stringify(b.data.subText))
 }
 
 async function testHealthRecords() {

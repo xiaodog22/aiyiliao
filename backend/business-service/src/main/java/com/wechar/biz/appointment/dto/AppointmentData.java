@@ -37,6 +37,10 @@ public record AppointmentData(
         Integer version,
         Boolean replayed,
         Instant createdAt,
-        Instant updatedAt
+        Instant updatedAt,
+        /* REQ-14 受限接入：HIS 业务单号；LOCAL_DEMO 时为 null（NON_NULL 策略下不下发）。 */
+        String hisOrderNo,
+        /* 预约来源：LOCAL_DEMO / HIS_MOCK / HIS_LIVE；页面据此标「演示预约」。 */
+        String bookingSource
 ) {
 }

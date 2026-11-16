@@ -235,12 +235,13 @@
 
 .msg-user .msg-row { justify-content: flex-end; }
 
-/* AI 头像：圆形蓝底 + 「AI」白字（设计 04 的 AI 徽标） */
+/* AI 头像：圆形蓝底 + 「AI」白字（设计 04 的 AI 徽标）
+   渐变用 --brand-grad-*（恒定品牌蓝）：超大字档 --primary 为纯黑，用主色会变「黑→蓝」。 */
 .ai-avatar {
   width: 56rpx;
   height: 56rpx;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--primary), var(--accent));
+  background: linear-gradient(135deg, var(--brand-grad-from), var(--brand-grad-to));
   display: flex;
   align-items: center;
   justify-content: center;

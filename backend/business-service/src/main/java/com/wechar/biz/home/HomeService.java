@@ -101,7 +101,9 @@ public class HomeService {
                     a.patientName(), null, null,
                     upcoming.startTime(), upcoming.endTime(), a.queueNumber(),
                     upcoming.location(), upcoming.hospitalName(), a.symptomSummary(),
-                    a.version(), null, a.createdAt(), a.updatedAt());
+                    a.version(), null, a.createdAt(), a.updatedAt(),
+                    // REQ-14：首页卡片同样透传来源/单号，避免「首页不标演示、预约页标」的口径分裂
+                    a.hisOrderNo(), a.bookingSource());
             blocks.add(new HomeBlockData("NEXT_APPOINTMENT", "ok", apptData, null, null));
         }
 

@@ -19,7 +19,7 @@
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  background-color: var(--primary);
+  background-color: var(--brand-grad-from);
   background-image:
     /* 右下柔光：还原设计稿右下更亮的走向 */
     radial-gradient(120% 70% at 104% 74%, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0) 72%),
@@ -30,8 +30,9 @@
       rgba(255, 255, 255, 0.62) 68%,
       rgba(255, 255, 255, 0.92) 80%,
       var(--bg) 92%),
-    /* 基础品牌渐变（规范 §一：--primary → --accent） */
-    linear-gradient(180deg, var(--primary) 0%, var(--accent) 62%);
+    /* 基础品牌渐变：必须用 --brand-grad-*（恒定品牌蓝）。
+       若用 --primary → --accent，超大字档 --primary 被压成纯黑，会得到「黑→蓝」脏渐变。 */
+    linear-gradient(180deg, var(--brand-grad-from) 0%, var(--brand-grad-to) 62%);
 }
 
 /* ============ ② 品牌区 ============

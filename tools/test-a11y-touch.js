@@ -146,6 +146,51 @@ LOGIN_FILES.forEach((file, i) => {
     hardCoded ? '仍存在字面覆盖' : 'height=var(--btn-height), radius=var(--radius-md)')
 }
 
+// ---------------- F05 超大字档线条 / 对比度（2026-11-16，防"只放大字号不调线"回退） ----------------
+// 背景：xlarge 曾只放大字号并把 --bg 改成纯白，却沿用 #E4E9F0 的分割线（白底 1.22:1）
+// → 真机表现"线条看不见、卡片没有边界"。这里把口径写成硬断言。
+{
+  const app = read('app.wxss')
+  const block = (app.match(/\.theme-xlarge\s*\{([\s\S]*?)\}/) || [])[1] || ''
+  const token = (n) => {
+    const m = block.match(new RegExp('--' + n + ':\\s*(#[0-9A-Fa-f]{6})'))
+    return m ? m[1] : null
+  }
+  const lum = (hex) => {
+    const c = [1, 3, 5].map((i) => parseInt(hex.substr(i, 2), 16) / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)))
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+  }
+  const contrast = (a, b) => {
+    const x = lum(a); const y = lum(b)
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+  }
+  const border = token('border')
+  const weak = token('text-weak')
+  const bg = token('bg')
+
+  check('F05-1', '超大字档必须自带 --border / --bg（不能沿用默认档的浅灰线 + 纯白底）',
+    !!border && !!bg, 'border=' + border + ' bg=' + bg)
+  check('F05-2', '超大字档 --border 在本档底色上 ≥3:1（非文本边界线可辨）',
+    !!border && !!bg && contrast(border, bg) >= 3,
+    border && bg ? contrast(border, bg).toFixed(2) + ':1' : '缺令牌')
+  check('F05-3', '超大字档 --text-weak 在白卡上 ≥4.5:1（辅助文字可读）',
+    !!weak && contrast(weak, '#FFFFFF') >= 4.5,
+    weak ? contrast(weak, '#FFFFFF').toFixed(2) + ':1' : '缺 --text-weak')
+  check('F05-4', '超大字档细线必须加粗到 2rpx（divider / row / li-row）',
+    /\.theme-xlarge \.divider\s*\{[^}]*height:\s*2rpx/.test(app) &&
+    /\.theme-xlarge \.row\s*\{[^}]*border-bottom-width:\s*2rpx/.test(app) &&
+    /\.theme-xlarge \.li-row \+ \.li-row\s*\{[^}]*border-top-width:\s*2rpx/.test(app),
+    'divider/row/li-row 三处')
+  // 装饰性品牌渐变不得用 --primary → --accent：超大字档 --primary 是纯黑，会变「黑→蓝」脏渐变
+  for (const f of ['pages/auth/login/login.wxss', 'pages/consultation/consultation.wxss']) {
+    const s = read(f)
+    const bad = /linear-gradient\([^;]*var\(--primary\)[^;]*var\(--accent\)/.test(s)
+    check('F05-5·' + path.basename(f), f + ' 品牌渐变走 --brand-grad-*',
+      !bad && /var\(--brand-grad-from\)/.test(s), bad ? '仍是 var(--primary)→var(--accent)' : 'ok')
+  }
+}
+
 console.log('--------------------------------')
 console.log('PASS=' + PASS + ' FAIL=' + FAIL)
 process.exit(FAIL > 0 ? 1 : 0)

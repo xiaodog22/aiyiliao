@@ -52,13 +52,16 @@
 
 .dtb-text {
   margin-top: 6rpx;
-  font-size: 22rpx;
+  /* 跟随超大字档：--tab-label-size 只在 .theme-xlarge 定义（30rpx / 宽屏 15px），
+     标准与大字档取兜底 22rpx —— 与改造前完全一致，不回退适老档度量。 */
+  font-size: var(--tab-label-size, 22rpx);
   line-height: 1.2;
   color: var(--text-sub);
 }
 
 .dtb-on .dtb-text {
-  color: var(--primary);
+  /* 与患者端同一口径：选中文字走 --tab-active（图标是蓝色 PNG，文字不能变黑） */
+  color: var(--tab-active, var(--primary));
   font-weight: 500;
 }
 
@@ -89,7 +92,7 @@
 
   .dtb-text {
     margin-top: 3px;
-    font-size: 11px;
+    font-size: var(--tab-label-size, 11px);
   }
 }
 

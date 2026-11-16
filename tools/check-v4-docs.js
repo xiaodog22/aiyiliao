@@ -19,6 +19,13 @@ const V31 = path.join(ROOT, 'design-output', '医疗_AI_智能健康小程序_UI
 const V4DIR = path.join(ROOT, 'docs', 'v4')
 const MANIFEST = path.join(ROOT, 'prototype-web', 'pages.manifest.json')
 
+// design-output/ 在 .gitignore（设计交付存档，不入库）：干净 clone 下这里没有可校验的文档。
+// 此时必须显式 SKIP —— 报「缺少文件」会让每次 CI 都假红，绿色也会被误读成"文档已校验通过"。
+if (!fs.existsSync(DOC)) {
+  console.log('DOC_CHECK_SKIP design-output/ 未随仓库发布（.gitignore:62）——干净 clone 无设计存档，跳过')
+  process.exit(0)
+}
+
 const errors = []
 const warnings = []
 const fail = (m) => errors.push(m)
