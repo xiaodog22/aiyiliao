@@ -24,17 +24,23 @@
     "pages/profile/settings/settings",
     "pages/profile/voice-settings/voice-settings",
     "pages/profile/privacy/privacy",
-    "pages/profile/agreement/agreement",
-    "pages/doctor/workbench/workbench",
-    "pages/doctor/appointments/appointments",
-    "pages/doctor/beds/beds",
-    "pages/doctor/personal/personal",
-    "pages/doctor/consult/consult",
-    "pages/doctor/schedule/schedule",
-    "pages/doctor/account-security/account-security",
-    "pages/doctor/messages/messages"
+    "pages/profile/agreement/agreement"
   ],
   "subPackages": [
+    {
+      "root": "pages/doctor",
+      "name": "doctor",
+      "pages": [
+        "workbench/workbench",
+        "appointments/appointments",
+        "beds/beds",
+        "personal/personal",
+        "consult/consult",
+        "schedule/schedule",
+        "account-security/account-security",
+        "messages/messages"
+      ]
+    },
     {
       "root": "packageNav",
       "name": "nav",
@@ -53,7 +59,7 @@
   ],
   "preloadRule": {
     "pages/home/home": {
-      "network": "all",
+      "network": "wifi",
       "packages": [
         "packageContent",
         "packageNav"
@@ -102,6 +108,12 @@
     ]
   },
   "style": "v2",
+  "__usePrivacyCheck__": true,
+  "permission": {
+    "scope.record": {
+      "desc": "用于用语音描述症状与语音问诊，录音仅用于本次语音识别，不作其他用途"
+    }
+  },
   "resizable": true,
   "usingComponents": {
     "submission-actions": "/components/submission-actions/submission-actions"

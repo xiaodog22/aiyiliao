@@ -1,0 +1,107 @@
+# CI —— 只跑"干净 clone 可复现、零外部依赖"的门禁（2026-11-17）
+#
+# 刻意不放进 CI 的项（不是遗漏，是口径）：
+#   · db-verify.js        需要真实 MySQL 实例与种子数据 → 本地/发布前执行
+#   · perf-gate.js        需要三服务在线（网关/Java/AI）           → 独立压测环境
+#   · e2e-weapp / device-test  需要微信开发者工具、Android 设备  → 人工验收
+#   · check-v4-docs / check-v4-prototypes  依赖 .gitignore 内设计存档，
+#     干净 clone 下只会 SKIP；"SKIP"不能当"通过"，故不作阻断项（README 已写明）
+#   · AI 真实模型链路（Ollama/Qdrant/edge-tts 联网）→ 独立验收流程，
+#     不得为了让 CI 全绿而伪造通过结果
+#
+# 本流水线的定位：每个人在本地也跑得起的同一组命令，换成 PR 上自动执行。
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: 前端静态检查 + 逻辑测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: 文档可点性（README + docs/INDEX，干净 clone 下不得有死链）
+        run: |
+          node tools/check-readme-links.js
+          node tools/check-readme-links.js --file docs/INDEX.md
+      - name: 静态门禁（require / 导出形状 / 路径与禁址 / 包体）
+        run: |
+          node tools/check-require.js
+          node tools/check-exports.js
+          node tools/check-project.js
+      - name: 逻辑层测试（node:test）
+        run: |
+          node tools/test-fe.js
+          node tools/test-triage.js
+      - name: 导诊 golden set（红旗召回必须 100%）
+        run: node tools/eval-triage.js
+
+  java:
+    name: Java 单元/契约/集成（H2）
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: backend/business-service/pom.xml
+      - name: mvnw test
+        working-directory: backend/business-service
+        run: |
+          chmod +x mvnw
+          ./mvnw -B test
+
+  gateway:
+    name: 网关 pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/edge-gateway/requirements.txt
+      - name: 安装依赖
+        working-directory: backend/edge-gateway
+        run: python -m pip install -r requirements.txt
+      - name: pytest
+        working-directory: backend/edge-gateway
+        run: python -m pytest tests -q
+
+  ai-service:
+    name: AI 服务 pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/ai-service/requirements.txt
+      - name: 安装依赖
+        working-directory: backend/ai-service
+        run: python -m pip install -r requirements.txt
+      - name: pytest
+        working-directory: backend/ai-service
+        run: python -m pytest tests -q

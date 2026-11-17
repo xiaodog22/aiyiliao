@@ -19,6 +19,7 @@
 const ENV = require('../config/env.js')
 const req = require('./request.js')
 const { errText } = require('../utils/err-text.js')
+const { ensurePrivacy } = require('../utils/privacy.js')
 const API = req.API
 
 const VOICE_STORAGE_KEY = 'wb_voice'
@@ -341,7 +342,17 @@ function checkAuth() {
 
 function startRecord(handlers) {
   const h = handlers || {}
-  checkAuth().then(() => {
+  // 平台隐私授权先于录音权限：录音属"收集个人信息"，未同意《隐私保护指引》不得采集。
+  // 拒绝时只让本次语音输入退回文字，不阻断页面。
+  ensurePrivacy().then((allowed) => {
+    if (!allowed) {
+      if (h.onError) h.onError('需同意《隐私保护指引》后才能使用语音输入，请改用文字输入')
+      if (h.onEnd) h.onEnd()
+      return null
+    }
+    return checkAuth()
+  }).then((gate) => {
+    if (gate === null) return  // 隐私未授权，回调已发出
     const rm = _ensureRecorder()
     stoppedByUser = false
 

@@ -314,6 +314,18 @@ Page({
     wx.navigateTo({ url: '/pages/consult/consult?consultationId=' + encodeURIComponent(n.id) })
   },
 
+  /**
+   * 首页应急提示条：一键拨打 120。
+   * 与导诊页 / 报告页 / 问诊页同口径（`wx.makePhoneCall`，失败退回手动拨号提示）——
+   * 医疗场景里"只提示不拨号"等于把最急的一步留给用户自己找。
+   */
+  onCall120() {
+    wx.makePhoneCall({
+      phoneNumber: '120',
+      fail: () => wx.showToast({ title: '请手动拨打 120', icon: 'none' })
+    })
+  },
+
   /** 请求失败 → 开发档演示兜底 / 生产档错误态（可重试，不假装"没挂号"） */
   _applySummaryFailed() {
     if (ENV.MOCK_FALLBACK) {

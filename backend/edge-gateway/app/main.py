@@ -37,7 +37,13 @@ PROXY_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 
 
 def _rid(request: Request) -> str:
-    return request.headers.get("x-request-id") or new_request_id()
+    # 2026-11-17 全链路 trace：优先用中间件落定的 id，保证「信封 requestId / 响应头 /
+    # 转发给 Java·AI 的 X-Request-Id」是同一个值；没有中间件上下文时退回旧行为。
+    return (
+        getattr(request.state, "request_id", None)
+        or request.headers.get("x-request-id")
+        or new_request_id()
+    )
 
 
 def create_app(settings: Optional[GateSettings] = None) -> FastAPI:
@@ -129,6 +135,22 @@ def create_app(settings: Optional[GateSettings] = None) -> FastAPI:
                         status_code=429, content=body, headers={"Retry-After": str(decision.retry_after)}
                     )
             return await call_next(request)
+
+    # ---------- 请求 ID（全链路 trace 的唯一入口）----------
+    # 客户端可自带 X-Request-Id；未带则网关生成一次，并**贯穿**：
+    #   ① 错误/成功信封的 requestId（_rid 读 request.state）；
+    #   ② 转发给 Java / FastAPI 的 X-Request-Id（proxy.forward 兜底写入）；
+    #   ③ 回给客户端的响应头（下方 setdefault）。
+    # ⚠️ 必须**最后注册**（Starlette 后注册的中间件在最外层）：否则限流 429 会先短路，
+    #    响应既没有 requestId 也没有 X-Request-Id，线上排障只能靠猜。
+    @app.middleware("http")
+    async def _request_id_middleware(request: Request, call_next):
+        rid = request.headers.get("x-request-id") or new_request_id()
+        request.state.request_id = rid
+        response = await call_next(request)
+        if "x-request-id" not in response.headers:
+            response.headers["X-Request-Id"] = rid
+        return response
 
     # ---------- 异常处理（business 风格信封） ----------
 

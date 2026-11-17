@@ -1,0 +1,113 @@
+{
+  "version": "triage-golden-v1",
+  "updatedAt": "2026-11-17",
+  "note": "导诊离线评测集（本地规则引擎）。期望值按临床常识标注，不按引擎输出反推；发现不一致时先判定是标注错还是引擎错。红旗用例为安全底线，召回率必须 100%。标注口径：普通感冒样鼻塞流涕归呼吸内科；失眠既可归神经内科也可归精神心理科，本集按「以睡眠/情绪为主」归精神心理科。",
+  "deptCases": [
+    { "id": "gi-01", "text": "胃疼反酸一周了", "dept": "消化内科" },
+    { "id": "gi-02", "text": "拉肚子三天了，一天跑好几趟", "dept": "消化内科" },
+    { "id": "gi-03", "text": "便秘，三四天一次", "dept": "消化内科" },
+    { "id": "gi-04", "text": "吃完饭胃胀打嗝", "dept": "消化内科" },
+    { "id": "gi-05", "text": "恶心呕吐，没胃口", "dept": "消化内科" },
+    { "id": "gi-06", "text": "肚子疼，一阵一阵的", "dept": "消化内科" },
+    { "id": "gi-07", "text": "大便不成形半个月了", "dept": "消化内科" },
+    { "id": "gi-08", "text": "口苦，胃里反流", "dept": "消化内科" },
+
+    { "id": "resp-01", "text": "咳嗽有黄痰一周了", "dept": "呼吸内科" },
+    { "id": "resp-02", "text": "发烧38度，浑身酸痛", "dept": "呼吸内科" },
+    { "id": "resp-03", "text": "咳嗽两周还没好", "dept": "呼吸内科" },
+    { "id": "resp-04", "text": "感冒后一直干咳", "dept": "呼吸内科" },
+    { "id": "resp-05", "text": "反复发烧咳嗽", "dept": "呼吸内科" },
+    { "id": "resp-06", "text": "慢阻肺，最近痰多", "dept": "呼吸内科" },
+
+    { "id": "cardio-01", "text": "心慌，心跳得厉害", "dept": "心血管内科" },
+    { "id": "cardio-02", "text": "血压高，头有点晕", "dept": "心血管内科" },
+    { "id": "cardio-03", "text": "心口发闷，爬楼时更明显", "dept": "心血管内科" },
+    { "id": "cardio-04", "text": "下肢水肿，按下去有坑", "dept": "心血管内科" },
+    { "id": "cardio-05", "text": "心跳不齐，忽快忽慢", "dept": "心血管内科" },
+    { "id": "cardio-06", "text": "高血压复查", "dept": "心血管内科" },
+    { "id": "cardio-07", "text": "心悸，晚上睡不着", "dept": "心血管内科" },
+
+    { "id": "ortho-01", "text": "腰疼，弯不下腰", "dept": "骨科" },
+    { "id": "ortho-02", "text": "膝盖疼，上下楼加重", "dept": "骨科" },
+    { "id": "ortho-03", "text": "脖子疼，转头受限", "dept": "骨科" },
+    { "id": "ortho-04", "text": "肩膀疼，抬不起来", "dept": "骨科" },
+    { "id": "ortho-05", "text": "崴脚了，脚踝肿了", "dept": "骨科" },
+    { "id": "ortho-06", "text": "关节疼，阴天更明显", "dept": "骨科" },
+    { "id": "ortho-07", "text": "手腕疼，提东西没劲", "dept": "骨科" },
+    { "id": "ortho-08", "text": "腿疼，走路费劲", "dept": "骨科" },
+
+    { "id": "neuro-01", "text": "头疼，太阳穴跳着疼", "dept": "神经内科" },
+    { "id": "neuro-02", "text": "头晕，天旋地转", "dept": "神经内科" },
+    { "id": "neuro-03", "text": "手麻，拿东西不稳", "dept": "神经内科" },
+    { "id": "neuro-04", "text": "偏头痛又犯了", "dept": "神经内科" },
+    { "id": "neuro-05", "text": "失眠，整夜睡不着", "dept": "精神心理科" },
+    { "id": "neuro-06", "text": "头沉，昏昏沉沉", "dept": "神经内科" },
+
+    { "id": "derm-01", "text": "身上起红疹，很痒", "dept": "皮肤科" },
+    { "id": "derm-02", "text": "湿疹反反复复", "dept": "皮肤科" },
+    { "id": "derm-03", "text": "脸上长痘", "dept": "皮肤科" },
+    { "id": "derm-04", "text": "荨麻疹，一片一片", "dept": "皮肤科" },
+    { "id": "derm-05", "text": "掉头发严重", "dept": "皮肤科" },
+
+    { "id": "oph-01", "text": "眼睛红，还疼", "dept": "眼科" },
+    { "id": "oph-02", "text": "视力下降，看东西模糊", "dept": "眼科" },
+    { "id": "oph-03", "text": "眼睛干涩", "dept": "眼科" },
+    { "id": "oph-04", "text": "流眼泪，怕光", "dept": "眼科" },
+
+    { "id": "ent-01", "text": "耳朵疼，耳鸣", "dept": "耳鼻喉科" },
+    { "id": "ent-02", "text": "鼻塞，流鼻涕", "dept": "呼吸内科" },
+    { "id": "ent-03", "text": "鼻子出血", "dept": "耳鼻喉科" },
+    { "id": "ent-04", "text": "声音嘶哑", "dept": "耳鼻喉科" },
+
+    { "id": "uro-01", "text": "尿频尿急尿痛", "dept": "泌尿外科" },
+    { "id": "uro-02", "text": "排尿困难", "dept": "泌尿外科" },
+    { "id": "uro-03", "text": "尿痛，小便发烫", "dept": "泌尿外科" },
+
+    { "id": "obgyn-01", "text": "月经不调", "dept": "妇产科" },
+    { "id": "obgyn-02", "text": "白带异常", "dept": "妇产科" },
+    { "id": "obgyn-03", "text": "痛经严重", "dept": "妇产科" },
+
+    { "id": "dental-01", "text": "牙疼", "dept": "口腔科" },
+    { "id": "dental-02", "text": "牙龈出血", "dept": "口腔科" },
+    { "id": "dental-03", "text": "口腔溃疡", "dept": "口腔科" },
+
+    { "id": "endo-01", "text": "血糖高", "dept": "内分泌科" },
+    { "id": "endo-02", "text": "多饮多尿，体重下降", "dept": "内分泌科" },
+    { "id": "endo-03", "text": "甲状腺结节", "dept": "内分泌科" },
+
+    { "id": "ped-01", "text": "孩子发烧38度", "dept": "儿科诊区" },
+    { "id": "ped-02", "text": "宝宝拉肚子", "dept": "儿科诊区" },
+    { "id": "ped-03", "text": "小孩咳嗽有痰", "dept": "儿科诊区" },
+
+    { "id": "psych-01", "text": "焦虑，睡不着", "dept": "精神心理科" },
+    { "id": "psych-02", "text": "情绪低落，不想说话", "dept": "精神心理科" },
+    { "id": "psych-03", "text": "压力大，总失眠", "dept": "精神心理科" }
+  ],
+  "redFlagCases": [
+    { "id": "rf-01", "text": "胸口压榨一样疼，还出汗", "redFlag": "chest_pain" },
+    { "id": "rf-02", "text": "早上起来口角歪斜，说话不清", "redFlag": "stroke" },
+    { "id": "rf-03", "text": "喘不上气，坐着都憋得慌", "redFlag": "dyspnea" },
+    { "id": "rf-04", "text": "突然晕倒，叫不醒", "redFlag": "consciousness" },
+    { "id": "rf-05", "text": "呕血两次，黑便", "redFlag": "bleeding" },
+    { "id": "rf-06", "text": "突然剧烈头痛，脖子发硬", "redFlag": "severe_headache" },
+    { "id": "rf-07", "text": "吃了海鲜全身皮疹，喉咙发紧呼吸困难", "redFlag": "anaphylaxis" },
+    { "id": "rf-08", "text": "误服了农药", "redFlag": "poisoning" },
+    { "id": "rf-09", "text": "车祸外伤，骨头都露出来了", "redFlag": "trauma" },
+    { "id": "rf-10", "text": "肚子硬得像木板，一按就剧痛", "redFlag": "acute_abdomen" },
+    { "id": "rf-11", "text": "三个月婴儿发热38度", "redFlag": "infant_fever" },
+    { "id": "rf-12", "text": "怀孕7个月，阴道出血伴肚子痛", "redFlag": "pregnancy_emergency" },
+    { "id": "rf-13", "text": "不想活了，想死", "redFlag": "self_harm" },
+    { "id": "rf-14", "text": "大面积烧伤，脸也烧到了", "redFlag": "severe_burn" },
+    { "id": "rf-15", "text": "发烧39度还抽搐", "redFlag": "high_fever_convulsion" },
+    { "id": "rf-16", "text": "胸口像压了块石头，冷汗直流", "redFlag": "chest_pain" },
+    { "id": "rf-17", "text": "说话含糊，半边身子没劲", "redFlag": "stroke" },
+    { "id": "rf-18", "text": "憋得慌，躺下更喘", "redFlag": "dyspnea" },
+    { "id": "rf-19", "text": "突然人事不省", "redFlag": "consciousness" },
+    { "id": "rf-20", "text": "吐血了", "redFlag": "bleeding" }
+  ],
+  "fallbackCases": [
+    { "id": "fb-01", "text": "就是不舒服" },
+    { "id": "fb-02", "text": "最近没力气，说不上哪难受" },
+    { "id": "fb-03", "text": "浑身难受" }
+  ]
+}

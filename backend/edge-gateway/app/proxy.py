@@ -19,7 +19,7 @@ from fastapi import Request
 from starlette.background import BackgroundTask
 from starlette.responses import Response, StreamingResponse
 
-from .envelope import ApiError, upstream_error, upstream_timeout, upstream_unavailable
+from .envelope import ApiError, new_request_id, upstream_error, upstream_timeout, upstream_unavailable
 
 logger = logging.getLogger("edge-gateway.proxy")
 
@@ -95,6 +95,14 @@ async def forward(
             continue
         headers[lower] = value
     headers["accept-encoding"] = "identity"
+    # 全链路 trace：客户端未带 X-Request-Id 时，把网关中间件生成的那个透传给上游，
+    # 否则 Java / AI 会各自再生成一个 → 一次请求在三个服务日志里是三个不同 id（无法归因）。
+    if "x-request-id" not in headers:
+        headers["x-request-id"] = (
+            getattr(request.state, "request_id", None)
+            or request.headers.get("x-request-id")
+            or new_request_id()
+        )
     if content_type:
         headers["content-type"] = content_type
     elif "content-type" in request.headers:

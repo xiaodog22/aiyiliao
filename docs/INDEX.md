@@ -11,7 +11,7 @@
 |---|---|---|
 | [`README.md`](../README.md) | 项目定位、界面、功能、架构、目录、快速开始、已知限制 | 中 |
 | [`AGENTS.md`](../AGENTS.md) | AI/新人协作入口：目录地图 + 省 Token 操作规定 | 小 |
-| [`WORKBODY_AGENT_RULES.md`](../WORKBODY_AGENT_RULES.md) | 完整工程规范（任务分级 L1~L3、红线、验证门禁） | 16 KB |
+| `WORKBODY_AGENT_RULES.md` | 完整工程规范（任务分级 L1~L3、红线、验证门禁）；⚠️ **仅本地、不入库** | 16 KB |
 
 > `DEV_LOG.md`、`AI_CONTEXT.md` 为本地开发日志与上下文索引，含内部联调信息，**不随仓库发布**。
 
@@ -32,15 +32,15 @@
 
 | 文档 | 内容 |
 |---|---|
-| [`1.md`](历史设计规范/1.md) | UI / UX / 无障碍 / 交互 / 技术开发总规范 |
-| [`2.md`](历史设计规范/2.md) | V1.2 逐页面 UI 设计规格 |
-| [`3.md`](历史设计规范/3.md) | V1.3 视觉设计稿级规范 |
-| [`4.md`](历史设计规范/4.md) | V1.3 同版副本（与 `3.md` 内容重复，保留供比对） |
-| [`5.md`](历史设计规范/5.md) | V1.4 组件级规范的讨论记录 |
-| [`LAYOUT_PLAN.md`](历史设计规范/LAYOUT_PLAN.md) | 布局与断点方案 |
-| [`医疗_AI_智能健康小程序_UIUX_原型设计与界面说明书_V4.md`](../design-output/医疗_AI_智能健康小程序_UIUX_原型设计与界面说明书_V4.md) | 界面说明书（最新版，由 `tools/check-v4-docs.js` 校验） |
-| [`页面复刻文档_DeepSeek版.md`](历史设计规范/页面复刻/页面复刻文档_DeepSeek版.md) | 设计稿 → 原生小程序的复刻方法 |
-| [`页面复刻遗留问题清单.md`](历史设计规范/页面复刻/页面复刻遗留问题清单.md) | 复刻过程中未闭环项 |
+| `1.md`（仅本地） | UI / UX / 无障碍 / 交互 / 技术开发总规范 |
+| `2.md`（仅本地） | V1.2 逐页面 UI 设计规格 |
+| `3.md`（仅本地） | V1.3 视觉设计稿级规范 |
+| `4.md`（仅本地） | V1.3 同版副本（与 `3.md` 内容重复，保留供比对） |
+| `5.md`（仅本地） | V1.4 组件级规范的讨论记录 |
+| [`LAYOUT_PLAN.md`](历史设计规范/LAYOUT_PLAN.md) | 布局与断点方案（**唯一入库**的历史设计档案） |
+| `医疗_AI_智能健康小程序_UIUX_原型设计与界面说明书_V4.md`（仅本地） | 设计交付稿；规范唯一真源已改为代码（`miniprogram/app.wxss` 令牌块 + 各页 wxss） |
+| `页面复刻文档_DeepSeek版.md`（仅本地） | 设计稿 → 原生小程序的复刻方法 |
+| `页面复刻遗留问题清单.md`（仅本地） | 复刻过程中未闭环项 |
 
 ---
 
@@ -53,7 +53,7 @@
 | [`docs/v4/02-页面数据与交互契约.md`](v4/02-页面数据与交互契约.md) | 页面 ↔ 接口字段映射 |
 | [`backend/contracts/business-openapi.yaml`](../backend/contracts/business-openapi.yaml) | 业务后端契约（唯一事实源） |
 | [`backend/contracts/ai-openapi.yaml`](../backend/contracts/ai-openapi.yaml) | AI 服务契约 |
-| [`项目结构与代码规范_DeepSeek版.md`](交付文档/项目结构与代码规范_DeepSeek版.md) | 目录职责与命名规则 |
+| `项目结构与代码规范_DeepSeek版.md`（仅本地） | 目录职责与命名规则 |
 
 ---
 
@@ -112,7 +112,7 @@ backend/edge-gateway/.venv/Scripts/python.exe -m pytest backend/edge-gateway/tes
 | `docs/交付文档/` | 对外交付：后端功能测试设计、数据库表结构总览、代码规范 | ✅ |
 | `docs/产品规格/` | 当前功能 PRD + 未来功能 Feature Brief + 评审用决策点清单（三份相互关联，未明确项标「待确认」） | ✅ |
 | `docs/手册/` | 操作手册 DOCX（含待转 PDF 稿） | ❌ 含真实身份信息，忽略 |
-| `docs/评审与复盘/` | 优化总结、待优化清单、测试用例调整建议 | ❌ 本地复盘，忽略 |
+| `docs/评审与复盘/` | 优化总结、待优化清单、测试用例调整建议、结项归档 | ❌ 本地复盘，未入库 |
 | `docs/历史设计规范/` | 1.md~5.md、LAYOUT_PLAN.md、页面复刻方法（只读档案） | ⚠️ 仅 LAYOUT_PLAN.md 入库 |
 | `docs/screenshots/` | 界面截图（用于 README 与验收） | ✅ |
 | `docs/_backup/`、`docs/shots/`、`docs/patches/` | 中间备份、被取代版本、批量截图、联调补丁 | ❌ 忽略 |

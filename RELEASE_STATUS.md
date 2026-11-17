@@ -7,7 +7,7 @@
 
 - **正式名**：康诊云（唯一对外品牌名，覆盖页面标题 / 导航栏 / 登录页 / 介绍站 / 交付文档）。
   旧版设计稿残留的其他品牌名属历史归档，不得复用——`check-project` ⑧ 会拦截运行时回归。
-- **页面数**：36（主包 33 + 分包 3），以 `miniprogram/app.json` 实测为准。
+- **页面数**：36（主包 25 + 分包 11：`pages/doctor` 8 + `packageNav` 1 + `packageContent` 2），以 `miniprogram/app.json` 实测为准。
 - **库表数**：40（Flyway `db/migration` 下 30 个迁移文件的唯一 `CREATE TABLE` 统计，2026-11-16 实测）；历史文档的 33 / 36 / 39 为旧口径。
 - **版本**：V1.19（当前运行时）；V1.20 为规划态，未开工（版本 bump 留在 PR-7 验收时执行）。
 - **V1.20 受控基线（2026-11-16 入库，PR-1 交付）**：`REQUIREMENTS_BASELINE_V1.20.md`（A16 必达 / B8 登记 V1.21 / C4 长期）、

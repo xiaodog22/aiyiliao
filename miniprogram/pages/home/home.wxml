@@ -98,8 +98,9 @@
         </view>
       </view>
 
-      <!-- 适老化大字模式专属：紧急情况提示条（设计效果图 08）；标准档隐藏 -->
-      <view class="notice-bar notice-bar-amber hm-sos">
+      <!-- 适老化大字模式专属：紧急情况提示条（设计效果图 08）；标准档隐藏
+           ⚠️ 2026-11-17：提示条可点 → 直接拨 120（只写文字等于让老人自己去找拨号盘） -->
+      <view class="notice-bar notice-bar-amber hm-sos pressable" bindtap="onCall120" aria-role="button">
         <image class="notice-bar-ic" src="{{icons.alertAmber}}" />
         <view class="notice-bar-text">紧急情况请拨打120</view>
       </view>
