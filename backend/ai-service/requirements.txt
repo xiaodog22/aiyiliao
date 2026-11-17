@@ -22,6 +22,10 @@ Pygments==2.21.0
 pytest==9.1.1
 python-dotenv==1.2.4
 PyYAML==6.0.3
+# Redis 客户端：`app/executors/rag.py` 顶层 `import redis`（RAG 索引/缓存走 Redis）。
+# 缺登记时，全新 pip install 后 conftest 导入 `app.main` 即失败，pytest 在**收集期**退出
+# （2026-11-17 CI 首次真跑实测：14 秒 ModuleNotFoundError: No module named 'redis'）。
+redis==8.1.0
 starlette==1.8.0
 typing-inspection==0.4.4
 typing_extensions==4.16.0

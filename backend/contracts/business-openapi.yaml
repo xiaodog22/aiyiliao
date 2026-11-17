@@ -2893,8 +2893,9 @@ paths:
       tags: [doctor]
       summary: 提交床位申请
       description: |
+        `appointmentId` / `patientRef` 二选一：`appointmentId` 为医生本人名下预约，服务端解析内部患者 ID；
         `patientRef` 使用内部患者 ID（与 `beds.occupant_user_id` 同口径），姓名/手机号一律 `422`。
-        `bedId` 与 `wardId` 二选一：指定床位需「属于当前医生授权病区 + 当前空闲」；只给病区则由护士站排床。
+        两者同时出现 → `422`。`bedId` 与 `wardId` 二选一：指定床位需「属于当前医生授权病区 + 当前空闲」；只给病区则由护士站排床。
       parameters:
         - $ref: '#/components/parameters/RequestId'
         - $ref: '#/components/parameters/IdempotencyKey'
@@ -4728,8 +4729,14 @@ components:
 
     BedApplicationRequest:
       type: object
-      required: [patientRef]
+      description: |
+        患者身份二选一（`appointmentId` / `patientRef`），两者同时出现按 422 处理，避免身份歧义。
+        `appointmentId` 为医生本人名下预约，服务端据此解析内部患者 ID；`patientRef` 为兜底入口。
+      oneOf:
+        - required: [patientRef]
+        - required: [appointmentId]
       properties:
+        appointmentId: {type: [string, 'null'], maxLength: 64, description: 医生本人名下的预约 ID；服务端解析为内部患者 ID，前端无需抄写 patientRef。}
         patientRef: {type: string, maxLength: 64, description: 内部患者 ID，与 `beds.occupant_user_id` 同口径；不接受姓名或手机号（422）。}
         bedId: {type: [string, 'null'], maxLength: 64, description: 指定床位；需属于当前医生授权病区且当前空闲。}
         wardId: {type: [string, 'null'], maxLength: 64, description: 只申请病区时不指定床位，由护士站排床。}

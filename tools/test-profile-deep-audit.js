@@ -74,10 +74,11 @@ global.wx = {
   createInnerAudioContext() { return { src: '', play() {}, pause() {}, stop() {}, onCanplay() {}, onEnded() {}, onError() {} } }
 }
 
-// 远端目录：1 条云端音色（id=remote_yunv，不在本地 CATALOG 4 条内）。
-// 形状按契约 voice.js:142-148 消费：{id, displayName, locale, gender, isCustom, available}
+// 远端目录：2 条云端音色（id 均不在本地 CATALOG 内）。
+// 形状按契约 voice.js 消费：{id, displayName, locale, gender, isCustom, available}
 const REMOTE_ROWS = [
-  { id: 'remote_yunv', displayName: '云端女声', locale: '普通话', gender: 'FEMALE', isCustom: false, available: true }
+  { id: 'remote_yunv', displayName: '云端女声', locale: '普通话', gender: 'FEMALE', isCustom: false, available: true },
+  { id: 'remote_nan', displayName: '云端男声', locale: '普通话', gender: 'MALE', isCustom: false, available: true }
 ]
 
 // 注入内存会话 token（否则受保护请求在 requireSession() 即被本地拦截，发不出 wx.request）
@@ -127,7 +128,7 @@ const tick5 = () => new Promise((r) => setTimeout(r, 5))
 // ==================== 【断言①】onSetDefault → voice.save → VOICE_DEFAULT 请求 ====================
 async function testAssertion1_PageOnSetDefault() {
   resetStorage()
-  storage.wb_voice = 'preset_gentle'
+  storage.wb_voice = 'qwen3-female-1'
   storage.wb_voice_rate = 1.0
   storage.wb_voice_hidden = []
   requestLog.length = 0; requestMethods.length = 0
@@ -139,13 +140,14 @@ async function testAssertion1_PageOnSetDefault() {
   const cfg = loadPage(path.join('pages', 'profile', 'voice-settings', 'voice-settings.js'))
   const inst = instantiate(cfg)
   inst.onLoad({})
-  await settle(inst, (d) => d.rows && d.rows.length > 0, 800)
-  check('[断言①前置] voice-settings 目录已渲染（rows>0）', inst.data.rows.length > 0, '实得 rows=' + inst.data.rows.length)
-  check('[断言①前置] 当前生效音色 = preset_gentle（本地记忆）', inst.data.current === 'preset_gentle', '实得 ' + inst.data.current)
+  // 等远端目录落地（首屏先本地兜底 qwen3-*，桩远端返回 remote_yunv / remote_nan）
+  await settle(inst, (d) => (d.rows || []).some((r) => r.id === 'remote_yunv'), 800)
+  check('[断言①前置] voice-settings 目录已渲染（远端 2 项）', inst.data.rows.length === 2, '实得 rows=' + inst.data.rows.length)
+  check('[断言①前置] 当前生效音色 = 远端首项 remote_yunv（服务端目录为准）', inst.data.current === 'remote_yunv', '实得 ' + inst.data.current)
 
-  // 页面动作：点「设默认」（本地目录音色 preset_pro）
+  // 页面动作：点「设默认」（远端音色 remote_nan）
   const before = requestLog.length
-  inst.onSetDefault({ currentTarget: { dataset: { id: 'preset_pro' } } })
+  inst.onSetDefault({ currentTarget: { dataset: { id: 'remote_nan' } } })
   await tick5()
   await tick5()
 
@@ -157,13 +159,15 @@ async function testAssertion1_PageOnSetDefault() {
     check('[断言①] 实际请求方法=' + m + '（契约 canonical=PUT；POST 仅 legacy）',
       m === 'PUT' || m === 'POST', '实得 ' + m)
   }
-  check('[断言①] 设默认成功后本地 storage 同步', storage.wb_voice === 'preset_pro', '实得 ' + storage.wb_voice)
+  check('[断言①] 设默认成功后本地 storage 同步', storage.wb_voice === 'remote_nan', '实得 ' + storage.wb_voice)
+  // 2026-11-17 回归锁：保存后 _refresh() 必须仍是远端目录（不得把本地 CATALOG 并进来）
+  check('[断言①] 保存后列表不膨胀（仍为远端 2 项）', inst.data.rows.length === 2, '实得 rows=' + inst.data.rows.length)
 }
 
 // ==================== 【断言②】远端音色（非本地 CATALOG 4 条）可设默认 ====================
 async function testAssertion2_RemoteVoiceSetDefault() {
   resetStorage()
-  storage.wb_voice = 'preset_gentle'
+  storage.wb_voice = 'qwen3-female-1'
   storage.wb_voice_rate = 1.0
   storage.wb_voice_hidden = []
   requestLog.length = 0; requestMethods.length = 0
@@ -207,7 +211,7 @@ async function testAssertion3_ClearCacheKeepsVoice() {
   storage.wb_login_at = 1730000000000
   storage.wb_theme = 'large'
   storage.wb_high_contrast = true
-  storage.wb_voice = 'preset_pro'
+  storage.wb_voice = 'qwen3-male-1'
   storage.wb_voice_rate = 1.25
   storage.wb_voice_read = true
   storage.wb_refresh_token = 'rt-token'
@@ -225,7 +229,7 @@ async function testAssertion3_ClearCacheKeepsVoice() {
   inst.onClearCache()
   await tick5()
 
-  check('[断言③] 清缓存后 wb_voice 保留（P2-11）', storage.wb_voice === 'preset_pro', '实得 ' + JSON.stringify(storage.wb_voice))
+  check('[断言③] 清缓存后 wb_voice 保留（P2-11）', storage.wb_voice === 'qwen3-male-1', '实得 ' + JSON.stringify(storage.wb_voice))
   check('[断言③] 清缓存后 wb_voice_rate 保留（P2-11）',
     Math.abs(Number(storage.wb_voice_rate) - 1.25) < 0.001, '实得 ' + JSON.stringify(storage.wb_voice_rate))
   check('[断言③] 会话/主题/高对比/语音播报等其余保留键同步保留',

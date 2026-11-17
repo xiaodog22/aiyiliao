@@ -6,11 +6,14 @@
  * ⚠️ 代码中禁止出现 8001 / 8088 / 127.0.0.1 / localhost。
  *
  * 错误分类：NO_BASE_URL / NETWORK_ERROR / TIMEOUT / HTTP_ERROR / BIZ_ERROR / PARSE_ERROR
+ * 非 2xx 优先保留后端业务码（VERSION_CONFLICT / VALIDATION_FAILED / INTERNAL_ERROR 等）；
+ * 只有响应体没有业务码时才回 HTTP_ERROR，避免把“版本冲突/参数错误”误报成服务故障。
  * 不弹 Toast、不吞错误，统一 reject 结构化错误 { code, message }
  */
 const API = require('../config/api.js')
 const ENV = require('../config/env.js')
 const session = require('./session.js')
+const connectivity = require('./connectivity.js')
 
 let refreshPromise = null
 let readyPromise = null
@@ -274,6 +277,20 @@ function inflightKeyOf(full, data, rawEnvelope) {
 const GET_CACHE_TTL_MS = 15000
 const getCache = new Map()
 
+// 登录入口不能被"离线闸门"提前挡掉：登录本身就要尝试触达后端，
+// 失败也应拿到真实的 NETWORK_ERROR/TIMEOUT（而不是复用一个 10s 前的探测结论）。
+const AUTH_ENTRY_PATHS = [
+  '/api/v1/auth/wechat/login',
+  '/api/v1/doctor/login',
+  '/api/user/login'
+]
+
+function isAuthEntry(method, spec) {
+  if (method !== 'POST') return false
+  const p = String((spec && spec.path) || '').split('?')[0]
+  return AUTH_ENTRY_PATHS.indexOf(p) >= 0
+}
+
 /**
  * 只对这些**列表/目录类** GET 路径开缓存（白名单，不是全局默认）。
  * 为什么不用全局默认：/me、/auth/*、/voice/* 这类"改完必须立刻看到"的接口
@@ -451,11 +468,17 @@ function refreshAccessToken() {
           reject(e)
         }
       },
-      fail: (err) => reject(makeError(
-        /timeout/.test((err && err.errMsg) || '') ? 'TIMEOUT' : 'NETWORK_ERROR',
-        '网络连接失败，暂时无法刷新登录状态。',
-        { raw: err }
-      )),
+      fail: (err) => {
+        const e = makeError(
+          /timeout/.test((err && err.errMsg) || '') ? 'TIMEOUT' : 'NETWORK_ERROR',
+          '网络连接失败，暂时无法刷新登录状态。',
+          { raw: err }
+        )
+        // 刷新是裸 wx.request，不经 request() 的统一 fail 分支；这里补一次状态标记，
+        // 否则"401 后刷新断网"会让全局状态误以为仍在线。
+        connectivity.markFail(e, 'request', false)
+        reject(e)
+      },
       complete: () => { refreshPromise = null }
     })
   })
@@ -602,7 +625,39 @@ function makeError(code, message, extra) {
 
 function extractBizMsg(data) {
   if (!data || typeof data !== 'object') return ''
-  return data.msg || data.message || data.error || (typeof data.detail === 'string' ? data.detail : '') || ''
+  const base = data.msg || data.message || (typeof data.error === 'string' ? data.error : '')
+    || (typeof data.detail === 'string' ? data.detail : '') || ''
+  const detail = extractBizDetails(data)
+  if (!detail) return base
+  return base ? (base + '：' + detail) : detail
+}
+
+/** 后端 VALIDATION_FAILED 的 details 是结构化字段错误；把它拼进用户可见文案，避免只剩“参数未通过校验”。 */
+function extractBizDetails(data) {
+  if (!data || typeof data !== 'object' || !Array.isArray(data.details)) return ''
+  return data.details.map((item) => {
+    if (!item || typeof item !== 'object') return ''
+    const field = item.field ? String(item.field) : ''
+    const reason = item.reason || item.message || ''
+    return (field + (field && reason ? '：' : '') + reason).trim()
+  }).filter(Boolean).join('；')
+}
+
+/**
+ * 非 2xx 的统一错误：保留后端业务码（VERSION_CONFLICT / VALIDATION_FAILED / INTERNAL_ERROR…）。
+ * 旧实现把所有 4xx/5xx 都压成 HTTP_ERROR，页面无法区分“版本冲突”“参数错误”和“服务挂了”，
+ * 最终统一显示“服务暂时不可用”，把可修复的问题伪装成故障。
+ */
+function httpError(status, data) {
+  const biz = (data && typeof data === 'object' && typeof data.code === 'string')
+    ? data.code.trim()
+    : ''
+  const code = biz && biz !== 'OK' ? biz : 'HTTP_ERROR'
+  return makeError(code, extractBizMsg(data) || '服务暂时不可用，请稍后重试', {
+    httpCode: status,
+    data,
+    bizCode: biz
+  })
 }
 
 // ============ 基础请求 ============
@@ -635,8 +690,15 @@ function request(options) {
     if (hit) return hit
   }
 
+  // 写操作前置：离线/降级时先探测网关健康；探测失败直接返回 OFFLINE，
+  // 不让预约、问诊、床位申请等提交在断网时"点了像成功"。
+  // GET 不受影响：已加载/缓存内容仍可浏览，页面用离线条标明"非实时"。
+  const writeGate = (method === 'GET' || isAuthEntry(method, finalSpec))
+    ? Promise.resolve()
+    : connectivity.ensureWritable()
+
   // 会话就绪（冷启动先刷新再发；未登录则本地 reject，不发无谓请求）
-  const pending = requireSession(method, finalSpec).then(() => new Promise((resolve, reject) => {
+  const pending = writeGate.then(() => requireSession(method, finalSpec)).then(() => new Promise((resolve, reject) => {
     wx.request({
       url: full,
       method,
@@ -644,6 +706,8 @@ function request(options) {
       header: authHeader(Object.assign({}, header || {}, idem ? { 'Idempotency-Key': idem } : {})),
       timeout: finalTimeout,
       success: (res) => {
+        // 只要能收到 HTTP 响应，就说明网关可达；业务 4xx/5xx 不应把全局状态误判为断网。
+        connectivity.markOk('request')
         // 401：非刷新接口且未重试过 → 单飞刷新后带同一幂等键重发一次（最多一次）
         if (res.statusCode === 401 && !options._authRetried && !isRefreshSpec(finalSpec)) {
           refreshAccessToken()
@@ -672,8 +736,7 @@ function request(options) {
             }
             resolve(value)
           } else {
-            reject(makeError('HTTP_ERROR', extractBizMsg(res.data) || ('请求失败（' + res.statusCode + '）'),
-              { httpCode: res.statusCode, data: res.data }))
+            reject(httpError(res.statusCode, res.data))
           }
         } catch (e) {
           if (e && e.code === 'BIZ_ERROR') reject(e)
@@ -683,9 +746,13 @@ function request(options) {
       fail: (err) => {
         const msg = (err && err.errMsg) || ''
         if (/timeout/.test(msg)) {
-          reject(makeError('TIMEOUT', '请求超时，请检查网络后重试。', { raw: err }))
+          const e = makeError('TIMEOUT', '请求超时，请检查网络后重试。', { raw: err })
+          connectivity.markFail(e, 'request', false)
+          reject(e)
         } else {
-          reject(makeError('NETWORK_ERROR', '网络连接失败，请检查网络后重试。', { raw: err }))
+          const e = makeError('NETWORK_ERROR', '网络连接失败，请检查网络后重试。', { raw: err })
+          connectivity.markFail(e, 'request', false)
+          reject(e)
         }
       }
     })
@@ -718,7 +785,7 @@ function postForm(spec, fields, opts) {
   const idem = idempotencyOf(o)
 
   // 会话就绪 + Bearer（此前本条路完全没有 Authorization，是 TTS/ASR 401 的直接原因之一）
-  return requireSession('POST', spec).then(() => new Promise((resolve, reject) => {
+  return connectivity.ensureWritable().then(() => requireSession('POST', spec)).then(() => new Promise((resolve, reject) => {
     const send = (options) => {
       wx.request({
         url: full,
@@ -733,6 +800,7 @@ function postForm(spec, fields, opts) {
         responseType: 'arraybuffer',
         timeout: finalTimeout,
         success: (res) => {
+          connectivity.markOk('request')
           const ct = String(headerOf(res, 'Content-Type') || '').toLowerCase()
           const isJson = ct.indexOf('json') >= 0
           // 401：未重试过且非刷新接口 → 单飞刷新后重发一次
@@ -767,8 +835,15 @@ function postForm(spec, fields, opts) {
         },
         fail: (err) => {
           const msg = (err && err.errMsg) || ''
-          if (/timeout/.test(msg)) reject(makeError('TIMEOUT', '语音合成超时，请稍后重试。', { raw: err }))
-          else reject(makeError('NETWORK_ERROR', '网络连接失败，请检查网络后重试。', { raw: err }))
+          if (/timeout/.test(msg)) {
+            const e = makeError('TIMEOUT', '语音合成超时，请稍后重试。', { raw: err })
+            connectivity.markFail(e, 'request', false)
+            reject(e)
+          } else {
+            const e = makeError('NETWORK_ERROR', '网络连接失败，请检查网络后重试。', { raw: err })
+            connectivity.markFail(e, 'request', false)
+            reject(e)
+          }
         }
       })
     }
@@ -791,6 +866,7 @@ function getBinary(spec, params, opts) {
       responseType: 'arraybuffer',
       timeout: typeof o.timeout === 'number' ? o.timeout : (ENV.aiTimeout || 30000),
       success: (res) => {
+        connectivity.markOk('request')
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(res.data) // ArrayBuffer
         } else if (res.statusCode === 401) {
@@ -806,8 +882,11 @@ function getBinary(spec, params, opts) {
       },
       fail: (err) => {
         const msg = (err && err.errMsg) || ''
-        if (/timeout/.test(msg)) reject(makeError('TIMEOUT', '音频下载超时。', { raw: err }))
-        else reject(makeError('NETWORK_ERROR', '网络连接失败，请检查网络后重试。', { raw: err }))
+        const e = /timeout/.test(msg)
+          ? makeError('TIMEOUT', '音频下载超时。', { raw: err })
+          : makeError('NETWORK_ERROR', '网络连接失败，请检查网络后重试。', { raw: err })
+        connectivity.markFail(e, 'request', false)
+        reject(e)
       }
     })
   }))
@@ -825,9 +904,78 @@ function withFallback(promise, mockFactory) {
   return promise.catch((err) => {
     const mock = typeof mockFactory === 'function' ? mockFactory(err) : mockFactory
     if (mock == null) throw err
+    // 演示数据必须让全局状态知道：页面顶部离线条会写"演示数据"，写操作仍被闸门拦住。
+    connectivity.markMock(err)
     console.warn('[request] 开发降级：后端不可用，使用演示数据兜底（' + (err && err.code) + '）')
     return mock
   })
+}
+
+/**
+ * 打开 SSE 长连接（对外流式二期，2026-11-17）。
+ *
+ * 与 get/post 的差异，每条都是踩过的坑：
+ *  ① **不脱壳**：SSE 帧由调用方（`services/stream.js`）解析，这里只管字节流；
+ *  ② **成功回调 ≠ 有正文**：它只表示连接结束，增量在 `onChunkReceived` 里；
+ *  ③ 基础库 < 2.20.2 没有 `onChunkReceived` → 走 `unsupported` 回调降级，**不是错误**；
+ *  ④ 401 **不在这里自动刷新**：长连接重发代价高（7B CPU 一次推理数十秒），
+ *     交调用方决定——通常直接降级轮询同一 taskId，绝不重新提交任务。
+ *
+ * @param {Object} spec 接口规格（如 API.AI_TASK_EVENTS）
+ * @param {{chunk?:Function, success?:Function, fail?:Function, unsupported?:Function}} handlers
+ * @param {{timeout?:number}} [opts]
+ * @returns {Promise<{abort:Function, supported:boolean}>}
+ */
+function openStream(spec, handlers, opts) {
+  const full = buildURL(spec)
+  if (!full) return Promise.reject(makeError('NO_BASE_URL', '服务暂未开通'))
+  const h = handlers || {}
+  const o = opts || {}
+  const emit = (name, payload) => {
+    try {
+      if (typeof h[name] === 'function') h[name](payload)
+    } catch (e) {
+      // 回调异常不得中断读取：SSE 仍在跑，抛出去会丢掉后续增量
+    }
+  }
+  return requireSession('GET', spec).then(() => new Promise((resolve) => {
+    const task = wx.request({
+      url: full,
+      method: 'GET',
+      header: baseHeaders({ Accept: 'text/event-stream' }),
+      enableChunked: true,
+      timeout: typeof o.timeout === 'number' ? o.timeout : (ENV.aiTimeout || 30000),
+      success: (res) => {
+        if (res && res.statusCode >= 200 && res.statusCode < 300) connectivity.markOk('request')
+        emit('success', res)
+      },
+      fail: (err) => {
+        const msg = (err && err.errMsg) || ''
+        // 主动 abort 不是断网：用户切换页面/取消生成时会走这里，不能误标离线。
+        if (!/abort/.test(msg)) {
+          const e = makeError('NETWORK_ERROR', '长连接失败', { raw: err })
+          connectivity.markFail(e, 'request', false)
+        }
+        emit('fail', err)
+      }
+    })
+    if (!task || typeof task.onChunkReceived !== 'function') {
+      emit('unsupported', {})
+      resolve({ abort() {}, supported: false })
+      return
+    }
+    task.onChunkReceived((res) => emit('chunk', res && res.data))
+    resolve({
+      supported: true,
+      abort() {
+        try {
+          task.abort()
+        } catch (e) {
+          // 连接已结束时 abort 会抛，属正常
+        }
+      }
+    })
+  }))
 }
 
 module.exports = {
@@ -837,6 +985,7 @@ module.exports = {
   del(spec, data, opts) { return request(Object.assign({ spec, method: 'DELETE', data }, opts || {})) },
   postForm,
   getBinary,
+  openStream,
   url,
   withPath,
   // 上传文件（multipart）— ASR 用
@@ -846,7 +995,7 @@ module.exports = {
     if (!full) return Promise.reject(makeError('NO_BASE_URL', '服务暂未开通'))
     const idem = idempotencyOf(o)
     // 会话就绪 + Bearer（此前本条路完全没有 Authorization，是 ASR 401 的直接原因之一）
-    return requireSession('POST', spec).then(() => new Promise((resolve, reject) => {
+    return connectivity.ensureWritable().then(() => requireSession('POST', spec)).then(() => new Promise((resolve, reject) => {
       const send = (options) => {
         wx.uploadFile({
           url: full,
@@ -857,6 +1006,7 @@ module.exports = {
           header: baseHeaders(idem ? { 'Idempotency-Key': idem } : {}),
           timeout: typeof o.timeout === 'number' ? o.timeout : (ENV.aiTimeout || 30000),
           success: (res) => {
+            connectivity.markOk('request')
             // 401：未重试过且非刷新接口 → 单飞刷新后重发一次
             if (res.statusCode === 401 && !(options && options._authRetried) && !isRefreshSpec(spec)) {
               refreshAccessToken().then(() => send({ _authRetried: true })).then(resolve, reject)
@@ -875,7 +1025,11 @@ module.exports = {
               reject(makeError('HTTP_ERROR', msg, { httpCode: res.statusCode, data: body }))
             }
           },
-          fail: (err) => reject(makeError('NETWORK_ERROR', '上传失败', { raw: err }))
+          fail: (err) => {
+            const e = makeError('NETWORK_ERROR', '上传失败', { raw: err })
+            connectivity.markFail(e, 'request', false)
+            reject(e)
+          }
         })
       }
       send({})

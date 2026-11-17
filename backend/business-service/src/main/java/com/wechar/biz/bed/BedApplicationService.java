@@ -1,5 +1,6 @@
 package com.wechar.biz.bed;
 
+import com.wechar.biz.appointment.AppointmentRepository;
 import com.wechar.biz.bed.dto.BedApplicationData;
 import com.wechar.biz.bed.dto.BedApplicationRequest;
 import com.wechar.biz.common.ApiException;
@@ -39,17 +40,20 @@ public class BedApplicationService {
 
     private final BedApplicationRepository applicationRepository;
     private final BedRepository bedRepository;
+    private final AppointmentRepository appointmentRepository;
     private final DoctorService doctorService;
     private final UserRepository userRepository;
     private final Clock clock;
 
     public BedApplicationService(BedApplicationRepository applicationRepository,
                                  BedRepository bedRepository,
+                                 AppointmentRepository appointmentRepository,
                                  DoctorService doctorService,
                                  UserRepository userRepository,
                                  Clock clock) {
         this.applicationRepository = applicationRepository;
         this.bedRepository = bedRepository;
+        this.appointmentRepository = appointmentRepository;
         this.doctorService = doctorService;
         this.userRepository = userRepository;
         this.clock = clock;
@@ -60,14 +64,43 @@ public class BedApplicationService {
     public BedApplicationData submit(String userId, String idempotencyKey, BedApplicationRequest request) {
         DoctorRepository.DoctorRow doctor = doctorService.requireDoctor(userId);
 
-        String patientRef = request.patientRef() == null ? "" : request.patientRef().trim();
-        if (patientRef.isEmpty()) {
+        String patientRef = blankToNull(request.patientRef());
+        String appointmentId = blankToNull(request.appointmentId());
+        if (patientRef != null && appointmentId != null) {
             throw new ApiException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY,
-                    "patientRef 不能为空（内部患者 ID）");
+                    "appointmentId 与 patientRef 只能二选一，避免患者身份歧义");
         }
-        if (patientRef.matches("^1\\d{10}$")) {
-            throw new ApiException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY,
-                    "patientRef 只接受内部患者 ID，不接受姓名或手机号");
+        if (appointmentId != null) {
+            AppointmentRepository.AppointmentRow appt = appointmentRepository.findById(appointmentId)
+                    .orElseThrow(() -> new ApiException("APPOINTMENT_NOT_FOUND", HttpStatus.NOT_FOUND,
+                            "预约不存在或不属于当前医生"));
+            if (!doctor.id().equals(appt.doctorId())) {
+                throw new ApiException("APPOINTMENT_NOT_FOUND", HttpStatus.NOT_FOUND,
+                        "预约不存在或不属于当前医生");
+            }
+            if (blankToNull(appt.familyMemberId()) != null) {
+                throw new ApiException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY,
+                        "该预约是家属代约，请改用手动患者编号（实际就诊患者）");
+            }
+            String apptStatus = String.valueOf(appt.status()).trim().toUpperCase();
+            if (Set.of("CANCELLED", "EXPIRED", "NO_SHOW").contains(apptStatus)) {
+                throw new ApiException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY,
+                        "该预约已取消/过期/未到诊，不能申请床位");
+            }
+            patientRef = blankToNull(appt.userId());
+            if (patientRef == null) {
+                throw new ApiException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY,
+                        "预约缺少患者身份，请改用手动患者编号");
+            }
+        } else {
+            if (patientRef == null) {
+                throw new ApiException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY,
+                        "请选择患者，或填写内部患者 ID（patientRef）");
+            }
+            if (patientRef.matches("^1\\d{10}$")) {
+                throw new ApiException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY,
+                        "patientRef 只接受内部患者 ID，不接受姓名或手机号");
+            }
         }
         UserRepository.UserRow patient = userRepository.findById(patientRef)
                 .orElseThrow(() -> new ApiException("PATIENT_NOT_FOUND", HttpStatus.NOT_FOUND,

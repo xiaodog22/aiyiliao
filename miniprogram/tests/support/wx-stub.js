@@ -52,9 +52,47 @@ function createWxStub() {
         method: String(options.method || 'GET').toUpperCase(),
         header: options.header || {},
         data: options.data,
+        enableChunked: !!options.enableChunked,
         options,
       }
       requests.push(record)
+
+      // 分块（SSE）请求：由测试显式驱动 chunk / finish，不自动 dispatch。
+      // 原因：真实场景里 success 一定在最后一个 chunk 之后，自动 dispatch 会抢跑。
+      if (options.enableChunked) {
+        record.aborted = false
+        record.onChunk = null
+        record.emitChunk = (bytes) => {
+          if (record.aborted || !record.onChunk) return
+          const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+          // 关键：必须交 ArrayBuffer（真机 onChunkReceived 给的就是 ArrayBuffer），
+          // 交 Uint8Array 会绕过分块解码路径，测不出 UTF-8 被切断的问题。
+          const buf = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength)
+          record.onChunk({ data: buf })
+        }
+        record.finish = (statusCode) => {
+          if (record.aborted) return
+          const res = { statusCode: statusCode || 200, data: '', header: {} }
+          if (typeof options.success === 'function') options.success(res)
+          if (typeof options.complete === 'function') options.complete(res)
+        }
+        record.emitFail = (message) => {
+          if (record.aborted) return
+          if (typeof options.fail === 'function') options.fail({ errMsg: message || 'request:fail' })
+        }
+        return {
+          onChunkReceived(cb) {
+            record.onChunk = cb
+          },
+          abort() {
+            record.aborted = true
+            if (typeof options.fail === 'function') options.fail({ errMsg: 'request:fail abort' })
+          },
+          onHeadersReceived() {},
+          offHeadersReceived() {},
+        }
+      }
+
       // 异步回调，模拟真实时序（同步回调会掩盖"单飞未生效"这类竞态）
       Promise.resolve().then(() => dispatch(record))
       return { abort() {}, onHeadersReceived() {}, offHeadersReceived() {} }

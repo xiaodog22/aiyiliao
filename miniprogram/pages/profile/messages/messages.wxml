@@ -1,0 +1,59 @@
+<!--
+  pages/profile/messages —— 患者端消息通知
+  未读圆点 + 类型标签 + 时间；预约类跳挂号记录，问诊类跳会话，报告类跳报告详情。
+-->
+<view class="page theme-{{theme}} {{hc ? 'high-contrast' : ''}} pm-page" style="padding-top: {{navH}}px;">
+
+  <view class="pm-nav" style="padding-top: {{statusBarHeight}}px;">
+    <view class="pm-nav-bar">
+      <view class="pm-nav-back" bindtap="onBack" hover-class="pm-hover" aria-role="button" aria-label="返回">
+        <image class="pm-nav-back-ic" src="{{icons.chevronLeft}}" />
+      </view>
+      <view class="pm-nav-title">消息通知</view>
+      <view wx:if="{{unread > 0}}" class="pm-nav-act" bindtap="onMarkAllRead">全部已读</view>
+    </view>
+  </view>
+
+  <offline-bar />
+
+  <view wx:if="{{!loading && !error}}" class="pm-sum">
+    <view class="pm-sum-num">{{unread}}</view>
+    <view class="pm-sum-t">条未读消息</view>
+  </view>
+
+  <skeleton wx:if="{{loading}}" type="list" rows="6" />
+
+  <view wx:elif="{{error}}" class="pm-state">
+    <view class="pm-state-title">消息加载失败</view>
+    <view class="pm-state-sub">{{error}}</view>
+    <view class="pm-btn pm-btn-primary" bindtap="fetch">重试</view>
+  </view>
+
+  <block wx:else>
+    <view class="pm-list">
+      <view wx:for="{{messages}}" wx:key="id" wx:for-item="m"
+            class="pm-item {{m.read ? '' : 'pm-item-unread'}}" data-msg="{{m}}" bindtap="onTapMessage" hover-class="pm-hover">
+        <view class="pm-type pm-type-{{m.tone}}">
+          <image class="pm-type-ic" src="{{m.icon}}" />
+        </view>
+        <view class="pm-body">
+          <view class="pm-title-row">
+            <view class="pm-title">{{m.title}}</view>
+            <view class="pm-tag pm-tag-{{m.tone}}">{{m.typeLabel}}</view>
+          </view>
+          <view wx:if="{{m.body}}" class="pm-text">{{m.body}}</view>
+          <view class="pm-time">{{m.timeText}}</view>
+        </view>
+        <view wx:if="{{!m.read}}" class="pm-dot"></view>
+        <image class="pm-arrow" src="{{icons.chevronRight}}" />
+      </view>
+
+      <view wx:if="{{!messages.length}}" class="pm-state pm-state-inline">
+        <view class="pm-state-title">暂无消息</view>
+        <view class="pm-state-sub">挂号、问诊、报告等通知会显示在这里</view>
+      </view>
+    </view>
+  </block>
+
+  <view class="pm-bottom-space"></view>
+</view>

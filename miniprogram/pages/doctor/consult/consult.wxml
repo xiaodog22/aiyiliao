@@ -29,6 +29,8 @@
     </view>
   </view>
 
+  <offline-bar />
+
   <!-- ==================== 列表模式 ==================== -->
   <block wx:if="{{mode === 'LIST'}}">
     <scroll-view class="dc-body" scroll-y>

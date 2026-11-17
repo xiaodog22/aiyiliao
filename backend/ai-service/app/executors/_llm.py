@@ -22,6 +22,7 @@ from typing import Any, Optional
 
 import httpx
 
+from .. import streaming
 from ..config import Settings
 from ..metrics import metrics
 from ..providers import chain
@@ -141,6 +142,9 @@ async def generate_text(
         first_token_timeout_s=float(first),
         fallback_timeout_s=fallback_timeout_s,
         transport=transport,
+        # 增量出口由 tasks._process 按任务类型绑定（第一期仅 CHAT）；未绑定时返回 None，
+        # 与改造前行为完全一致（只累积、不外发）。
+        on_token=streaming.current_sink(),
     )
     if result.stream_fallback_reason:
         # 流式入口不可用 → 同 provider 非流式已成功：只降级不报错，但必须留痕

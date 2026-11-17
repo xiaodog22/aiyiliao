@@ -30,6 +30,7 @@
 |---|---|
 | `start-gui.bat` | 打开图形面板（内部以 `-STA` 启动 `scripts\gui.ps1`） |
 | `scripts\gui.ps1 -SelfTest` | 无界面自检：跑一轮采集并打印状态矩阵 / 请求流水 / 计数（供自动化验证） |
+| `scripts\gui.ps1 -ShotPath x.png -ShotTab 0` | 视觉回归：把首屏整窗渲染成 PNG 后退出（`0` 请求 / `1` 日志 / `2` 操作 / `3` 守护）。改界面后用它出图核对，不必盯屏幕 |
 
 工具栏按钮（全部转交 `orchestrator.ps1` 子进程执行，面板不重复实现编排逻辑）：
 
@@ -40,18 +41,38 @@
 | 重启 | `orchestrator.ps1 -Action restart` | 先停后启 |
 | 冒烟检查 | `orchestrator.ps1 -Action start -Smoke` | 只读打点，不产生副作用 |
 | 刷新 | 立即触发一轮采集 | 自动刷新关闭时用手动刷新 |
-| 打开日志目录 | 资源管理器打开 `logs\` | 排查现场用 |
+| 打开日志目录 | 状态栏右下角「日志目录」链接（原工具栏按钮已移出，避免主操作区被挤爆） | 排查现场用 |
+| 启动守护 / 停止守护 | `guardian-launch.ps1 -Start / -Stop` | 启停**独立常驻进程**；守护在跑时「启动守护」自动置灰 |
 
 开关：`自动刷新`（默认开，600ms 一轮）· `关闭面板时停止服务`（**默认关**，勾选后关窗顺带停服）。
 
-四个视图：
+### 界面规范（2026-11-17 重构）
 
-| 视图 | 内容 | 数据源 |
+- **单一主色 + 中性灰阶 + 语义状态色**：主色医疗蓝只用于品牌标识、主操作按钮、选中页签下划线；
+  状态色只用于状态文字/色点（正常绿 / 降级橙 / 异常红 / 未启动灰），不做整行染色。
+- **色值/字号集中**：全部定义在 `gui.ps1` 顶部「设计令牌」段，界面代码不写字面色值——换主题只改一处。
+- **数据前置**：顶部 4 张 KPI 卡（服务就绪 / 降级 / 异常·未启动 / 自动守护），判读不用先扫表格；
+  KPI 数字「非零才亮色」，避免「异常 0」被红色误读成故障。
+- **按钮分层**：主操作（启动全部，实心主色）/ 破坏性（停止全部，红描边）/ 次操作（重启、冒烟）/ 弱操作（刷新）。
+- **工具栏三列，守护启停独立成列**（2026-11-17 修）：`主操作组(Percent 100) | 守护启停(AutoSize) | 刷新选项(AutoSize)`。
+  `TableLayoutPanel` 优先保证 `AutoSize` 列的完整宽度，所以**「启动 / 停止守护」在任何窗口宽度下都不会被裁**。
+  此前守护按钮排在主操作组末尾，主操作组需要约 935px 而实际只分到约 770px，且 `WrapContents=$false`
+  不换行直接裁剪 —— 「停止守护」整颗消失，用户以为没有这个按钮。
+  ⚠️ 改这块务必守住两条：① 守护启停不要挪回主操作组；② `$btnBar.WrapContents` 保持 `$false`
+  （设 `$true` 会让 AutoSize 按两行预算高度，工具栏下方多出约 100px 空白）。
+- **两段式采集**：先落「进程 / 端口」骨架（约 1s 首屏可见），再逐服务补 HTTP 健康判定——
+  某服务健康端点超时（最长 8s）不再让整屏空白；判定分支与单段版本逐字一致。
+- **空态不留白**：请求流水、守护服务表在无数据时给一行灰色说明，避免空表被误读成「读不到日志」。
+- 状态同时用**文字 + 色点**表达，色盲/灰度打印可读；表格行高 26px、无格线、末列自适应铺满。
+
+四个页签（顶部另有「服务状态」矩阵卡片）：
+
+| 页签 | 内容 | 数据源 |
 |---|---|---|
-| 服务状态矩阵 | 服务 / 端口 / PID / 进程 / 健康探测 / 判定 / 说明 | `config.json` + `run\*.pid` + 健康探测 |
 | 请求流水 | 时间 / 方法 / 路径 / 状态码 / 判定 / 客户端 / 说明 | 网关访问日志 `logs\gateway.log` |
 | 服务日志 | 按文件选择，增量尾部追加 | `logs\*.log` / `*.error.log` |
 | 操作输出 | 编排器 stdout/stderr 实时导入 | `run\_gui-op-out.txt` / `_gui-op-err.txt` |
+| 守护告警 | 巡检摘要（最近巡检 / 判定 / 今日重启 / 上次告警）+ 服务状态表 + 守护日志尾部 | `run\guardian-state.json` / `logs\guardian.log` |
 
 **两级判定**
 
@@ -69,7 +90,8 @@
 **边界**
 
 - 面板**只观察与转发操作**：启动 / 停止 / 重启 / 冒烟一律以子进程调用 `orchestrator.ps1`，不在面板里重复实现编排逻辑。
-- 不做守护 / 自动重启（与 `start-all.bat` 的既有边界一致）：面板是**监控台，不是进程守护**。
+- 面板**自身不做守护**，但工具栏「启动守护 / 停止守护」按钮转交独立进程 `guardian.ps1`（见下节「常驻守护」）；
+  守护与面板解耦——关掉面板后守护照常运行。
 - 「时间」列是**观测时间**（uvicorn 访问日志本身不含时间戳），不是请求发生的真实时刻。
 - 「隐藏健康探测请求」默认勾选：探测路径的请求（含其上游失败行）从流水视图隐藏，避免淹没业务请求。
 - 关闭窗口即退出面板；是否顺带停止服务由工具栏「关闭面板时停止服务」复选框决定（**默认不勾**）。
@@ -77,6 +99,71 @@
   **不依赖 PowerShell 的 `Process.ExitCode`** —— PS5.1 下该属性常为 `$null`，曾导致任何操作都显示「退出码 —— 异常」。
 - **操作输出恒按 UTF-8 解**（编排器启动即钉 `[Console]::OutputEncoding = UTF8`），且用有状态解码器：
   读到的最后半个汉字留到下一轮再解，不再因为「截断 → 误判 GBK」把整页输出变成乱码。
+
+## 常驻守护与邮件告警（2026-11-17 新增）
+
+面板是监控台；**真正的自愈由独立常驻进程 `scripts\guardian.ps1` 承担**，两者解耦——关掉面板守护照跑。
+
+| 入口 | 作用 |
+| --- | --- |
+| `start-guardian.bat` | 启动常驻守护（explorer 脱离会话，防重复） |
+| `stop-guardian.bat` | 停止守护（按 pid 精确杀，不误伤后端服务） |
+| `status-guardian.bat` | 查看守护状态 + 日志尾部 |
+| 面板工具栏「启动守护 / 停止守护」 | 等价于上面两个 bat 的图形入口 |
+
+**自愈链路**：定时探活（默认 60s）→ 连续 2 次判 `DOWN`（防抖动）→ 冷却检查（默认 180s，防疯狂重启）
+→ `orchestrator -Action start` 幂等补缺（**不误杀健康服务**）→ 重启后复查 → 仍 `DOWN` 则发 QQ 告警邮件。
+`DEGRADED`（端口通但健康非 2xx，如网关 503）**只记录不重启**——上游降级不是宕机。
+告警抑制：同一故障只发一次，服务恢复后重置，再掉线可再发。
+
+**邮件内容**（四段式）：检测时间 / 服务状态矩阵 / 失败原因 / 重启尝试记录 / 错误日志摘要。
+
+**凭据零硬编码**：全部读 `env.local`（模板已追加在文件末尾，默认整段注释）。要发信就填这 4 项：
+
+| 键 | 填什么 |
+|---|---|
+| `ALERT_MAIL_ENABLED` | `true`（不填默认 false：守护照常自愈重启，只是不发信） |
+| `ALERT_MAIL_USER` | 发件 QQ 邮箱全称，如 `123456@qq.com` |
+| `ALERT_MAIL_AUTH_CODE` | **16 位 SMTP 授权码，不是 QQ 登录密码** |
+| `ALERT_MAIL_TO` | 收件邮箱；多个用 `;` 或 `,` 分隔 |
+
+授权码获取：QQ 邮箱网页版 →「设置」→「账号与安全」→ 开启「POP3/IMAP/SMTP/Exchange/CardDAV/CalDAV 服务」
+→ 手机短信或 QQ 扫码验证 → 页面给出 16 位授权码（只显示一次，先存好）；
+遗忘或泄露：设置 →「账号与安全」→「设备管理 → 授权码管理」→ 重置。
+
+验证顺序：`mail-alert.ps1 -SelfTest`（只校验配置、渲染正文，不连 SMTP）→ `mail-alert.ps1 -SendTest`
+（真发一封）→ 双击 `start-guardian.bat` 启动守护。`env.local` 在 `.gitignore` 内，凭据不入库；
+**值后面不要写行内注释**（会被当成值的一部分）。`-SelfTest -BodyOut x.txt` 可把正文原样导出核对排版。
+**默认不发信**：`ALERT_MAIL_ENABLED` 未置 `true` 时守护照常自愈重启，只是不发邮件。
+
+**状态文件**：`run\guardian-state.json`（面板「守护告警」页签读取展示）、`logs\guardian.log`（守护日志）、
+`logs\guardian-launch.log`（`guardian-run.bat` 的启动期 stdout/stderr，**启动失败先看这里**）。
+
+### 启动失败怎么查（2026-11-17 踩坑记录）
+
+现象：双击 `start-guardian.bat` 提示已请求启动，但 `status-guardian.bat` 显示未运行，
+`logs\guardian.log` **零新增**，`run\guardian.pid` 也不存在——像「点了没反应」。
+
+根因：`guardian.ps1` 在写 pid 之后第一件事就是打印「守护启动」；而 `guardian-run.bat` 以
+`-WindowStyle Hidden` 拉起时控制台句柄不可写，`[Console]::WriteLine` 抛异常，配合脚本顶部的
+`$ErrorActionPreference = "Stop"` 直接终止，`finally` 又把刚写的 pid 删掉 → 全程零痕迹。
+
+已修：① `Out-Guard` 的 Console 写入包 `try/catch`（输出失败不再影响守护）；
+② `guardian-run.bat` 把 stdout/stderr 重定向到 `logs\guardian-launch.log`；
+③ `guardian-launch.ps1 -Start` 启动后轮询 12 秒自确认，失败会直接打印 launch 日志末尾或给出前台定位命令。
+
+排查顺序：
+1. `type logs\guardian-launch.log` —— 有 `=== guardian-run begin ===` 说明 bat 已执行，往下看 PowerShell 报错；
+2. 完全没有该文件 → explorer 未执行 bat，直接前台跑：
+   `powershell -NoProfile -ExecutionPolicy Bypass -File scripts\guardian.ps1`（会当场打印原因）；
+3. 有 pid 但进程秒退 → 看 `logs\guardian.log` 最后一条；
+4. 报「已添加项。字典中的关键字: HTTPS_PROXY」→ 环境块存在大小写重复变量，
+   `Start-Process` 带输出重定向时会因此失败。`guardian-launch.ps1` 已在启动前调
+   `Remove-CaseDuplicateEnv` 归一；若在**其他自写脚本**里遇到，同样先调该函数再 `Start-Process`。
+
+> ⚠️ 常驻依赖 explorer 脱离会话（本机 `schtasks.exe` 被安全中心拦截，计划任务不可用）。
+> 请**双击** `start-guardian.bat`（真实桌面会话）启动；在临时终端里以父子进程方式拉起的守护
+> 会随该终端结束被回收。面板里点「启动守护」同走 explorer 路径，并会等 pid 出现后才报「启动成功」。
 
 ## 退出码
 
@@ -108,9 +195,13 @@
 backend/deploy/
 ├── start-all.bat / stop-all.bat / status.bat / restart.bat
 ├── start-gui.bat                   # 图形面板双击入口（-STA 启动 scripts/gui.ps1）
+├── start-guardian.bat / stop-guardian.bat / status-guardian.bat / guardian-run.bat  # 常驻守护入口
 ├── scripts/orchestrator.ps1        # 实际逻辑（PowerShell 5.1 兼容）
-├── scripts/gui.ps1                 # WinForms 常驻面板（状态矩阵 / 请求流水 / 服务日志 / 操作输出）
-├── scripts/deploy-common.ps1       # 共享工具：路径常量 + 健康/端口/pid 判定口径（orchestrator 与 gui 同一份）
+├── scripts/gui.ps1                 # WinForms 常驻面板（状态矩阵 / 请求流水 / 服务日志 / 操作输出 / 守护告警）
+├── scripts/guardian.ps1            # 常驻守护：探活→重启→邮件告警（独立进程，脱离面板）
+├── scripts/guardian-launch.ps1     # 守护启停薄入口（explorer 脱离会话，供 bat / 面板调用）
+├── scripts/mail-alert.ps1          # QQ 邮箱告警：正文渲染 + SMTP 投递（凭据读 env.local）
+├── scripts/deploy-common.ps1       # 共享工具：路径常量 + 健康/端口/pid 判定口径（orchestrator / gui / guardian 同一份）
 ├── scripts/fault_drill.py          # M4·D4.1 依赖中断故障演练（真实打停 + 幂等补起 + 干净度）
 ├── scripts/accept-frontend-contract.ps1  # 前端契约十条验收（启动→打点→汇总→可选停止）
 ├── resources/                      # 静态素材目录（经 /api/gw/assets 分发；前端适配见 docs/v4/09）

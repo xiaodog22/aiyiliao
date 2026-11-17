@@ -48,18 +48,23 @@ public class AiTaskController {
     /** SSE 轮询间隔与总时长（跟任务预算对齐，不无限挂着连接）。 */
     private static final long POLL_INTERVAL_MS = 1000L;
     private static final long SSE_TIMEOUT_MS = 130_000L;
+    /** 任务已终态后，等待上游增量排空的上限（末几块可能还在管道里）。 */
+    private static final long STREAM_DRAIN_MS = 2_000L;
     private static final int TASK_ID_MAX = 64;
 
     private final AiTaskService aiTaskService;
+    private final AiTaskClient aiTaskClient;
     private final ConsultationService consultationService;
     private final AuthService authService;
     private final CurrentUserContext currentUserContext;
     private final ObjectMapper mapper;
 
-    public AiTaskController(AiTaskService aiTaskService, ConsultationService consultationService,
+    public AiTaskController(AiTaskService aiTaskService, AiTaskClient aiTaskClient,
+                            ConsultationService consultationService,
                             AuthService authService, CurrentUserContext currentUserContext,
                             ObjectMapper mapper) {
         this.aiTaskService = aiTaskService;
+        this.aiTaskClient = aiTaskClient;
         this.consultationService = consultationService;
         this.authService = authService;
         this.currentUserContext = currentUserContext;
@@ -94,6 +99,9 @@ public class AiTaskController {
      * SSE 事件流（契约：id: + event: + data:，data 为 AiTaskEvent JSON）。
      * 响应头强制 Cache-Control: no-store 与 X-Accel-Buffering: no（反代不得缓冲）。
      * 流只是增量通道：completed 后仍以 GET 单查终态为准。
+     *
+     * <p>2026-11-17（对外流式二期）：`delta` 由「终态整段一次发」改为
+     * <b>边生成边发</b>，数据源是 ai-service 的一期冻结增量契约。
      */
     @GetMapping(value = "/{taskId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter events(@PathVariable String taskId,
@@ -123,83 +131,122 @@ public class AiTaskController {
 
     // ---------------------------------------------------------------- 内部
 
-    /** 合成事件流：accepted → 轮询 status/delta/citation/safety/tts → completed/cancelled/error。 */
-    private void streamEvents(String userId, String taskId, long resumeSeq, SseEmitter emitter) {
-        EventSeq seq = new EventSeq(resumeSeq);
+    /**
+     * 事件流：accepted → status → [实时 delta…] → status 变化 → completed/cancelled/error。
+     *
+     * <p>delta 现在有两个来源，客户端统一「收到就追加」，两种都正确：
+     * <ul>
+     *   <li><b>实时</b>：任务运行中，逐块转发 ai-service 的增量；</li>
+     *   <li><b>兜底</b>：缓存命中 / 非 CHAT / 上游流不可用 / 断线重连 → 终态发一整段。</li>
+     * </ul>
+     * 终态权威始终是本服务轮询 `GET /{taskId}` 的结果，上游的 done/error 一律不转发
+     * （否则客户端会收到两个终态事件）。
+     *
+     * <p>包级可见（非 private）：单测直接驱动这条流，避免为了拿 SseEmitter 而走一遍
+     * HTTP 装配（走完装配后线程早已结束，看不到「轮询线程 + 增量线程」的真实交错）。
+     */
+    void streamEvents(String userId, String taskId, long resumeSeq, SseEmitter emitter) {
+        SseSink sink = new SseSink(emitter, taskId, new EventSeq(resumeSeq), mapper);
+        AiTaskStream upstream = null;
         try {
             AiTaskService.AiTaskData first = aiTaskService.get(userId, taskId);
-            send(emitter, seq, taskId, "accepted", Map.of(
+            sink.send("accepted", Map.of(
                     "taskId", taskId, "status", first.status(),
                     "occurredAt", Instant.now().toString()));
-            send(emitter, seq, taskId, "status", statusPayload(taskId, first));
+            sink.send("status", statusPayload(taskId, first));
 
-            String lastStatus = first.status();
-            while (!TERMINAL.contains(lastStatus)) {
-                Thread.sleep(POLL_INTERVAL_MS);
-                AiTaskService.AiTaskData current = aiTaskService.get(userId, taskId);
-                if (!current.status().equals(lastStatus)) {
-                    lastStatus = current.status();
-                    send(emitter, seq, taskId, "status", statusPayload(taskId, current));
+            if (!TERMINAL.contains(first.status())) {
+                // 断线重连（带 Last-Event-ID）不接实时流：上游没有 replay buffer，
+                // 中途接入必然缺前缀，拼出来是「后半段」。改由终态整段替换，语义安全。
+                if (resumeSeq == 0) {
+                    // ⚠️ 必须用 upstreamTaskId（`t_xxx`），不是对外 taskId（`task-<uuid>`）：
+                    // 两者是不同命名空间，传错上游直接 404，openStream 按契约静默返回 null，
+                    // 表现成「流式端点正常但只有一个整段 delta」——2026-11-17 真机冒烟踩过。
+                    upstream = aiTaskClient.openStream(aiTaskService.ownedRow(userId, taskId).upstreamTaskId());
+                    if (upstream != null) {
+                        upstream.start(sink::sendDelta);
+                    }
+                }
+                String lastStatus = first.status();
+                while (!TERMINAL.contains(lastStatus)) {
+                    Thread.sleep(POLL_INTERVAL_MS);
+                    AiTaskService.AiTaskData current = aiTaskService.get(userId, taskId);
+                    if (!current.status().equals(lastStatus)) {
+                        lastStatus = current.status();
+                        sink.send("status", statusPayload(taskId, current));
+                    }
                 }
             }
 
-            AiTaskService.AiTaskData finalTask = aiTaskService.get(userId, taskId);
-            emitTerminal(emitter, seq, taskId, finalTask);
-            emitter.complete();
+            if (upstream != null) {
+                upstream.awaitDrain(STREAM_DRAIN_MS);
+            }
+            emitTerminal(sink, aiTaskService.get(userId, taskId));
+            sink.complete();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            emitter.complete();
+            sink.complete();
         } catch (ApiException e) {
             // 任务在流期间被删除/身份失效：按 error 事件收口（绝不静默断流）
             try {
-                send(emitter, seq, taskId, "error", Map.of(
+                sink.send("error", Map.of(
                         "taskId", taskId, "error", Map.of(
                                 "code", e.getCode(), "message", e.getMessage() == null ? "" : e.getMessage(),
                                 "requestId", RequestIds.current(), "retryable", e.isRetryable(),
                                 "serverTime", Instant.now().toString()),
                         "occurredAt", Instant.now().toString()));
-                emitter.complete();
+                sink.complete();
             } catch (Exception ignore) {
-                emitter.complete();
+                sink.complete();
             }
         } catch (Exception e) {
-            log.warn("SSE 合成流异常 task={} cause={}", taskId, e.getClass().getSimpleName());
-            emitter.completeWithError(e);
+            log.warn("SSE 事件流异常 task={} cause={}", taskId, e.getClass().getSimpleName());
+            sink.completeWithError(e);
+        } finally {
+            if (upstream != null) {
+                upstream.close();
+            }
         }
     }
 
-    /** 终态收口：SUCCEEDED → delta（完整文本）+ citation + safety + [tts] + completed；CANCELLED → cancelled；其余 → error。 */
-    private void emitTerminal(SseEmitter emitter, EventSeq seq, String taskId,
-                              AiTaskService.AiTaskData task) throws IOException {
+    /**
+     * 终态收口：SUCCEEDED → [delta] + citation + safety + [tts] + completed；CANCELLED → cancelled；其余 → error。
+     *
+     * <p>delta 只在**本次没有任何实时增量**时补发整段（`deltaCount()==0`）：缓存命中、
+     * 非 CHAT 类型、上游流不可用、带 Last-Event-ID 重连都走这条路。已有实时增量还补整段的话，
+     * 客户端「收到就追加」会看到重复文本。
+     */
+    private void emitTerminal(SseSink sink, AiTaskService.AiTaskData task) throws IOException {
+        String taskId = sink.taskId();
         switch (task.status()) {
             case "SUCCEEDED" -> {
                 var result = task.result();
-                if (result != null && result.hasNonNull("text")) {
-                    send(emitter, seq, taskId, "delta", Map.of(
+                if (sink.deltaCount() == 0 && result != null && result.hasNonNull("text")) {
+                    sink.send("delta", Map.of(
                             "taskId", taskId, "text", result.get("text").asText(),
                             "occurredAt", Instant.now().toString()));
                 }
                 if (result != null && result.has("citations") && result.get("citations").isArray()) {
                     for (var citation : result.get("citations")) {
-                        send(emitter, seq, taskId, "citation", Map.of(
+                        sink.send("citation", Map.of(
                                 "taskId", taskId, "citation", citation,
                                 "occurredAt", Instant.now().toString()));
                     }
                 }
                 if (result != null && result.hasNonNull("safety")) {
-                    send(emitter, seq, taskId, "safety", Map.of(
+                    sink.send("safety", Map.of(
                             "taskId", taskId, "safety", result.get("safety"),
                             "occurredAt", Instant.now().toString()));
                 }
                 if (result != null && result.hasNonNull("audioUrl")) {
-                    send(emitter, seq, taskId, "tts", Map.of(
+                    sink.send("tts", Map.of(
                             "taskId", taskId, "audioUrl", result.get("audioUrl").asText(),
                             "occurredAt", Instant.now().toString()));
                 }
-                send(emitter, seq, taskId, "completed", Map.of(
+                sink.send("completed", Map.of(
                         "taskId", taskId, "status", "SUCCEEDED", "occurredAt", Instant.now().toString()));
             }
-            case "CANCELLED" -> send(emitter, seq, taskId, "cancelled", Map.of(
+            case "CANCELLED" -> sink.send("cancelled", Map.of(
                     "taskId", taskId, "status", "CANCELLED", "occurredAt", Instant.now().toString()));
             default -> {
                 // FAILED / EXPIRED：结构化 error 事件（EXPIRED 也走 error，客户端据此停止等待）
@@ -217,7 +264,7 @@ public class AiTaskController {
                 payload.put("taskId", taskId);
                 payload.put("error", error);
                 payload.put("occurredAt", Instant.now().toString());
-                send(emitter, seq, taskId, "error", payload);
+                sink.send("error", payload);
             }
         }
     }
@@ -231,29 +278,94 @@ public class AiTaskController {
         return payload;
     }
 
-    /** 发送一帧 SSE（id/event/data）。 */
-    private void send(SseEmitter emitter, EventSeq seq, String taskId, String type,
-                      Map<String, Object> payload) throws IOException {
-        long next = seq.next();
-        Map<String, Object> event = new LinkedHashMap<>(payload);
-        event.put("seq", next);
-        event.put("type", type);
-        // AiTaskEvent additionalProperties:false：只保留契约字段
-        Map<String, Object> clean = new LinkedHashMap<>();
-        clean.put("taskId", taskId);
-        clean.put("seq", next);
-        clean.put("type", type);
-        copyIfPresent(event, clean, "text");
-        copyIfPresent(event, clean, "citation");
-        copyIfPresent(event, clean, "safety");
-        copyIfPresent(event, clean, "status");
-        copyIfPresent(event, clean, "audioUrl");
-        copyIfPresent(event, clean, "error");
-        clean.put("occurredAt", event.getOrDefault("occurredAt", Instant.now().toString()));
-        emitter.send(SseEmitter.event()
-                .id(String.valueOf(next))
-                .name(type)
-                .data(mapper.writeValueAsString(clean), MediaType.APPLICATION_JSON));
+    /**
+     * SSE 发送口：把「轮询线程」与「增量读取线程」对同一个 emitter 的写入串行化。
+     *
+     * <p>为什么必须加锁：SseEmitter 不是线程安全的。对外流式二期之后，delta 由上游读取线程
+     * 推送、status/终态由轮询线程推送，两个线程并发 send 会把帧写乱（表现为客户端收到
+     * 半截 JSON 或错乱 seq）。
+     *
+     * <p>断开处理：客户端断开后 send 抛 IOException，增量线程必须**就此停手但不得取消任务**
+     * （切后台的用户回来还要看答案），轮询线程仍继续跑到终态落库。
+     */
+    private static final class SseSink {
+
+        private final SseEmitter emitter;
+        private final String taskId;
+        private final EventSeq seq;
+        private final ObjectMapper mapper;
+        private int deltas;
+        private boolean broken;
+
+        private SseSink(SseEmitter emitter, String taskId, EventSeq seq, ObjectMapper mapper) {
+            this.emitter = emitter;
+            this.taskId = taskId;
+            this.seq = seq;
+            this.mapper = mapper;
+        }
+
+        private String taskId() {
+            return taskId;
+        }
+
+        private synchronized int deltaCount() {
+            return deltas;
+        }
+
+        /** 增量推送：失败即视为客户端已断开，只停推送，不影响任务本身。 */
+        private void sendDelta(String text) {
+            if (broken) {
+                return;
+            }
+            try {
+                send("delta", Map.of(
+                        "taskId", taskId, "text", text,
+                        "occurredAt", Instant.now().toString()));
+                deltas++;
+            } catch (IOException e) {
+                broken = true;
+            }
+        }
+
+        /** 发送一帧 SSE（id/event/data）。 */
+        private synchronized void send(String type, Map<String, Object> payload) throws IOException {
+            long next = seq.next();
+            Map<String, Object> event = new LinkedHashMap<>(payload);
+            event.put("seq", next);
+            event.put("type", type);
+            // AiTaskEvent additionalProperties:false：只保留契约字段
+            Map<String, Object> clean = new LinkedHashMap<>();
+            clean.put("taskId", taskId);
+            clean.put("seq", next);
+            clean.put("type", type);
+            copyIfPresent(event, clean, "text");
+            copyIfPresent(event, clean, "citation");
+            copyIfPresent(event, clean, "safety");
+            copyIfPresent(event, clean, "status");
+            copyIfPresent(event, clean, "audioUrl");
+            copyIfPresent(event, clean, "error");
+            clean.put("occurredAt", event.getOrDefault("occurredAt", Instant.now().toString()));
+            emitter.send(SseEmitter.event()
+                    .id(String.valueOf(next))
+                    .name(type)
+                    .data(mapper.writeValueAsString(clean), MediaType.APPLICATION_JSON));
+        }
+
+        private void complete() {
+            try {
+                emitter.complete();
+            } catch (Exception ignore) {
+                // 已断开/已完成的重复收尾无副作用
+            }
+        }
+
+        private void completeWithError(Throwable e) {
+            try {
+                emitter.completeWithError(e);
+            } catch (Exception ignore) {
+                // 同上
+            }
+        }
     }
 
     private static void copyIfPresent(Map<String, Object> from, Map<String, Object> to, String key) {

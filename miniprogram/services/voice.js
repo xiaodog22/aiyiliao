@@ -1,9 +1,11 @@
 /**
- * voice.js —— 音色管理服务（2026-10-23 换回远端数据源）
+ * voice.js —— 音色管理服务（2026-10-23 换回远端数据源；2026-11-17 统一目录口径）
  *
  * 数据源（契约 business-openapi.yaml：GET/POST/DELETE /api/v1/voice/voices 等）：
  *   · catalogRemote()/list()：GET VOICE_LIST 远端优先（服务端内置 + 用户偏好 + 自定义），
- *     失败回落本地 CATALOG（源标注 source: remote|local），不假装远端数据。
+ *     失败回落本地 CATALOG（源标注 source: remote|cache|local），不假装远端数据。
+ *   · **目录单一数据源**：远端一旦成功拉取，catalog() 也以远端目录为唯一可见列表；
+ *     本地 CATALOG 只作离线兜底，不再与远端合并（见 CATALOG 注释）。
  *   · 设默认 / 保存偏好：PUT VOICE_DEFAULT（服务端**立即持久化**，换机随账号恢复），
  *     本地 storage 同步生效；云端失败只降级不上报错误（本机仍可用）。
  *   · 删除自定义音色：DELETE VOICE_DELETE（幂等），本地再记一条隐藏记录。
@@ -18,7 +20,7 @@ const speech = require('./speech.js')
 const { get, put, post, del, API, withPath, newIdempotencyKey } = require('./request.js')
 
 const HIDDEN_KEY = 'wb_voice_hidden'
-const DEFAULT_VOICE = 'preset_gentle'
+const DEFAULT_VOICE = 'qwen3-female-1'
 
 /**
  * 最近一次远端目录（服务端内置 + 自定义）。
@@ -36,45 +38,41 @@ let _remoteRows = []
 let _writeGen = 0
 
 /**
- * 内置音色目录 —— 名称/描述取自设计稿，顺序与设计稿一致。
- * custom=true 的音色可删除（设计稿第三个音色带「删除」）；内置三项不可删。
+ * 内置音色目录（**仅离线兜底**）—— 与后端内置音色**同 id 同名称**：
+ * business-service `application.yml` 的 voice.builtin = qwen3-female-1 / qwen3-male-1。
+ *
+ * ⚠️ 2026-11-17 修（本页「保存后音色列表突然变多 + 冒出潮汕话」）：
+ *   历史目录另立一套 `preset_*` id（温柔/专业/亲切/潮汕话 四项），与后端 `qwen3-*` 不通用；
+ *   catalog() 又把「本地 ∪ 远端」合并，于是首屏远端 2 项 → 点保存后 _refresh() 走本地全集
+ *   → 列表瞬间膨胀成 6 项，还带出后端根本没有的「亲切女声 / 潮汕话女声」。
+ *   现改为：id 与后端对齐，目录只保留后端真实下发的两项；
+ *   方言音色不在产品范围内（2026-11-17 结项指令：方言 ASR 不实现），已删除。
  */
 const CATALOG = [
   {
-    id: 'preset_gentle',
+    id: 'qwen3-female-1',
     name: '温柔女声',
-    locale: '普通话',
-    trait: '温和细腻',
-    // 设计稿未在列表里展示该音色的描述（它就是「当前默认音色」，只出现在顶部蓝边卡），
-    // 按同组「语言 · 特点」体例补齐，待设计确认 —— 见遗留清单第 23 页。
-    desc: '普通话 · 温和细腻',
+    desc: '普通话 · 女声',
     custom: false
   },
   {
-    id: 'preset_pro',
-    name: '专业男声',
-    locale: '普通话',
-    trait: '沉稳专业',
-    desc: '普通话 · 沉稳专业',
+    id: 'qwen3-male-1',
+    name: '沉稳男声',
+    desc: '普通话 · 男声',
     custom: false
-  },
-  {
-    id: 'preset_warm',
-    name: '亲切女声',
-    locale: '普通话',
-    trait: '温和亲切',
-    desc: '普通话 · 温和亲切',
-    custom: false
-  },
-  {
-    id: 'preset_chaoshan',
-    name: '潮汕话女声',
-    locale: '潮汕话',
-    trait: '本地口音',
-    desc: '潮汕话 · 本地口音',
-    custom: true
   }
 ]
+
+/** 远端 locale / gender → 中文描述（未知值原样保留，不猜） */
+const LOCALE_LABELS = { 'zh-cn': '普通话', zh: '普通话', 'zh-hans': '普通话', 'en-us': '英语', en: '英语' }
+const GENDER_LABELS = { female: '女声', male: '男声' }
+
+function _voiceDesc(locale, gender) {
+  const rawLocale = String(locale || '').trim()
+  const loc = LOCALE_LABELS[rawLocale.toLowerCase()] || rawLocale
+  const gen = GENDER_LABELS[String(gender || '').trim().toLowerCase()] || ''
+  return [loc, gen].filter(Boolean).join(' · ')
+}
 
 // ============ 本地记忆：已隐藏（已删除）的自定义音色 ============
 function hiddenIds() {
@@ -88,17 +86,25 @@ function _writeHidden(arr) {
   try { wx.setStorageSync(HIDDEN_KEY, Array.isArray(arr) ? arr : []) } catch (e) {}
 }
 
+/** 真实存在且被删的自定义音色条数（旧版 preset_* 残留记录不计数，避免底部空挂「恢复」） */
+function _hiddenCount(hidden) {
+  const all = _knownRows()
+  return hidden.filter((id) => all.some((v) => v.id === id && v.custom)).length
+}
+
 // ============ 目录 ============
 /**
  * 同步取目录（页面首屏直接用，无需 loading 态）
+ * 可见列表口径 = **远端成功过就只认远端**，否则本地 CATALOG 兜底（离线可用）。
+ * 两者不得合并，否则保存后 _refresh() 会把后端没有的音色抖出来（见 CATALOG 注释）。
  * @returns {{rows:Array, current:string, currentName:string, hiddenCount:number}}
  */
 function catalog() {
   const hidden = hiddenIds()
-  // B1-01：目录 = 本地内置 ∪ 最近远端。只用 CATALOG 会把**远端音色**当成"已删除"，
-  // 用户刚设的远端默认音色会被回落成 CATALOG[0]，storage 也被重写。
+  const all = _knownRows()
+  const base = _remoteRows.length ? _remoteRows : all
   // ⚠️ 判断"是否还存在"必须排除用户已删除（hidden）的音色，否则删除后不会回落（test ⑥）。
-  const known = _knownRows().filter((v) => !(v.custom && hidden.indexOf(v.id) >= 0))
+  const known = base.filter((v) => !(v.custom && hidden.indexOf(v.id) >= 0))
   const rows = known.map((v) => ({
     id: v.id,
     name: v.name,
@@ -107,7 +113,7 @@ function catalog() {
   }))
 
   let current = currentVoice()
-  // 只有连「本地 ∪ 最近远端」的可见项都没有时才回退：本地不认识 ≠ 已删除
+  // 只有连「当前可见列表」都没有时才回退：本地不认识 ≠ 已删除
   if (!known.some((r) => r.id === current)) {
     current = rows.length ? rows[0].id : ''
     speech.setCurrentVoice(current)
@@ -118,7 +124,9 @@ function catalog() {
     current,
     currentName: hit ? hit.name : '',
     currentDesc: hit ? hit.desc : '',
-    hiddenCount: hidden.length
+    // 只统计"目录里真实存在的自定义音色被删了几条"：旧版 preset_* 残留的隐藏记录不计数，
+    // 否则底部会一直挂一条「恢复默认音色列表（已删除 N 个）」却没有可恢复项。
+    hiddenCount: _hiddenCount(hidden)
   }
 }
 
@@ -153,12 +161,13 @@ function catalogRemote() {
         .map((v) => ({
           id: v.id,
           name: v.displayName || '',
-          desc: [v.locale, v.gender].filter(Boolean).join(' · '),
+          desc: _voiceDesc(v.locale, v.gender),
           custom: !!v.isCustom,
           available: v.available !== false
         }))
         .filter((v) => v.available)
-      if (!rows.length) return null
+      // 空目录 = 服务端没给任何可用音色，按不可用处理回落本地，不要把页面挂在"暂无音色"
+      if (!rows.length) return Object.assign({}, catalog(), { source: 'local' })
       const hidden = hiddenIds()
       const visible = rows.filter((v) => !(v.custom && hidden.indexOf(v.id) >= 0))
       // 记住远端全集（含已隐藏的），供 save/remove 校验与删除判断使用
@@ -176,13 +185,14 @@ function catalogRemote() {
         current,
         currentName: hit ? hit.name : '',
         currentDesc: hit ? hit.desc : '',
-        hiddenCount: hidden.length,
+        hiddenCount: _hiddenCount(hidden),
         source: 'remote'
       }
     })
     .catch(() => {
       const c = catalog()
-      return Object.assign({}, c, { source: 'local' })
+      // 用上次成功的远端目录兜底时如实标 cache，不冒充本次远端响应
+      return Object.assign({}, c, { source: _remoteRows.length ? 'cache' : 'local' })
     })
 }
 

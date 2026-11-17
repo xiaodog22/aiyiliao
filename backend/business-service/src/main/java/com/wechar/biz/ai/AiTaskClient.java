@@ -25,4 +25,12 @@ public interface AiTaskClient {
 
     /** 就绪探针：能力状态 available/degraded/unavailable（models/voices 用）。不可达返回 null。 */
     UpstreamReadiness readiness();
+
+    /**
+     * 打开任务增量流（对外流式二期）。
+     *
+     * <p>返回 null 表示「本次没有实时增量可用」——任务已终态、上游流式关闭、或内网不可达。
+     * 调用方必须据此回落到「终态整段文本」，这不是错误，是设计内的降级路径。
+     */
+    AiTaskStream openStream(String taskId);
 }

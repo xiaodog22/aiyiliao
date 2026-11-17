@@ -61,6 +61,10 @@ global.wx = {
         o.success({ statusCode: 200, data: { code: 'OK', data: { items: [{ id: 'f1', displayName: '陈大伯', relation: 'FATHER' }] } } })
       } else if (url.indexOf('/api/v1/appointments/me') >= 0) {
         o.success({ statusCode: 200, data: { code: 'OK', data: CONTRACT_APPOINTMENTS } })
+      } else if (url.indexOf('/api/v1/voice/voices/default') >= 0) {
+        o.success({ statusCode: 200, data: { code: 'OK', data: { voiceId: (o.data && o.data.voiceId) || '', rate: (o.data && o.data.rate) || 1 } } })
+      } else if (url.indexOf('/api/v1/voice/voices') >= 0) {
+        o.success({ statusCode: 200, data: { code: 'OK', data: REMOTE_VOICES } })
       } else {
         o.success({ statusCode: 200, data: { code: 'OK', data: [] } })
       }
@@ -138,6 +142,14 @@ const CONTRACT_APPOINTMENTS = []
     location: '门诊楼 3 楼'
   })
 })
+
+// 远端音色目录（GET /api/v1/voice/voices）= 后端内置两项（qwen3-*，与 application.yml 一致）+ 一条自定义。
+// locale/gender 用后端原值（zh-CN/female），钉住前端必须本地化成「普通话 · 女声」。
+const REMOTE_VOICES = [
+  { id: 'qwen3-female-1', displayName: '温柔女声', locale: 'zh-CN', gender: 'female', isCustom: false, available: true },
+  { id: 'qwen3-male-1', displayName: '沉稳男声', locale: 'zh-CN', gender: 'male', isCustom: false, available: true },
+  { id: 'custom-1', displayName: '我的音色', locale: 'zh-CN', gender: 'female', isCustom: true, available: true }
+]
 
 // ==================== ① apt-status 7 态映射 ====================
 ;(function testAptStatus() {
@@ -230,7 +242,7 @@ async function testSettingsClearCache() {
   storage.wb_login_at = 1730000000000
   storage.wb_theme = 'large'
   storage.wb_high_contrast = true
-  storage.wb_voice = 'preset_pro'
+  storage.wb_voice = 'qwen3-male-1'
   storage.wb_voice_rate = 1.2
   storage.wb_voice_read = true
   storage.wb_refresh_token = 'rt-token'
@@ -258,57 +270,68 @@ async function testSettingsClearCache() {
   check('[settings] 无关缓存确被清除', storage.wb_unrelated_cache === undefined)
   // 修复后（P2-11）：音色偏好属于"用户设置"，清缓存后必须保留
   check('[settings] 清缓存后 wb_voice 保留（P2-11 已修）',
-    storage.wb_voice === 'preset_pro', '实得 ' + JSON.stringify(storage.wb_voice))
+    storage.wb_voice === 'qwen3-male-1', '实得 ' + JSON.stringify(storage.wb_voice))
   check('[settings] 清缓存后 wb_voice_rate 保留（P2-11 已修）',
     Math.abs(Number(storage.wb_voice_rate) - 1.2) < 0.001, '实得 ' + JSON.stringify(storage.wb_voice_rate))
 }
 
-// ==================== ⑤ voice 设默认链路（现状=纯本地 storage） ====================
-;(function testVoiceService() {
+// ==================== ⑤ voice 目录口径 + 设默认链路 ====================
+async function testVoiceService() {
   resetStorage()
-  storage.wb_voice = 'preset_gentle'
+  storage.wb_voice = 'qwen3-female-1'
   storage.wb_voice_rate = 1.0
   storage.wb_voice_hidden = []
   const voice = require(path.join(ROOT, 'services', 'voice.js'))
 
   const c = voice.catalog()
-  check('[voice] 本地目录 4 个音色', c.rows.length === 4, '实得 ' + c.rows.length)
-  check('[voice] 当前音色 = storage wb_voice', c.current === 'preset_gentle', '实得 ' + c.current)
+  check('[voice] 本地兜底目录 2 个音色（id 与后端内置一致）', c.rows.length === 2, '实得 ' + c.rows.length)
+  check('[voice] 当前音色 = storage wb_voice', c.current === 'qwen3-female-1', '实得 ' + c.current)
+  check('[voice] 本地目录不含方言音色',
+    !c.rows.some((r) => (r.name + r.desc).indexOf('潮汕') >= 0), JSON.stringify(c.rows.map((r) => r.name)))
 
   // 自愈：当前音色 id 不在目录里 → 回落到第一个并重写记忆
   storage.wb_voice = 'ghost-voice'
   const c2 = voice.catalog()
-  check('[voice] 悬空音色 id 自愈回落第一项', c2.current === 'preset_gentle', '实得 ' + c2.current)
-  check('[voice] 自愈后 storage 重写', storage.wb_voice === 'preset_gentle', '实得 ' + storage.wb_voice)
+  check('[voice] 悬空音色 id 自愈回落第一项', c2.current === 'qwen3-female-1', '实得 ' + c2.current)
+  check('[voice] 自愈后 storage 重写', storage.wb_voice === 'qwen3-female-1', '实得 ' + storage.wb_voice)
 
   // 设默认：本地立即生效 + PUT 契约 /voices/default 持久化（P1-05 / P2-10）
-  return voice.save({ voiceId: 'preset_pro', rate: 1.2 }).then((res) => {
-    check('[voice] save(preset_pro) 落 storage wb_voice', storage.wb_voice === 'preset_pro', '实得 ' + storage.wb_voice)
-    check('[voice] save 返回 voiceId/rate', res.voiceId === 'preset_pro' && Math.abs(res.rate - 1.2) < 0.001, JSON.stringify(res))
-    check('[voice] save 云端同步成功标记 synced=true', res.synced === true, JSON.stringify(res))
-    check('[voice] save 校验未知音色拒绝 NOT_FOUND', true)
-    return voice.save({ voiceId: 'nope' }).then(
-      () => check('[voice] 未知音色应拒绝', false, '却 resolve 了'),
-      (e) => check('[voice] 未知音色拒绝 code=NOT_FOUND', e && e.code === 'NOT_FOUND', '实得 ' + (e && e.code))
-    )
-  }).then(() => {
-    // 修复后：设默认必须打契约端点（方法=PUT，路径 /api/v1/voice/voices/default）
-    const hits = requestLog.filter((u) => u.indexOf('/api/v1/voice/voices/default') >= 0)
-    check('[voice] 设默认调用 PUT /api/v1/voice/voices/default（P1-05 已修）',
-      hits.length === 1, '实得 ' + JSON.stringify(requestLog.filter((u) => u.indexOf('voices') >= 0)))
-    check('[voice] 设默认使用 PUT 方法（POST 会 405）',
-      requestMethods[hits.length ? requestLog.indexOf(hits[0]) : -1] === 'PUT',
-      '实得 ' + JSON.stringify(requestMethods))
-    // 试听走契约 /voices/{voiceId}/previews（P2-09）；桩无 audioUrl → 如实回落，不假装播放成功
-    return voice.preview('preset_pro', {}).then((played) => {
-      const pv = requestLog.filter((u) => u.indexOf('/previews') >= 0)
-      check('[voice] 试听调用 POST /voices/{voiceId}/previews（P2-09 已修）',
-        pv.length === 1 && pv[0].indexOf('/voices/preset_pro/previews') >= 0,
-        '实得 ' + JSON.stringify(requestLog.filter((u) => u.indexOf('voices') >= 0)))
-      check('[voice] 试听无音频地址时不假装播放成功', played === false, '实得 ' + played)
-    })
-  })
-})()
+  const res = await voice.save({ voiceId: 'qwen3-male-1', rate: 1.2 })
+  check('[voice] save(qwen3-male-1) 落 storage wb_voice', storage.wb_voice === 'qwen3-male-1', '实得 ' + storage.wb_voice)
+  check('[voice] save 返回 voiceId/rate', res.voiceId === 'qwen3-male-1' && Math.abs(res.rate - 1.2) < 0.001, JSON.stringify(res))
+  check('[voice] save 云端同步成功标记 synced=true', res.synced === true, JSON.stringify(res))
+  let rejectCode = ''
+  try { await voice.save({ voiceId: 'nope' }) } catch (e) { rejectCode = e && e.code }
+  check('[voice] 未知音色拒绝 code=NOT_FOUND', rejectCode === 'NOT_FOUND', '实得 ' + rejectCode)
+
+  // 修复后：设默认必须打契约端点（方法=PUT，路径 /api/v1/voice/voices/default）
+  const hits = requestLog.filter((u) => u.indexOf('/api/v1/voice/voices/default') >= 0)
+  check('[voice] 设默认调用 PUT /api/v1/voice/voices/default（P1-05 已修）',
+    hits.length === 1, '实得 ' + JSON.stringify(requestLog.filter((u) => u.indexOf('voices') >= 0)))
+  check('[voice] 设默认使用 PUT 方法（POST 会 405）',
+    requestMethods[hits.length ? requestLog.indexOf(hits[0]) : -1] === 'PUT',
+    '实得 ' + JSON.stringify(requestMethods))
+
+  // 试听走契约 /voices/{voiceId}/previews（P2-09）；桩无 audioUrl → 如实回落，不假装播放成功
+  const played = await voice.preview('qwen3-male-1', {})
+  const pv = requestLog.filter((u) => u.indexOf('/previews') >= 0)
+  check('[voice] 试听调用 POST /voices/{voiceId}/previews（P2-09 已修）',
+    pv.length === 1 && pv[0].indexOf('/voices/qwen3-male-1/previews') >= 0,
+    '实得 ' + JSON.stringify(requestLog.filter((u) => u.indexOf('voices') >= 0)))
+  check('[voice] 试听无音频地址时不假装播放成功', played === false, '实得 ' + played)
+
+  // 回归锁（2026-11-17，本 bug 直接成因）：远端目录拉到之后，catalog() 必须与远端同口径。
+  // 若再写回「本地 ∪ 远端」，页面点「保存」触发 _refresh() 时列表会从 2 项膨胀成 6 项。
+  const rc = await voice.catalogRemote()
+  check('[voice] 远端目录 source=remote', rc.source === 'remote', '实得 ' + rc.source)
+  check('[voice] 远端 desc 中文化（zh-CN/female → 普通话 · 女声）',
+    rc.rows.length > 0 && rc.rows[0].desc === '普通话 · 女声', '实得 ' + JSON.stringify(rc.rows.map((r) => r.desc)))
+  const afterRemote = voice.catalog()
+  check('[voice] 远端成功后目录 = 远端 3 项（保存/刷新不膨胀）',
+    afterRemote.rows.length === 3, '实得 ' + afterRemote.rows.length + ' → ' + JSON.stringify(afterRemote.rows.map((r) => r.id)))
+  check('[voice] 远端成功后目录仍无方言音色',
+    !afterRemote.rows.some((r) => (r.name + r.desc).indexOf('潮汕') >= 0), JSON.stringify(afterRemote.rows.map((r) => r.name)))
+}
 
 // ==================== ⑥ profile 我的页数据链路 ====================
 async function testProfile() {
@@ -338,6 +361,7 @@ async function testProfile() {
   try {
     await testRecords()
     await testSettingsClearCache()
+    await testVoiceService()
     await testProfile()
   } catch (e) {
     FAIL++

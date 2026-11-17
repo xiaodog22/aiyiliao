@@ -98,6 +98,8 @@ const CONSULTATION_MESSAGES = { base: 'java', path: '/api/v1/consultations/{cons
 const CONSULTATION_TRIAGE = { base: 'java', path: '/api/v1/consultations/{consultationId}/triage' }
 // AI 任务状态查询（GET，契约 fetchAiTask）：SUCCEEDED 时 data.result 为执行器结果
 const AI_TASK             = { base: 'java', path: '/api/v1/ai/tasks/{taskId}' }
+// AI 任务事件流（GET，SSE，对外流式二期）：逐字上屏的增量通道；权威终态仍是 AI_TASK 单查
+const AI_TASK_EVENTS      = { base: 'java', path: '/api/v1/ai/tasks/{taskId}/events' }
 // 消息中心（V21 已上线）：列表 / 未读数 / 单条已读（写操作需 Idempotency-Key）
 const MESSAGE_LIST        = { base: 'java', path: '/api/v1/messages' }
 const MESSAGE_UNREAD_COUNT = { base: 'java', path: '/api/v1/messages/unread-count' }
@@ -169,7 +171,7 @@ module.exports = {
   HEALTH_ARTICLE_LIST,
   HEALTH_ARTICLE_DETAIL,
   CONSULTATION_LIST, CONSULTATION_DETAIL, CONSULTATION_MESSAGES,
-  CONSULTATION_TRIAGE, AI_TASK,
+  CONSULTATION_TRIAGE, AI_TASK, AI_TASK_EVENTS,
   MESSAGE_LIST, MESSAGE_UNREAD_COUNT, MESSAGE_READ,
   RESOURCE_MANIFEST, RESOURCE_ITEM, HOME_SUMMARY,
   HEALTH_CHECK, TRIAGE_RECOMMEND, TRIAGE_EMERGENCY,

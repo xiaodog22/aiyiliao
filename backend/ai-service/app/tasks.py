@@ -16,6 +16,7 @@ from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Awaitable, Callable, Optional
 
+from . import streaming
 from .cache import ContentCache, compute_cache_key, resolve_tenant_secret
 from .config import APP_VERSION, Settings
 from .envelope import idempotency_conflict, queue_full
@@ -88,6 +89,8 @@ class TaskContext:
     def __init__(self, service: "TaskService", task: dict) -> None:
         self._service = service
         self.task = task
+        # CHAT 是 json_mode 结构化输出，增量需先抽出 "text" 值（见 streaming.TextFieldExtractor）。
+        self._extractor: Optional[streaming.TextFieldExtractor] = None
 
     @property
     def cancelled(self) -> bool:
@@ -105,6 +108,19 @@ class TaskContext:
     def checkpoint(self) -> None:
         if self.cancelled:
             raise TaskCancelled()
+
+    def emit_token(self, chunk: str) -> None:
+        """把模型增量交给 SSE 订阅者（对外流式第一期）。
+
+        CHAT 的原始增量是 JSON 片段（`{"text":"…"`），这里先抽出 `text` 值再外发，
+        前端拿到的是可直接上屏的正文，不是模型内部结构。
+        无订阅者时整条路径是空操作 —— 轮询链路的执行器行为与改造前完全一致。
+        """
+        if self._extractor is None:
+            self._extractor = streaming.TextFieldExtractor()
+        text = self._extractor.feed(chunk)
+        if text:
+            self._service.publish_token(self.task["taskId"], text)
 
 
 Executor = Callable[[dict, TaskContext], Awaitable[dict]]
@@ -150,6 +166,9 @@ class TaskService:
         self._workers: list[asyncio.Task] = []
         self._supervisor: Optional[asyncio.Task] = None
         self._processed = 0
+        # 每任务最多一个 token 订阅队列（对外流式旁路）。键只在订阅时创建，
+        # 任务终态或订阅断开即删除 → 不订阅就不占内存，轮询链路零影响。
+        self._streams: dict[str, asyncio.Queue] = {}
 
     def register_executor(
         self, task_type: TaskType, executor: Executor, cache_descriptor: Optional[dict] = None
@@ -317,8 +336,66 @@ class TaskService:
         task["result"] = None
         task["finishedAt"] = _iso(_now())
         await self.store.save()
+        # 排队中被取消时不会再进 _process，这里必须主动收流，否则 SSE 会挂到超时。
+        self.close_stream(task_id)
         logger.info("任务已取消 task=%s reason=%s", task_id, reason or "UNSPECIFIED")
         return self._view(task)
+
+    # ---------- token 订阅（对外流式旁路） ----------
+
+    def has_stream(self, task_id: str) -> bool:
+        """是否已有 SSE 订阅者（供执行器判断"没人听就别做增量相关的额外工作"）。"""
+        return task_id in self._streams
+
+    def open_stream(self, task_id: str) -> asyncio.Queue:
+        """登记一个订阅者并返回**专属**队列（每次调用都是新队列）。
+
+        为什么不能复用旧队列：手机端断网重连时，旧连接常常只是死链、服务端尚未感知，
+        它的协程仍挂在 `queue.get()` 上。若两个订阅者共享一个队列，同一增量只会被其中
+        一个取走 —— 抢到的是死连接就等于丢字。故新订阅者顶替旧的：旧队列收到
+        `STREAM_SUPERSEDED` 后自行收尾，新连接独占后续增量。
+        """
+        queue = streaming.new_queue()
+        old = self._streams.get(task_id)
+        self._streams[task_id] = queue
+        if old is not None:
+            try:
+                old.put_nowait(streaming.STREAM_SUPERSEDED)
+            except asyncio.QueueFull:
+                logger.debug("旧订阅队列已满，顶替哨兵丢弃 | task=%s", task_id)
+        return queue
+
+    def publish_token(self, task_id: str, chunk: str) -> None:
+        """worker 侧投递增量：无订阅者空操作；队列满（客户端断开）丢块并计数。"""
+        queue = self._streams.get(task_id)
+        if queue is None:
+            return
+        try:
+            queue.put_nowait(chunk)
+        except asyncio.QueueFull:
+            # 订阅者长时间不读 = 客户端已断开；丢弃而不是阻塞生成。
+            from .metrics import metrics
+
+            metrics().record_stream_dropped()
+            logger.debug("token 队列已满，丢弃增量 | task=%s", task_id)
+
+    def close_stream(self, task_id: str, queue: Optional[asyncio.Queue] = None) -> None:
+        """任务终态收流：投递结束哨兵，让 SSE 端点读到 STREAM_END 后正常收尾。
+
+        `queue` 用于订阅者自证身份：连接被顶替后，旧连接的 finally 不应把**新**订阅者的
+        队列摘掉。不传 = 任务收尾，无条件摘除当前订阅者。
+        """
+        current = self._streams.get(task_id)
+        if current is None:
+            return
+        if queue is not None and current is not queue:
+            return
+        self._streams.pop(task_id, None)
+        try:
+            current.put_nowait(streaming.STREAM_END)
+        except asyncio.QueueFull:
+            # 队列已满：端点也会因空等超时退出，不阻断任务收尾。
+            logger.debug("token 队列已满，结束哨兵丢弃 | task=%s", task_id)
 
     # ---------- 工作器 ----------
 
@@ -335,6 +412,13 @@ class TaskService:
                 self._queue.task_done()
 
     async def _process(self, task_id: str) -> None:
+        """收流壳：成功 / 失败 / 取消 / 异常都必须关闭订阅队列，否则 SSE 会挂到超时。"""
+        try:
+            await self._process_task(task_id)
+        finally:
+            self.close_stream(task_id)
+
+    async def _process_task(self, task_id: str) -> None:
         task = self.store.get(task_id)
         if task is None:
             return
@@ -385,7 +469,15 @@ class TaskService:
             await self.store.save()
             return
         try:
-            output = await asyncio.wait_for(executor(task, ctx), timeout=remaining)
+            # 绑定增量出口：第一期只放行 CHAT（契约提案 §0 范围）。
+            # triage/careplan/interpret 是 JSON 结构化输出，推原始 JSON 到前端无意义且会泄内部提示词；
+            # 无 SSE 订阅者时 publish 立即返回，行为与改造前完全一致。
+            sink = ctx.emit_token if str(task.get("taskType")) == "CHAT" else None
+            sink_token = streaming.bind_sink(sink)
+            try:
+                output = await asyncio.wait_for(executor(task, ctx), timeout=remaining)
+            finally:
+                streaming.reset_sink(sink_token)
         except asyncio.TimeoutError:
             self._fail(task, "MODEL_TIMEOUT", "任务执行超过总超时预算", _DEPENDENCY_BY_TYPE.get(TaskType(task["taskType"])), True)
         except TaskCancelled:

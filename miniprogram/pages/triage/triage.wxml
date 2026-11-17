@@ -13,6 +13,8 @@
     </view>
   </view>
 
+  <offline-bar />
+
   <!-- 急诊预警常驻条（红旗命中后一直显示，不随对话滚走） -->
   <view class="emg-bar" wx:if="{{emergency}}">
     <image class="ic-sm" src="{{icons.alert}}" />

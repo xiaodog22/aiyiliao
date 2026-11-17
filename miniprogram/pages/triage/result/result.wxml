@@ -1,5 +1,7 @@
 <view class="page theme-{{theme}}">
 
+  <offline-bar />
+
   <!-- 空态：没有可展示的报告 -->
   <view wx:if="{{empty}}" class="card empty-card">
     <image class="ic-lg" src="{{icons.clipboardList}}" />

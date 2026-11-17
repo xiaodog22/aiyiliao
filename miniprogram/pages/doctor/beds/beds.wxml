@@ -27,6 +27,8 @@
     </view>
   </view>
 
+  <offline-bar />
+
   <!-- ② 床位统计（加载中显灰块，失败显弱化灰块；不显 0 冒充真实值） -->
   <view class="bd-stats">
     <view wx:for="{{stats}}" wx:key="key" class="bds-col">
@@ -111,6 +113,7 @@
         <!-- 仅空闲床位可「申请床位」（申请制：提交后待护士站审批，不直接落床） -->
         <view wx:if="{{item.canApply}}" class="bed-apply"
               data-id="{{item.id}}" data-no="{{item.no}}" data-ward="{{item.wardId}}"
+              data-wardname="{{item.wardName}}"
               bindtap="onApplyTap" hover-class="bed-apply-hover"
               aria-role="button" aria-label="{{item.no}} 申请床位">申请床位</view>
       </view>
@@ -126,39 +129,118 @@
     <view class="state-sub">床位信息接入后会显示在这里</view>
   </view>
 
-  <!-- 申请抽屉（AVAILABLE 床位）：patientRef 为内部患者 ID（契约不接受姓名/手机号）；
-       审批通过且床位空闲时由后端落床，医生端不做任何直接状态写入 -->
+  <!-- 申请抽屉（AVAILABLE 床位）：默认从“近期接诊患者”选择，提交 appointmentId；
+       手动内部患者编号只作兜底。审批通过且床位空闲时由后端落床，医生端不做直接状态写入。 -->
   <view wx:if="{{showApply}}" class="sheet-mask" bindtap="closeApply">
     <view class="sheet apply-sheet" catchtap="noop">
       <view class="sheet-handle"></view>
       <view class="sheet-title">申请床位 · {{applyBedNo}}</view>
+      <view class="apply-subtitle">{{applyWardName || '当前病区'}} · 提交后由护士站审批</view>
 
-      <view class="form-row">
-        <view class="form-label">患者内部 ID</view>
-        <input class="form-input" placeholder="请输入 patientRef（内部编号）"
-               value="{{applyPatientRef}}" data-field="applyPatientRef" bindinput="onApplyInput" />
-      </view>
-      <view class="form-row">
-        <view class="form-label">病情说明（选填）</view>
-        <textarea class="form-area" placeholder="可填写病情或申请说明（≤200 字）"
-                  maxlength="200" value="{{applyReason}}" data-field="applyReason"
-                  bindinput="onApplyInput" auto-height />
-      </view>
-      <view class="form-row">
-        <view class="form-label">优先级</view>
-        <view class="pri-row">
-          <view class="pri-chip {{applyPriority === 'NORMAL' ? 'pri-chip-on' : ''}}"
-                data-p="NORMAL" bindtap="onPriorityTap" aria-role="button">普通</view>
-          <view class="pri-chip {{applyPriority === 'URGENT' ? 'pri-chip-on' : ''}}"
-                data-p="URGENT" bindtap="onPriorityTap" aria-role="button">紧急</view>
+      <view class="apply-step">
+        <view class="step-badge">1</view>
+        <view class="step-copy">
+          <view class="step-title">选择患者</view>
+          <view class="step-sub">从近期接诊患者中选择，不用输入内部编号</view>
         </view>
       </view>
 
+      <block wx:if="{{!applyManual && !applySelected}}">
+        <input class="cand-search" placeholder="搜索姓名 / 手机号 / 排队号"
+               value="{{applySearch}}" bindinput="onCandidateSearch" confirm-type="search" />
+
+        <view wx:if="{{applyCandidatesLoading}}" class="cand-state">正在加载近期患者…</view>
+        <view wx:elif="{{applyCandidatesError}}" class="cand-state cand-err">{{applyCandidatesError}}</view>
+        <scroll-view wx:elif="{{applyCandidatesView.length}}" class="cand-scroll" scroll-y>
+          <view wx:for="{{applyCandidatesView}}" wx:key="id"
+                class="cand-card"
+                data-id="{{item.id}}" data-name="{{item.name}}"
+                bindtap="onCandidateTap" hover-class="cand-hover"
+                aria-role="button" aria-label="选择患者 {{item.name}}">
+            <view class="cand-avatar">{{item.initial}}</view>
+            <view class="cand-main">
+              <view class="cand-name-row">
+                <text class="cand-name">{{item.name}}</text>
+                <text wx:if="{{item.queueText}}" class="cand-queue">{{item.queueText}}</text>
+              </view>
+              <view class="cand-meta">{{item.metaText}}</view>
+              <view wx:if="{{item.symptom}}" class="cand-symptom">主诉：{{item.symptom}}</view>
+              <view class="cand-status">{{item.statusText}}</view>
+            </view>
+            <view class="cand-pick">选择</view>
+          </view>
+        </scroll-view>
+        <view wx:else class="cand-state">暂无近期接诊患者，请改用手动输入</view>
+      </block>
+
+      <view wx:if="{{applyManual}}" class="form-row">
+        <view class="form-label">患者内部编号（兜底）</view>
+        <input class="form-input" placeholder="仅用于患者列表找不到时"
+               value="{{applyPatientRef}}" data-field="applyPatientRef" bindinput="onApplyInput" />
+        <view class="form-hint">编号由院内系统分配，不是手机号或姓名。</view>
+      </view>
+
+      <view wx:if="{{!applySelected}}" class="manual-toggle" bindtap="toggleManual" aria-role="button">
+        {{applyManual ? '返回患者列表选择' : '找不到患者？手动输入内部编号'}}
+      </view>
+
+      <view wx:if="{{applySelected}}" class="pick-summary">
+        <text class="pick-text">{{applySelectedLabel}}</text>
+        <text wx:if="{{!applyManual}}" class="pick-change" bindtap="onReselect" aria-role="button">重新选择</text>
+        <text wx:else class="pick-change" bindtap="toggleManual" aria-role="button">返回患者列表</text>
+      </view>
+
+      <block wx:if="{{applySelected}}">
+        <view class="apply-step apply-step-gap">
+          <view class="step-badge">2</view>
+          <view class="step-copy">
+            <view class="step-title">确认申请信息</view>
+            <view class="step-sub">病情说明会随申请单一起给到护士站</view>
+          </view>
+        </view>
+
+        <view class="bed-summary">
+          <view class="bed-summary-no">{{applyBedNo}}</view>
+          <view class="bed-summary-sub">{{applyWardName || '当前病区'}} · 申请通过后落床</view>
+        </view>
+
+        <view class="form-row">
+          <view class="form-label">快捷原因（选填）</view>
+          <view class="reason-row">
+            <view wx:for="{{applyReasonChips}}" wx:key="*this"
+                  class="reason-chip {{applyReasonChip === item ? 'reason-chip-on' : ''}}"
+                  data-label="{{item}}" bindtap="onReasonChipTap" aria-role="button">{{item}}</view>
+          </view>
+        </view>
+
+        <view class="form-row">
+          <view class="form-label">补充说明（选填）</view>
+          <textarea class="form-area" placeholder="可补充症状、护理需求或申请说明（≤200 字）"
+                    maxlength="200" value="{{applyReason}}" data-field="applyReason"
+                    bindinput="onApplyInput" auto-height />
+        </view>
+
+        <view class="form-row">
+          <view class="form-label">优先级</view>
+          <view class="pri-row">
+            <view class="pri-chip {{applyPriority === 'NORMAL' ? 'pri-chip-on' : ''}}"
+                  data-p="NORMAL" bindtap="onPriorityTap" aria-role="button">普通</view>
+            <view class="pri-chip {{applyPriority === 'URGENT' ? 'pri-chip-on' : ''}}"
+                  data-p="URGENT" bindtap="onPriorityTap" aria-role="button">加急</view>
+          </view>
+          <view class="form-hint">加急只表示请护士优先处理，不代表病情分级。</view>
+        </view>
+
+        <view class="apply-foot-note">提交后进入待审批；护士站通过且床位仍空闲时才会落床。</view>
+      </block>
+
       <view wx:if="{{applyErr}}" class="form-err">{{applyErr}}</view>
+      <view wx:if="{{!applySelected}}" class="apply-wait">选择患者后，继续填写申请信息</view>
 
       <view class="sheet-actions">
         <view class="btn btn-ghost" bindtap="closeApply">取消</view>
-        <view class="btn btn-primary {{applying ? 'btn-loading' : ''}}" bindtap="confirmApply">
+        <view class="btn btn-primary {{applySelected ? '' : 'btn-disabled'}} {{applying ? 'btn-loading' : ''}}"
+              bindtap="confirmApply">
           {{applying ? '提交中…' : '提交申请'}}
         </view>
       </view>

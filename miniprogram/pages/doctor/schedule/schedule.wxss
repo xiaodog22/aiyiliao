@@ -53,6 +53,33 @@
 .ds-online-title { font-size: 30rpx; font-weight: 600; color: #17233d; }
 .ds-online-sub { font-size: 24rpx; color: #86909c; margin-top: 8rpx; }
 
+/* 排班已配置但在线接诊未开启：显式提示，避免患者端一直“暂不接诊” */
+.ds-warn {
+  margin: 24rpx 24rpx 0;
+  background: var(--amber-soft);
+  border-radius: 20rpx;
+  padding: 24rpx;
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+.ds-warn-body { flex: 1; min-width: 0; }
+.ds-warn-title { font-size: 28rpx; font-weight: 600; color: var(--amber-text); line-height: 1.5; }
+.ds-warn-sub { font-size: 24rpx; color: var(--amber-text); line-height: 1.5; margin-top: 8rpx; }
+.ds-warn-btn {
+  flex-shrink: 0;
+  min-width: 120rpx;
+  min-height: 72rpx;
+  border-radius: 36rpx;
+  background: var(--amber-text);
+  color: var(--card);
+  font-size: 28rpx;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* 状态 */
 .ds-state { padding: 120rpx 48rpx; display: flex; flex-direction: column; align-items: center; }
 .ds-state-title { font-size: 32rpx; font-weight: 600; color: #17233d; margin-bottom: 12rpx; }

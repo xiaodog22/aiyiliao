@@ -210,7 +210,30 @@ Page({
       })
       return Promise.resolve()
     }
-    const first = id ? this._fetchDetail(id) : Promise.resolve(null)
+    // 「不指定医生」/ 直接进入：不能回退到列表里的第一个 ACTIVE 会话——
+    // 那会把历史 AI 问诊当成新在线问诊打开（2026-11-17 用户反馈）。
+    // 这里保持真正的空态，由 picker 随机匹配在线医生后再带 doctorId 进入。
+    if (!id) {
+      this.setData({
+        loading: false,
+        error: '',
+        activeId: '',
+        hasDoctor: false,
+        doctorName: '接诊医生',
+        doctorTitle: '',
+        docSub: '互联网医院',
+        accepting: false,
+        status: 'ACTIVE',
+        closed: false,
+        tipText: '请选择医生发起在线问诊',
+        messages: [],
+        attachCount: 0,
+        activeTitle: '',
+        remainingText: ''
+      })
+      return Promise.resolve()
+    }
+    const first = this._fetchDetail(id)
 
     return first
       .then((detail) => {
@@ -240,10 +263,9 @@ Page({
   _fetchList() {
     return userService.listMyConsultations().then((list) => {
       const arr = Array.isArray(list) ? list : []
-      const hit =
-        arr.find((c) => c.id === this.data.activeId) ||
-        arr.find((c) => c.status === 'ACTIVE') ||
-        arr[0]
+      // 只认当前会话 id；不再用「第一个 ACTIVE」兜底——否则详情暂时失败时
+      // 可能把另一个历史会话（含旧 AI 问诊）顶替到当前页面。
+      const hit = arr.find((c) => c.id === this.data.activeId)
 
       if (!hit) {
         this.setData({

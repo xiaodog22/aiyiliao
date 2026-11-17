@@ -21,7 +21,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 import httpx
 
@@ -100,11 +100,15 @@ async def generate(
     first_token_timeout_s: float,
     transport: Optional[httpx.AsyncBaseTransport] = None,
     force_stream: bool = True,
+    on_token: Optional[Callable[[str], None]] = None,
 ) -> tuple[str, str, str]:
     """跑一次生成，返回 (全文, 实际模型名, 流式回退原因)。
 
     第三项为空串表示流式成功；非空表示"流式不可用，已回退非流式"，由调用方记录。
     失败一律 TaskFailure（可识别码 + provider 归因）。
+
+    `on_token`：每个增量块的旁路回调。**只做投递，不改累积逻辑** ——
+    回流失败（回调抛异常）不得影响生成，由 streaming.publish 内部兜住。
     """
     # 模型常驻（2026-11-14，响应速度）：Ollama 默认 5 分钟无请求就卸载模型，
     # 7B 在 CPU 上重新加载要 10~30s，"隔一会儿再问一次"会突然很慢。
@@ -188,6 +192,14 @@ async def generate(
                                 model, first_token_ms,
                             )
                         buf.append(chunk)
+                        if on_token is not None:
+                            # 旁路投递：订阅端任何异常都不得中断生成（本项目"不静默吞错"，
+                            # 故记 WARN 并熔断本次回调，只丢流不减生成结果）。
+                            try:
+                                on_token(chunk)
+                            except Exception:
+                                logger.warning("增量回调失败，本次任务停止推送（生成继续）", exc_info=True)
+                                on_token = None
                     if obj.get("done"):
                         break
         except TaskFailure:

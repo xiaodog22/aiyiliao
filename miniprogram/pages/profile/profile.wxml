@@ -6,16 +6,19 @@
        + 状态「已登录 · 健康档案已同步」24rpx 灰蓝 + 右上「就诊人管理 ›」浅蓝胶囊
     ② 主功能列表卡（白卡 5 行）：健康档案 / 我的预约 / 我的问诊（右上未读小圆点）/ 报告查询 / 就诊人管理
        —— 每行：蓝色线性图标 + 标题 + 右箭头；行高 ~92rpx；分割线**从文字左边缘起，到卡片右边缘止**
-    ③ 通用卡片：卡片内顶部浅灰分组标题条「通用」+ 消息通知 / 隐私设置 / 账号安全
+    ③ 通用卡片：卡片内顶部浅灰分组标题条「通用」+ 消息通知 / 系统设置 / 账号安全
     ④ 协议卡片：用户协议 / 隐私政策
     ⑤ 底部版本号：居中弱文字色
 
   ⚠️ 默认头像不用 assets/img/avatar-default.png（蓝底白人形，与本页设计稿的「浅灰底 + 灰色线性人形占位」
      不符），改取 utils 图标表里的 userGray 字形（线性风格，与设计稿同一画法）并压到 0.62 不透明度；
      有真实头像时仍渲染 <image> 覆盖占位。
-  ⚠️ 设计稿没有的入口，本页不新增；设计稿里有但暂无落地页的两行（消息通知 / 账号安全）显式降级为提示。
+  ⚠️ 设计稿没有的入口，本页不新增；设计稿里有但暂无落地页的入口显式降级为提示。
+  ✅ 消息通知已于 2026-11-17 接入真实消息中心（pages/profile/messages）。
 -->
 <view class="page theme-{{theme}} {{hc ? 'high-contrast' : ''}} pf-page">
+
+  <offline-bar />
 
   <!-- ============ ① 用户信息头区（无卡片外壳：落在页底淡蓝渐变上）============ -->
   <view class="pf-hero anim-rise">
@@ -69,10 +72,16 @@
   </view>
 
   <!-- ============ ③ 通用（分组标题条在**卡片内顶部**，不是卡外浮动小字）============ -->
-  <!-- D-18：「消息通知」原为死入口（点击只弹"暂未开放"）。当前版本没有订阅消息模板，
-       做不出真实订阅开关，留入口等于骗点击 → 直接移除，等模板就位再加回并接真实落地页。 -->
+  <!-- 消息通知（V21 后端已就绪，本轮补患者端页面）：点击进真实消息中心，
+       未读红点取 /messages/unread-count，不在前端造假红点。 -->
   <view class="card pf-card pf-group anim-rise anim-d3">
     <view class="group-head">通用</view>
+    <view class="li-row pressable pf-row-dot" bindtap="goMessages">
+      <image class="pf-row-ic" src="{{icons.bell}}" />
+      <view class="li-text"><view class="li-t">消息通知</view></view>
+      <view wx:if="{{msgUnread > 0}}" class="pf-unread"></view>
+      <image class="li-arrow" src="{{icons.chevronRight}}" />
+    </view>
     <view class="li-row pressable" bindtap="goSettings">
       <image class="pf-row-ic" src="{{icons.lock}}" />
       <view class="li-text"><view class="li-t">系统设置</view></view>

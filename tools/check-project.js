@@ -221,6 +221,11 @@ for (const [f, s] of subMedia) console.log('   ⚠ 分包内存量音视频 ' + 
 
   // 页数：只认「主包 N 页 / 全量 N 页 / 当前 N 页」三种句式，避免误伤其它"页"表述
   const docs = ['README.md', 'AI_CONTEXT.md', 'docs/v4/06-测试矩阵与发布检查表.md', 'RELEASE_STATUS.md']
+  // AI_CONTEXT.md 是**本机事实源**：.gitignore 已排除（含内部联调账号与本机路径），
+  // 干净 clone / CI 里必然不存在。此前把它当"必须存在"会让 CI 前端 job 恒定失败
+  // （2026-11-17 CI 首次真跑实测：干净 clone 下 ⑦ 报"事实源文档缺失：AI_CONTEXT.md"）。
+  // 缺失时跳过即可——它本机存在时仍照常校验页数口径，其余文档都已入库，缺失一律视为门禁失效。
+  const LOCAL_ONLY_DOCS = new Set(['AI_CONTEXT.md'])
   const pats = [
     { re: /主包\s*\*{0,2}(\d+)\s*\*{0,2}\s*页/g, want: realMain, label: '主包页数' },
     { re: /全量\s*\*{0,2}(\d+)\s*\*{0,2}\s*页/g, want: realTotal, label: '全量页数' },
@@ -229,7 +234,12 @@ for (const [f, s] of subMedia) console.log('   ⚠ 分包内存量音视频 ' + 
   let pageSeen = 0
   for (const d of docs) {
     const p = path.join(REPO, d)
-    if (!fs.existsSync(p)) { bad++; console.log('   ✗ ⑦ 事实源文档缺失：' + d); continue }
+    if (!fs.existsSync(p)) {
+      if (LOCAL_ONLY_DOCS.has(d)) { console.log('   · ⑦ 跳过本机事实源（未入库）：' + d); continue }
+      bad++
+      console.log('   ✗ ⑦ 事实源文档缺失：' + d)
+      continue
+    }
     const t = fs.readFileSync(p, 'utf8')
     for (const { re, want, label } of pats) {
       re.lastIndex = 0

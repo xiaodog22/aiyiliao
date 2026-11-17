@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -15,7 +16,7 @@ from typing import Callable, Optional
 
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import ValidationError
 
 from .cache import ContentCache
@@ -26,10 +27,10 @@ from .envelope import ApiError, bad_request, error_payload, new_request_id, ok_e
 from .executors import CACHE_DESCRIPTORS, build_default_executors
 from .executors._llm import resolve_model
 from .models import CancelRequest, TaskSubmitRequest
-from . import redact, retention
+from . import redact, retention, streaming
 from .security import install_auth
 from .store import TaskStore
-from .tasks import TaskService
+from .tasks import TERMINAL, TaskService
 from .voice import close_tts_connector, preload_asr_model, verify_audio_token
 
 logger = logging.getLogger("ai-service")
@@ -48,6 +49,18 @@ def _knowledge_version(settings: Settings) -> str:
 
 # 合成产物文件名白名单（防路径穿越：只允许 16~64 位十六进制 + .mp3）
 _AUDIO_NAME_RE = re.compile(r"^[0-9a-f]{16,64}\.mp3$")
+
+
+def _result_text(result) -> str:
+    """取任务结果里可直接上屏的正文（当前仅 CHAT 有 `result.text`）。
+
+    其余类型（triage/careplan/interpret/tts/asr）返回空串 —— 它们的结构不允许被
+    简化成一句话推给前端，宁可空流也不伪造。
+    """
+    if not isinstance(result, dict):
+        return ""
+    text = result.get("text")
+    return text if isinstance(text, str) else ""
 
 
 def _rid(request: Request) -> str:
@@ -323,6 +336,133 @@ def create_app(
         if task is None:
             raise ApiError(404, "NOT_FOUND", "任务不存在", retryable=False)
         return ok_envelope(request.state.request_id, task)
+
+    # ---------- 对外流式（SSE）订阅通道 ----------
+    # 第一期：仅 CHAT 有增量（triage/careplan/interpret 是 JSON 结构化输出，不外发）。
+    # 旁路设计：不订阅时任务行为与轮询链路完全一致；端点可独立下线，不影响任务队列。
+    @app.get("/internal/v1/tasks/{task_id}/stream")
+    async def stream_task(task_id: str, request: Request):
+        request.state.request_id = request.headers.get("x-request-id") or new_request_id()
+        view = await service.get_view(task_id)
+        if view is None:
+            raise ApiError(404, "NOT_FOUND", "任务不存在", retryable=False)
+
+        queue = service.open_stream(task_id)
+        idle = float(settings.stream_idle_timeout_seconds)
+        from .metrics import metrics as _metrics
+
+        _metrics().record_stream_subscriber()
+
+        def frame(event: str, data: dict, seq: int) -> str:
+            return f"event: {event}\nid: {seq}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+        def error_payload(view: dict) -> dict:
+            """任务未成功时的统一 error 载荷（活流与终态回放共用，避免两处口径漂移）。"""
+            err = view.get("error") or {}
+            return {
+                "code": err.get("code") or view.get("status") or "TASK_FAILED",
+                "message": err.get("message") or "任务未成功",
+                "retryable": bool(err.get("retryable")),
+            }
+
+        async def _events():
+            seq = 0
+            deltas = 0
+            current = await service.get_view(task_id) or view
+
+            seq += 1
+            yield frame("start", {
+                "taskId": task_id,
+                "taskType": current.get("taskType"),
+                "modelId": current.get("modelId"),
+                "knowledgeSnapshot": current.get("knowledgeSnapshot"),
+            }, seq)
+
+            # 已终态（含缓存命中）：直接回放最终结果，便于客户端断线重连后补齐。
+            # 必须先占订阅位再判终态（open_stream 在端点入口处），否则会漏掉两者的竞态；
+            # 终态无活流可听，这里立即释放订阅位，避免队列长期挂在 _streams 里。
+            if current.get("status") in TERMINAL:
+                service.close_stream(task_id, queue)
+                text = _result_text(current.get("result"))
+                if text:
+                    seq += 1
+                    yield frame("delta", {"text": text}, seq)
+                seq += 1
+                if current.get("status") == "SUCCEEDED":
+                    # 不带 status：事件类型即语义（done=成功 / error=失败），
+                    # 与活流口径一致，客户端无需依赖该字段（2026-11-17 契约收口）。
+                    yield frame("done", {
+                        "finishReason": "stop",
+                        "cached": bool(current.get("cached")),
+                    }, seq)
+                else:
+                    # 失败/取消的任务重连时必须回 error：回 done 会让客户端把失败当成功。
+                    yield frame("error", error_payload(current), seq)
+                return
+
+            try:
+                while True:
+                    try:
+                        item = await asyncio.wait_for(queue.get(), timeout=idle)
+                    except asyncio.TimeoutError:
+                        _metrics().record_stream_interrupted()
+                        seq += 1
+                        yield frame("error", {
+                            "code": "STREAM_IDLE_TIMEOUT",
+                            "message": "长时间无增量，连接已关闭（可重连或改用轮询）",
+                            "retryable": True,
+                        }, seq)
+                        return
+                    except asyncio.CancelledError:
+                        _metrics().record_stream_interrupted()
+                        raise
+                    if item is streaming.STREAM_SUPERSEDED:
+                        # 同任务的更新连接已顶替本连接（重连场景）：静默收尾，不报错、不重放。
+                        _metrics().record_stream_interrupted()
+                        seq += 1
+                        yield frame("error", {
+                            "code": "STREAM_SUPERSEDED",
+                            "message": "该任务已有新的订阅连接，本连接已关闭",
+                            "retryable": False,
+                        }, seq)
+                        return
+                    if item is streaming.STREAM_END:
+                        break
+                    seq += 1
+                    deltas += 1
+                    _metrics().record_stream_delta()
+                    yield frame("delta", {"text": item}, seq)
+            finally:
+                # 客户端断开 / 空等超时都要交还订阅位：任务仍在跑时重连可继续接增量。
+                # 带 queue 自证身份，避免把顶替自己的新订阅者一起摘掉。
+                service.close_stream(task_id, queue)
+
+            final = await service.get_view(task_id) or {}
+            if final.get("status") != "SUCCEEDED":
+                seq += 1
+                yield frame("error", error_payload(final), seq)
+                return
+
+            if deltas == 0:
+                # 无增量（DeepSeek 降级 / 模型未按 JSON 格式输出 / TTS 等非文本类型）：
+                # 用最终结果补一块完整正文，保证客户端不拿到空流。
+                text = _result_text(final.get("result"))
+                if text:
+                    seq += 1
+                    yield frame("delta", {"text": text}, seq)
+            seq += 1
+            yield frame("done", {"finishReason": "stop", "cached": bool(final.get("cached"))}, seq)
+
+        return StreamingResponse(
+            _events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                # 反代（nginx 系）必须关缓冲，否则 token 被攒批，逐字效果失效
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     # ---------- TTS 音频通道（契约外·内部通道；仅本服务与经授权的边缘可达） ----------
     # 说明：TTS 结果只回 audioUrl（不内联字节）。此通道按「短期签名 + 文件名白名单」取音频；

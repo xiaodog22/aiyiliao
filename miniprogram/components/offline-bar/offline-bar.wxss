@@ -1,0 +1,56 @@
+/* 离线只读提示条：浅橙底 + 深橙标题，和 app.wxss 的 --amber-soft / --amber-text 同源 */
+.ob {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 24rpx;
+  background: var(--amber-soft, #FFF4E5);
+  border-bottom: 1rpx solid rgba(204, 102, 0, 0.16);
+}
+
+.ob-dot {
+  width: 12rpx;
+  height: 12rpx;
+  margin-right: 16rpx;
+  border-radius: 50%;
+  background: var(--accent-amber, #FF8C00);
+  flex: none;
+}
+
+.ob-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.ob-title {
+  font-size: 28rpx;
+  line-height: 1.35;
+  font-weight: 600;
+  color: var(--amber-text, #CC6600);
+}
+
+.ob-detail {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  line-height: 1.35;
+  color: var(--text-sub, #5064A0);
+}
+
+.ob-retry {
+  flex: none;
+  min-width: 96rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  margin-left: 16rpx;
+  padding: 0 16rpx;
+  border-radius: 16rpx;
+  text-align: center;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--amber-text, #CC6600);
+  background: var(--card, #FFFFFF);
+  border: 1rpx solid rgba(204, 102, 0, 0.24);
+}
+
+.ob-retry.is-busy {
+  opacity: 0.6;
+}

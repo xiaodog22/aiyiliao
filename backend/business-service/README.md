@@ -184,6 +184,7 @@
 | GET | `/api/v1/doctor/appointments` | 契约路径 ✅ | doctor_id 参与 SQL 条件（他科挂号不出现）；status?/date?（yyyy-MM-dd，非法→400）/cursor?（非法→422）/limit?（1~50 钳制）；`meta.nextCursor`（无更多时省略） |
 | POST | `/api/v1/doctor/appointments/{appointmentId}/status` | 契约路径 ✅ | Idempotency-Key 必填（缺→400）；body required=[toStatus, expectedVersion]（缺→422）；**状态机**非法转换（含终态、含流转到自身）→409 `APPOINTMENT_STATUS_INVALID`；`expectedVersion` 不匹配→409 `VERSION_CONFLICT`；每次流转追加 `appointment_status_events`（操作者/医生/服务端时间戳）；他人或他科挂号→404 |
 | GET | `/api/v1/beds` | 契约路径 ✅ | 范围 = 授权病区（ward_id 白名单进 SQL）；显式指定越权病区→403；status? 作筛选条件；`occupantDisplayName` 为写入时即脱敏的展示名（不落明文姓名） |
+| GET/POST | `/api/v1/beds/applications` | 契约路径 ✅ | 医生端申请制：GET 只列本人；POST `appointmentId` / `patientRef` 二选一（预约须本人名下、非家属代约、未取消/过期/未到诊），服务端用预约 `userId` 解析内部患者 ID；审批由护士站/dev 端点执行，不在本控制器 |
 | POST | `/api/v1/beds/{bedId}/assignment` | 契约路径 ✅ | Idempotency-Key 必填；五动作状态机（非法动作组合→409 `BED_STATE_CONFLICT`）；`expectedVersion` 乐观锁（不匹配→409）；ASSIGN 必填 `patientRef`（内部患者 ID；手机号/姓名→422，不存在→404），占用者脱敏落库；越权病区床位→404 |
 | GET | `/api/v1/consents` | 契约路径 ✅ | 每 purpose 取最新一行（撤回记录同样返回、不从列表消失）；响应形状与 `/me` 的 `User.consents` **同源同一查询** |
 | POST | `/api/v1/consents` | 契约路径 ✅ | Idempotency-Key 必填；追加式（不改写历史行）；purpose/channel 枚举外→422；同键同载荷→200 重放（不追行）、同键异载荷→409 |

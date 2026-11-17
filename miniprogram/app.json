@@ -19,6 +19,7 @@
     "pages/profile/reports/reports",
     "pages/profile/report-detail/report-detail",
     "pages/profile/consultations/consultations",
+    "pages/profile/messages/messages",
     "pages/profile/family/family",
     "pages/profile/personal-info/personal-info",
     "pages/profile/settings/settings",
@@ -116,7 +117,8 @@
   },
   "resizable": true,
   "usingComponents": {
-    "submission-actions": "/components/submission-actions/submission-actions"
+    "submission-actions": "/components/submission-actions/submission-actions",
+    "offline-bar": "/components/offline-bar/offline-bar"
   },
   "sitemapLocation": "sitemap.json"
 }

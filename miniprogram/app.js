@@ -8,6 +8,7 @@ const MOCK = require('./utils/mock-data.js')
 const session = require('./services/session.js')
 const { ensureAccessToken, revokeSession, clearGetCache } = require('./services/request.js')
 const resource = require('./services/resource.js')
+const connectivity = require('./services/connectivity.js')
 
 // 登录会话有效期：72 小时（毫秒）。超过则需重新登录。
 const SESSION_TTL_MS = 72 * 60 * 60 * 1000
@@ -42,6 +43,10 @@ App({
     // 冷启动会话预热：access token 只驻留内存（重启即丢），这里用持久化的 refresh 先换回 access，
     // 避免首个受保护请求"先吃一个 401 再刷新"。失败静默：无会话 / refresh 过期时由页面守卫引导重登。
     ensureAccessToken().catch(() => {})
+
+    // 全局连接状态（离线只读 / 写操作闸门）：冷启动静默探测网关健康；
+    // 设备网络恢复时自动重探，但只有真正可达才重新放行写操作。
+    connectivity.start()
 
     // 非关键远端资源清单后台刷新（docs/v4/09 §4.4-1）：仅写入本地缓存供 resolveResource/fallbackFor
     // 消费；清单或单资源失败一律静默回退内置素材，绝不阻断启动、绝不弹错。

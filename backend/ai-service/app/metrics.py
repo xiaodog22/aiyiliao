@@ -30,6 +30,11 @@ class LLMMetrics:
     provider_failures: dict = field(default_factory=dict)
     provider_skips: dict = field(default_factory=dict)
     breaker_open: dict = field(default_factory=dict)
+    # 对外流式（SSE 订阅）观测：只计数，不含任何文本内容。
+    stream_subscribers: int = 0
+    stream_deltas: int = 0
+    stream_dropped: int = 0
+    stream_interrupted: int = 0
 
     def record_first_token(self, ms: float) -> None:
         with self._lock:
@@ -65,6 +70,22 @@ class LLMMetrics:
         with self._lock:
             self.breaker_open[provider] = self.breaker_open.get(provider, 0) + 1
 
+    def record_stream_subscriber(self) -> None:
+        with self._lock:
+            self.stream_subscribers += 1
+
+    def record_stream_delta(self) -> None:
+        with self._lock:
+            self.stream_deltas += 1
+
+    def record_stream_dropped(self) -> None:
+        with self._lock:
+            self.stream_dropped += 1
+
+    def record_stream_interrupted(self) -> None:
+        with self._lock:
+            self.stream_interrupted += 1
+
     def snapshot(self) -> dict:
         with self._lock:
             samples = list(self.first_token_ms)
@@ -88,6 +109,10 @@ class LLMMetrics:
                 "providerFailures": dict(self.provider_failures),
                 "providerSkips": dict(self.provider_skips),
                 "breakerOpen": dict(self.breaker_open),
+                "streamSubscribers": self.stream_subscribers,
+                "streamDeltas": self.stream_deltas,
+                "streamDropped": self.stream_dropped,
+                "streamInterrupted": self.stream_interrupted,
             }
 
 

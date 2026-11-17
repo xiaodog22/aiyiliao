@@ -1,0 +1,203 @@
+/* pages/profile/messages —— 患者端消息通知（颜色全部走 app.wxss 令牌） */
+
+.pm-page {
+  min-height: 100vh;
+  background: var(--bg);
+  box-sizing: border-box;
+}
+
+.pm-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: var(--card);
+  border-bottom: 1rpx solid var(--border);
+}
+.pm-nav-bar {
+  position: relative;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+}
+.pm-nav-back {
+  position: absolute;
+  left: 8rpx;
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pm-nav-back-ic { width: 44rpx; height: 44rpx; }
+.pm-nav-title {
+  flex: 1;
+  text-align: center;
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--text-main);
+}
+.pm-nav-act {
+  position: absolute;
+  right: 16rpx;
+  min-height: 88rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 20rpx;
+  font-size: 26rpx;
+  color: var(--primary);
+}
+.pm-hover { opacity: 0.75; }
+
+/* 未读概要 */
+.pm-sum {
+  margin: 24rpx;
+  background: linear-gradient(135deg, var(--brand-grad-from), var(--brand-grad-to));
+  border-radius: var(--radius-md);
+  padding: 32rpx 28rpx;
+  display: flex;
+  align-items: baseline;
+}
+.pm-sum-num {
+  font-size: 64rpx;
+  font-weight: 700;
+  color: var(--card);
+  margin-right: 16rpx;
+}
+.pm-sum-t { font-size: 28rpx; color: rgba(255, 255, 255, 0.9); }
+
+/* 状态 */
+.pm-state {
+  padding: 120rpx 48rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.pm-state-inline { padding: 80rpx 48rpx; }
+.pm-state-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 12rpx;
+}
+.pm-state-sub {
+  font-size: 28rpx;
+  color: var(--text-sub);
+  text-align: center;
+  margin-bottom: 32rpx;
+  line-height: 1.6;
+}
+.pm-btn {
+  min-width: 240rpx;
+  min-height: 88rpx;
+  border-radius: 44rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30rpx;
+}
+.pm-btn-primary { background: var(--primary); color: var(--card); }
+
+/* 消息列表 */
+.pm-list { padding: 8rpx 24rpx 0; }
+.pm-item {
+  display: flex;
+  align-items: flex-start;
+  background: var(--card);
+  border-radius: var(--radius-md);
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+  position: relative;
+}
+.pm-type {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.pm-type-blue { background: var(--accent-soft); }
+.pm-type-mint { background: var(--mint-soft); }
+.pm-type-amber { background: var(--amber-soft); }
+.pm-type-gray { background: var(--bg); }
+.pm-type-ic { width: 40rpx; height: 40rpx; }
+
+.pm-body { flex: 1; min-width: 0; margin-left: 20rpx; }
+.pm-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+.pm-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pm-tag {
+  flex-shrink: 0;
+  font-size: 22rpx;
+  padding: 4rpx 10rpx;
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+}
+.pm-tag-blue { background: var(--accent-soft); color: var(--primary); }
+.pm-tag-mint { background: var(--mint-soft); color: var(--mint-text); }
+.pm-tag-amber { background: var(--amber-soft); color: var(--amber-text); }
+.pm-tag-gray { background: var(--bg); color: var(--text-sub); }
+
+.pm-text {
+  font-size: 26rpx;
+  color: var(--text-sub);
+  line-height: 1.6;
+  margin-top: 8rpx;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.pm-time { font-size: 24rpx; color: var(--text-weak); margin-top: 10rpx; }
+.pm-dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 8rpx;
+  background: var(--accent-red);
+  margin: 16rpx 8rpx 0 16rpx;
+  flex-shrink: 0;
+}
+.pm-arrow {
+  width: 32rpx;
+  height: 32rpx;
+  margin-left: 8rpx;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.pm-bottom-space { height: calc(40rpx + env(safe-area-inset-bottom)); }
+
+/* 平板档：rpx 尺寸按 px 收敛，避免宽屏上卡片/图标被等比放大 */
+@media (min-width: 600px) {
+  .pm-nav-bar { height: 44px; }
+  .pm-nav-back { width: 44px; height: 44px; }
+  .pm-nav-back-ic { width: 22px; height: 22px; }
+  .pm-nav-title { font-size: 17px; }
+  .pm-nav-act { min-height: 44px; font-size: 13px; }
+  .pm-sum { margin: 12px; padding: 16px 14px; }
+  .pm-sum-num { font-size: 32px; margin-right: 8px; }
+  .pm-sum-t { font-size: 14px; }
+  .pm-list { padding: 4px 12px 0; }
+  .pm-item { padding: 12px; margin-bottom: 8px; }
+  .pm-type { width: 36px; height: 36px; }
+  .pm-type-ic { width: 20px; height: 20px; }
+  .pm-body { margin-left: 10px; }
+  .pm-title { font-size: 15px; }
+  .pm-text { font-size: 13px; }
+  .pm-time { font-size: 12px; }
+}

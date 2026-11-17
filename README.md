@@ -49,8 +49,10 @@
 | 分步挂号 | 科室 → 医生 → 时段 → 确认 | 四步走完，本地生成预约号，记录页可查 |
 | 院内导航 | 1F 平面图 + 路径动画 | 起点是医院大门，14 个目的地，配文字步骤与语音播报 |
 | 在线问诊 | 图文、报告、语音 | 患者端只能从健康档案选图（jpeg/png/webp ≤10MB，含系统推送的 `health.*` 报告图），服务端按 objectKey 归属 / 资源库白名单二次校验；接单前也可继续补充病情与资料；双方 2s 轮询同步，图片由服务端签名 URL 或匿名资源端点下发，医生看到与患者所选档案同一张图 |
-| 医生工作台 | 接诊、叫号、处理 | 独立配色与鉴权，与患者端区分 |
+| 消息通知 | 患者端消息中心 | 汇总挂号成功/预约状态、医生回复、系统通知；未读红点取服务端 `unread-count`，点击按 `refType` 进入问诊会话 / 挂号记录 / 报告详情；报告出具、缴费、病历查询类型已留展示映射，需后端事件写入后才出现，前端不伪造 |
+| 医生工作台 | 接诊、叫号、床位申请 | 独立配色与鉴权，与患者端区分；床位申请默认从近期接诊患者选择，提交预约 ID 由服务端换取内部患者 ID，手动编号仅作兜底 |
 | 健康科普 | 院内宣教材料 | 随包发布，断网可读 |
+| 断网保护 | 后端不可达时只读、写操作拦截 | 连接状态分在线/降级/离线：已加载内容可继续看，顶部离线条标明“可能不是最新”；预约、问诊、床位申请等写请求统一返回 `OFFLINE`，不清会话、不跳登录；演示数据仅 `local` 档保留且显式标注 |
 
 ## 架构
 
@@ -74,11 +76,11 @@ flowchart LR
 
 ```
 miniprogram/          原生小程序前端
-  pages/              主包 25 页（首页 / 导诊 / 问诊 / 养生 / 挂号 / 我的 等）
+  pages/              主包 26 页（首页 / 导诊 / 问诊 / 养生 / 挂号 / 我的 等）
     doctor/           分包（root=pages/doctor）：医生端 8 页，患者端不预载
   packageNav/         分包：院内导航
   packageContent/     分包：健康科普
-                      主包 25 + 3 分包 11 = 全量 **36 页**（以 app.json 实测为准，2026-11-17）
+                      主包 26 + 3 分包 11 = 全量 **37 页**（以 app.json 实测为准，2026-11-17）
   services/           数据访问层，页面不直接发请求
   components/         通用组件（app.json 全局注册，页面可直接用标签）
   utils/              纯逻辑真源；submission-actions.js = 提交完成态操作入口状态机
@@ -106,10 +108,10 @@ archive/              已退出活动链的本地归档（重复副本 / 旧产�
 
 | 项 | 体积 | 限制 |
 | --- | --- | --- |
-| 主包 | **1.327MB** | 微信硬上限 2MB |
-| 分包 `packageContent` | 0.048MB | 单包 2MB |
+| 主包 | **1.336MB** | 微信硬上限 2MB |
+| 分包 `packageContent` | 0.052MB | 单包 2MB |
 | 分包 `packageNav` | 0.083MB | 单包 2MB |
-| 包内图片+音频+视频 | **193KB**（197,638B） | 质量面板建议 200K |
+| 包内图片+音频+视频 | **184.5KB** | 质量面板建议 200K |
 
 整改前主包 2.101MB（超限）、全包媒体 787KB（质量面板未通过：图片 618K + mp4 170K）。
 媒体（封面/海报/科普视频）已全部网络化出包（F2 Phase A+B），服务端副本与资源清单见
@@ -195,7 +197,7 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 | 网关行为 | `backend/edge-gateway/tests` | 134 项 pytest（含全链路 `X-Request-Id` 2 项） |
 | SQL 次数预算（防 N+1） | `DoctorQueryBudgetTest` + `QueryCounter` | 5 项 |
 | 端点级 SQL 画像 | `EndpointSqlProfileTest` | 2 项（逐端点上限 + 与数据量无关） |
-| **小程序逻辑层（并发）** | `miniprogram/tests/` + `tools/test-fe.js` | **31 项**（零依赖 `node:test`；含隐私授权 6 项） |
+| **小程序逻辑层（并发）** | `miniprogram/tests/` + `tools/test-fe.js` | **64 项 / 14 个测试文件**（零依赖 `node:test`；含隐私授权 6 项、患者端问诊/消息/接诊状态回归 5 项） |
 | **导诊效果（golden set）** | `tools/data/triage-golden.json` + `tools/eval-triage.js` | **66 科室 + 20 红旗 + 3 兜底**；红旗召回/兜底 100% 为硬门禁，科室 Top-1 门槛 85% |
 | **前后端契约快照** | `tools/contract-snapshot.js` + `contracts/snapshots/` | **5 端点**结构快照 |
 | 持续集成 | `.github/workflows/ci.yml` | 4 job：前端 / Java / 网关 / AI（PR 阻断） |
@@ -279,6 +281,7 @@ voice.js:156-158 → 101-104 连锁复位，登记 V1.20 T1-1）；3 项登记�
 - 架构与契约：[`docs/v4/`](docs/v4/)、[`backend/contracts/business-openapi.yaml`](backend/contracts/business-openapi.yaml)（⚠️ **to-be 目标态契约，不是当前实现事实**，见 AGENTS.md 红线）
 - 数据库：[`数据库表结构总览`](docs/交付文档/数据库表结构总览_20261022.md)、[`DATA_GOVERNANCE.md`](backend/deploy/DATA_GOVERNANCE.md)、[检查报告体系交付报告](backend/deploy/REPORT_DELIVERY_20261105.md)
 - 协作规范：[`AGENTS.md`](AGENTS.md)；`WORKBODY_AGENT_RULES.md`（42 节完整 AI 工程规范）**仅本地保留、不入库**。
+- 全量文档分类库（2026-11-17）：`docs/文档整理_20261117/00_索引.md`（246 份原文件按作用 + 时间分 12 个内容类，另设 00 索引；原文件不搬迁，20 份重点副本；本地整理，未入库）。
 
 ## 小程序联调测试（E2E + JMeter）
 

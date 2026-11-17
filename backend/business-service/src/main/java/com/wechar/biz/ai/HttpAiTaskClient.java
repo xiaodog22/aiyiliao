@@ -41,6 +41,11 @@ public class HttpAiTaskClient implements AiTaskClient {
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(10);
+    /**
+     * 流式请求只约束「响应头到达」的时间，不约束流式正文（Java HttpClient 的 timeout
+     * 在拿到响应头后即失效，正文由读取线程自行控制）。
+     */
+    private static final Duration STREAM_HEAD_TIMEOUT = Duration.ofSeconds(15);
 
     private final AiClientConfig config;
     private final ObjectMapper mapper;
@@ -144,15 +149,45 @@ public class HttpAiTaskClient implements AiTaskClient {
         }
     }
 
+    @Override
+    public AiTaskStream openStream(String taskId) {
+        HttpRequest request = base("/internal/v1/tasks/" + taskId + "/stream",
+                STREAM_HEAD_TIMEOUT, "text/event-stream").GET().build();
+        try {
+            HttpResponse<java.io.InputStream> response =
+                    http.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            if (response.statusCode() != 200) {
+                // 404（任务不存在/已过期）或 5xx：不读正文，按「无实时增量」回落终态整段
+                try {
+                    response.body().close();
+                } catch (java.io.IOException ignore) {
+                    // 关闭失败无补救动作
+                }
+                return null;
+            }
+            return new AiTaskStream(response.body(), mapper, taskId);
+        } catch (java.io.IOException e) {
+            log.debug("ai-service 增量流不可用（内网不可达/建连超时），回落终态整段");
+            return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        }
+    }
+
     // ------------------------------------------------------------------
 
     private HttpRequest.Builder base(String path) {
+        return base(path, READ_TIMEOUT, "application/json");
+    }
+
+    private HttpRequest.Builder base(String path, Duration timeout, String accept) {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(stripSlash(config.getBaseUrl()) + path))
-                .timeout(READ_TIMEOUT)
+                .timeout(timeout)
                 .header("X-Request-Id", RequestIds.current())
                 .header("X-Trace-Id", traceId())
-                .header("Accept", "application/json");
+                .header("Accept", accept);
         if (config.getToken() != null && !config.getToken().isBlank()) {
             builder.header("Authorization", "Bearer " + config.getToken());
         }

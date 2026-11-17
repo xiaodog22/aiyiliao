@@ -26,6 +26,8 @@
     </view>
   </view>
 
+  <offline-bar />
+
   <!-- ② 概览 / 筛选：四列等宽，标签在上、数值在下（加载中显灰色骨架块，不显 0） -->
   <view class="apt-stats">
     <view wx:for="{{stats}}" wx:key="key"

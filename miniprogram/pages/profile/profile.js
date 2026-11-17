@@ -6,10 +6,11 @@
  *   字段只有 id / displayName / avatarUrl / profileCompleteness / roles / phoneBound / createdAt / updatedAt
  *   ⚠️ 契约 additionalProperties:false，不含性别/年龄/手机号明文 → 页面按「未返回字段不显示」处理。
  *
- * 两项状态位都来自**真实数据**，不做静态假标：
+ * 三项状态位都来自**真实数据**，不做静态假标：
  *   · archiveSynced：存在健康档案记录时才显示「健康档案已同步」
  *   · unread       ：存在未结束的问诊时才显示「我的问诊」未读小圆点
- *   两者失败一律静默降级（不弹错、不伪造），开发兜底档初始值取设计稿同态。
+ *   · msgUnread    ：服务端消息中心未读数，显示在「消息通知」行
+ *   三者失败一律静默降级（不弹错、不伪造），开发兜底档初始值取设计稿同态。
  */
 const app = getApp()
 const icons = require('../../utils/icons.js')
@@ -25,6 +26,8 @@ Page({
     archiveSynced: false,
     /* 我的问诊未读点：默认值 = 设计稿同态（仅开发兜底档），随后由真实列表覆盖 */
     unread: ENV.MOCK_FALLBACK,
+    /* 消息中心未读数：服务端 /messages/unread-count 返回，失败保持 0（不伪造红点） */
+    msgUnread: 0,
     /* 版本号：优先取小程序真实版本（线上有值、开发工具为空）→ 兜底与 settings 页同值 */
     appVersion: 'V1.6.0'
   },
@@ -69,7 +72,8 @@ Page({
   },
 
   /**
-   * 状态位（并行、静默）：档案记录数 → archiveSynced；未结束问诊 → unread。
+   * 状态位（并行、静默）：档案记录数 → archiveSynced；未结束问诊 → unread；
+   * 消息中心未读数 → msgUnread。
    * 设计稿 07 的状态文案与未读圆点都取真实数据，不用静态假值冒充业务状态。
    */
   _loadBadges() {
@@ -86,6 +90,10 @@ Page({
 
     userService.listMyConsultations()
       .then((list) => { this.setData({ unread: this._hasOpenConsultation(list) }) })
+      .catch(() => {})
+
+    userService.unreadCount()
+      .then((n) => { this.setData({ msgUnread: Number(n) || 0 }) })
       .catch(() => {})
   },
 
@@ -147,6 +155,10 @@ Page({
 
   goPersonalInfo() {
     wx.navigateTo({ url: '/pages/profile/personal-info/personal-info' })
+  },
+
+  goMessages() {
+    wx.navigateTo({ url: '/pages/profile/messages/messages' })
   },
 
   goSettings() {

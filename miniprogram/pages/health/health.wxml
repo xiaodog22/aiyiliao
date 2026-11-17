@@ -21,6 +21,8 @@
 
   <scroll-view class="chat-area" scroll-y scroll-into-view="bottom-anchor" scroll-with-animation>
 
+    <offline-bar />
+
     <!-- ============ ① Hero：标题 + 白气泡 + 机器人 ============ -->
     <view class="hx-hero anim-rise">
       <view class="hx-hero-body">

@@ -17,7 +17,7 @@
  * 错误约定：reject 结构化 { code, message, httpCode }
  */
 const req = require('./request.js')
-const { post, get, put, API } = req
+const { post, get, put, withPath, API } = req
 const session = require('./session.js')
 const ENV = req.ENV
 
@@ -159,7 +159,11 @@ function setOnlineStatus(online) {
  */
 function getAvailability(doctorId) {
   if (!doctorId) return Promise.resolve(null)
-  return get(API.DOCTOR_AVAILABILITY, { id: doctorId })
+  // 路径参数必须走 withPath 替换 {id}；此前把 id 当 query 传，URL 仍是
+  // `/doctors/{id}/availability`，接口 404 → 前端只能按“未知”降级。
+  // 接诊状态是实时开关：不吃 request 层 15s GET 缓存，否则医生刚开启后
+  // 患者端仍可能显示「暂不接诊」。
+  return get(withPath(API.DOCTOR_AVAILABILITY, { id: doctorId }), null, { cacheTtl: 0 })
 }
 
 /**
@@ -344,17 +348,19 @@ function listBedApplications(status) {
 
 /**
  * 提交床位申请（POST /api/v1/beds/applications；写操作强校验幂等键）
- * @param {{patientRef:string, bedId?:string, wardId?:string, reason?:string, priority?:string}} body
- *   patientRef 必填且只接受内部患者 ID（手机号/姓名 422）；bedId 指定床位须空闲且属授权病区；
- *   priority 只认 NORMAL / URGENT，其余按 NORMAL。
+ * @param {{patientRef?:string, appointmentId?:string, bedId?:string, wardId?:string, reason?:string, priority?:string}} body
+ *   patientRef / appointmentId 二选一：
+ *     - appointmentId：医生本人预约 ID（前端“选择近期患者”入口），服务端解析为内部患者 ID；
+ *     - patientRef：内部患者 ID 兜底（手机号/姓名 422）。
+ *   bedId 指定床位须空闲且属授权病区；priority 只认 NORMAL / URGENT，其余按 NORMAL。
  * @param {{idempotencyKey?:string, note?:string}} [opts] 幂等键缺省自动生成
  * @returns {Promise<Object>} 申请单（status=PENDING，等待护士站审批）
  */
 function submitBedApplication(body, opts) {
   const o = opts || {}
-  const payload = {
-    patientRef: String((body && body.patientRef) || '').trim()
-  }
+  const payload = {}
+  if (body && body.appointmentId) payload.appointmentId = String(body.appointmentId).trim()
+  if (body && body.patientRef) payload.patientRef = String(body.patientRef).trim()
   if (body.bedId) payload.bedId = String(body.bedId)
   if (body.wardId) payload.wardId = String(body.wardId)
   if (body.reason) payload.reason = String(body.reason).slice(0, 200)

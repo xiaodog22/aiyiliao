@@ -20,7 +20,8 @@
   ① 把超时未终结的任务推进为 `EXPIRED`；② 按 `AI_TASK_RETENTION_SECONDS` 裁剪历史任务（含失效幂等索引）；
   ③ 回收「未被在库任务 `result.audioUrl` 引用 + 已过 `AI_TTS_ARTIFACT_TTL_SECONDS`」的 TTS 产物。
   **与「每 50 个任务顺手裁剪」互补**：后者只在有流量时触发，本机制保证**空闲也回收**。全部为**非权威中间态**，回收不影响正确性。
-- **仍未实现**：`RAG` 执行器（无检索链路，登记在案）。未注册执行器的任务以 `CAPABILITY_UNAVAILABLE` 快速失败。
+- **RAG 执行器**：已实现（`app/executors/rag.py`，Qdrant/Redis 向量检索 + Ollama embedding），但
+  **默认关闭**（`AI_RAG_ENABLED=false`）且**未接入问诊主链路**；未启用时 RAG 任务以 `CAPABILITY_UNAVAILABLE` 快速失败。
 - 存储：`runtime/tasks.json`（原子替换；可重建中间态，非业务数据）。
 
 > M2 已定稿口径（用户裁定 2026-10-15）与遗留边界（见文末 TODO）：

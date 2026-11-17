@@ -124,6 +124,12 @@ Page({
       })
   },
 
+  /** 排班已配置但未开接诊：一键开启，避免患者端一直显示「暂不接诊」 */
+  onEnableOnline() {
+    if (this.data.online) return
+    this.onOnlineChange({ detail: { value: true } })
+  },
+
   /** 为某天添加预设时段（ActionSheet 选时段） */
   onAddSlot(e) {
     const weekday = Number(e.currentTarget.dataset.weekday)
@@ -206,6 +212,17 @@ Page({
       .then((res) => {
         const s = (res && res.schedule) || {}
         this.setData({ version: s.version || 0, saving: false })
+        if (!this.data.online && weekdays.length) {
+          // 只保存排班不会改变在线开关；不提示的话医生会以为患者已经能挂号。
+          wx.showModal({
+            title: '排班已保存',
+            content: '当前「在线接诊」未开启，患者端仍会显示「暂不接诊」。是否现在开启？',
+            confirmText: '开启接诊',
+            cancelText: '稍后再说',
+            success: (r) => { if (r.confirm) this.onEnableOnline() }
+          })
+          return
+        }
         wx.showToast({ title: '线上问诊排班已保存', icon: 'success' })
       })
       .catch((err) => {

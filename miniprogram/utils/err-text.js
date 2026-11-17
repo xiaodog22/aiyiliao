@@ -39,9 +39,15 @@ function errText(err, fallback) {
 
   // ① 已知错误码：文案确定，不看 message
   if (code === 'NO_BASE_URL') return '服务地址未配置，请联系管理员'
+  if (code === 'OFFLINE') return '当前未连接院内服务，暂时不能提交，请恢复网络后重试'
   if (code === 'NETWORK_ERROR') return '网络连接失败，请检查网络后重试'
   if (code === 'TIMEOUT') return '网络较慢，请求超时，请重试'
   if (code === 'HTTP_ERROR') return '服务暂时不可用，请稍后重试'
+  if (code === 'INTERNAL_ERROR' || code === 'SERVICE_UNAVAILABLE') return '服务暂时不可用，请稍后重试'
+  // 乐观锁/幂等冲突：这是“数据已变，重读即可”，不是服务故障；必须与 HTTP_ERROR 分开。
+  if (code === 'VERSION_CONFLICT') return '内容已被更新，请重新加载后重试'
+  if (code === 'IDEMPOTENCY_KEY_REUSE') return '该操作已提交过，请刷新后查看'
+  if (code === 'SCHEDULE_OVERLAP') return '时段有重叠，请调整后再保存'
   if (code === 'PARSE_ERROR') return '数据格式异常，请稍后重试'
   // 会话类（request.js 的 AUTH_REQUIRED / AUTH_EXPIRED / SESSION_REVOKED 同义：
   // 会话不可用即需重新登录，不向用户暴露 HTTP 码或英文原文）

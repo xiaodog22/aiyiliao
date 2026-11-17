@@ -8,8 +8,8 @@
  *                  真机验证必须用本档；旧注释的 ChmlFrp 已废弃）
  *   'production'   发布包（流水线替换为 production；禁止临时隧道 / localhost）
  *
- * 后端服务均通过同一网关暴露（统一入口 :8080，穿透映射到同一端口）。local / development 可显式
- * 启用只读 mock；production 禁止临时隧道、localhost、写操作模拟成功和空网关。
+ * 后端服务均通过同一网关暴露（统一入口 :8080，穿透映射到同一端口）。local 档可显式
+ * 启用只读 mock 供界面预览；development / production 禁止把默认数据渲染成真实界面。
  */
 // 当前档位：local（PC 模拟器直连本机网关）。真机联调请改回 'development'（走花生壳隧道）；
 // 发布流水线替换为 'production'。
@@ -44,7 +44,11 @@ const ENVIRONMENTS = {
     aiTimeout: 90000,
     ttsTimeout: 120000,
     carePlanTimeout: 180000,
-    mockReadFallback: true
+    // 2026-11-17：development 是联调档，必须暴露真实后端状态。
+    // 原来这里为 true：后端一断，withFallback 会把 app.MOCK 的默认数据渲染成正常界面，
+    // 用户仍可点预约/问诊等按钮 —— 这就是"断网后仍展示默认界面并可操作"的根因。
+    // 演示预览只在 local 档保留；development / production 一律走真实错误态 + 离线条。
+    mockReadFallback: false
   },
   production: {
     // 必须替换为已备案、已配置微信合法域名的正式 HTTPS 地址。

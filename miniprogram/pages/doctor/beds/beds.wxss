@@ -396,7 +396,266 @@
   background: rgba(20, 38, 76, 0.42);
 }
 
-.apply-sheet { z-index: 60; }
+.apply-sheet { z-index: 60; max-height: 92vh; overflow-y: auto; }
+
+/* ============ 申请抽屉：选患者 → 确认信息（2026-11-17 改版） ============ */
+.apply-subtitle {
+  margin-top: -8rpx;
+  padding-bottom: 8rpx;
+  text-align: center;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.4;
+}
+
+.apply-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.apply-step-gap { margin-top: 32rpx; }
+
+.step-badge {
+  flex: none;
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--primary);
+  font-size: 24rpx;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.step-copy { flex: 1; min-width: 0; }
+.step-title {
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 600;
+  color: var(--text-main);
+}
+.step-sub {
+  margin-top: 4rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.4;
+}
+
+/* 患者候选：整卡可点，触控高度 ≥112rpx */
+.cand-search {
+  width: 100%;
+  box-sizing: border-box;
+  height: 88rpx;
+  margin-top: 16rpx;
+  padding: 0 24rpx;
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  border: 2rpx solid var(--border);
+  font-size: var(--font-body);
+  color: var(--text-main);
+}
+
+.cand-scroll {
+  max-height: 420rpx;
+  margin-top: 16rpx;
+}
+
+.cand-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  min-height: 112rpx;
+  padding: 20rpx;
+  margin-bottom: 12rpx;
+  border: 2rpx solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  box-sizing: border-box;
+}
+
+.cand-on {
+  border-color: var(--primary);
+  background: var(--accent-soft);
+}
+
+.cand-hover { background: var(--bg); }
+
+.cand-avatar {
+  flex: none;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.cand-main { flex: 1; min-width: 0; }
+
+.cand-name-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+.cand-name {
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.cand-queue {
+  font-size: var(--font-caption);
+  color: var(--accent-amber);
+}
+
+.cand-meta {
+  margin-top: 4rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
+.cand-symptom {
+  margin-top: 4rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+}
+
+.cand-status {
+  margin-top: 4rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+}
+
+.cand-pick {
+  flex: none;
+  align-self: center;
+  min-width: 72rpx;
+  text-align: right;
+  font-size: var(--font-caption);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.cand-state {
+  padding: 24rpx 8rpx;
+  text-align: center;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.5;
+}
+
+.cand-err { color: var(--accent-red); }
+
+.manual-toggle {
+  min-height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 8rpx;
+  font-size: var(--font-caption);
+  color: var(--primary);
+}
+
+.pick-summary {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  min-height: 88rpx;
+  margin-top: 8rpx;
+  padding: 0 20rpx;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--primary);
+  font-size: var(--font-caption);
+  box-sizing: border-box;
+}
+
+.pick-text { flex: 1; min-width: 0; }
+.pick-change {
+  flex: none;
+  line-height: 88rpx;
+  color: var(--primary-dark);
+  font-weight: 600;
+}
+
+.apply-wait {
+  margin-top: 20rpx;
+  text-align: center;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+}
+
+.bed-summary {
+  margin-top: 16rpx;
+  padding: 20rpx 24rpx;
+  border: 2rpx solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+.bed-summary-no {
+  font-size: var(--font-h2);
+  font-weight: 700;
+  color: var(--text-main);
+}
+.bed-summary-sub {
+  margin-top: 4rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
+.reason-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.reason-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  padding: 0 28rpx;
+  border-radius: 999rpx;
+  border: 2rpx solid var(--border);
+  background: var(--bg);
+  color: var(--text-sub);
+  font-size: var(--font-caption);
+  box-sizing: border-box;
+}
+
+.reason-chip-on {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+.form-hint {
+  margin-top: 8rpx;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.4;
+}
+
+.apply-foot-note {
+  margin-top: 20rpx;
+  text-align: center;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  line-height: 1.5;
+}
 
 .form-row { margin-top: 24rpx; }
 
@@ -443,7 +702,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 72rpx;
+  height: 88rpx;
   padding: 0 40rpx;
   border-radius: 999rpx;
   border: 2rpx solid var(--border);
@@ -480,6 +739,7 @@
 
 /* 提交中：禁用观感（点击由 JS 的 assigning 守卫拦截） */
 .btn-loading { opacity: 0.7; }
+.btn-disabled { opacity: 0.45; }
 
 /* ================= 平板断点（≥600px：全部 rpx ÷ 2 → px） ================= */
 @media (min-width: 600px) {
@@ -535,6 +795,45 @@
   .app-state { font-size: 12px; }
   .apps-hint, .apps-empty { font-size: 12px; }
 
+  .apply-subtitle { margin-top: -4px; padding-bottom: 4px; font-size: 12px; }
+  .apply-step { gap: 8px; margin-top: 12px; }
+  .apply-step-gap { margin-top: 16px; }
+  .step-badge { width: 22px; height: 22px; font-size: 12px; }
+  .step-title { font-size: 14px; }
+  .step-sub { margin-top: 2px; font-size: 12px; }
+  .cand-search {
+    height: 44px;
+    margin-top: 8px;
+    padding: 0 12px;
+    border-width: 1px;
+    font-size: 14px;
+  }
+  .cand-scroll { max-height: 260px; margin-top: 8px; }
+  .cand-card {
+    gap: 8px;
+    min-height: 56px;
+    padding: 10px;
+    margin-bottom: 6px;
+    border-width: 1px;
+    border-radius: 8px;
+  }
+  .cand-avatar { width: 36px; height: 36px; font-size: 14px; }
+  .cand-name { font-size: 16px; }
+  .cand-queue, .cand-meta, .cand-symptom, .cand-status, .cand-pick { font-size: 12px; }
+  .cand-meta, .cand-symptom, .cand-status { margin-top: 2px; }
+  .cand-pick { min-width: 36px; }
+  .cand-state { padding: 12px 4px; font-size: 12px; }
+  .manual-toggle { min-height: 44px; margin-top: 4px; font-size: 13px; }
+  .pick-summary { min-height: 44px; padding: 0 10px; gap: 6px; margin-top: 4px; font-size: 12px; }
+  .pick-change { line-height: 44px; }
+  .apply-wait { margin-top: 10px; font-size: 12px; }
+  .bed-summary { margin-top: 8px; padding: 10px 12px; border-width: 1px; }
+  .bed-summary-no { font-size: 18px; }
+  .bed-summary-sub { margin-top: 2px; font-size: 12px; }
+  .reason-row { gap: 6px; }
+  .reason-chip { height: 44px; padding: 0 14px; border-width: 1px; font-size: 13px; }
+  .form-hint { margin-top: 4px; font-size: 12px; }
+  .apply-foot-note { margin-top: 10px; font-size: 12px; }
   .form-row { margin-top: 12px; }
   .form-label { font-size: 13px; margin-bottom: 5px; }
   .form-input { height: 44px; padding: 0 12px; border-width: 1px; }

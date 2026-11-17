@@ -2,8 +2,9 @@
  * pages/profile/voice-settings —— 音色管理
  * 设计稿：design-output/患者端/C-个人中心/11-音色管理.png（1391×3014，1rpx ≈ 1.8547px）
  *
- * 数据：**纯本地**（services/voice.js 本地版），无后端接口 —— 按本轮需求。
- *   · 音色目录 = services/voice.js 的 CATALOG（取自设计稿四个音色）
+ * 数据：**远端优先 + 本地兜底**（services/voice.js）
+ *   · 音色目录 = GET /api/v1/voice/voices（服务端内置 qwen3-female-1/qwen3-male-1 + 用户自定义）
+ *     失败才用本地 CATALOG（同 id 同名称，仅两项）；两者不合并
  *   · 选中音色 → storage `wb_voice`（speech 播报直接读）
  *   · 语速     → storage `wb_voice_rate`（0.8 / 1.0 / 1.2 三档，映射慢/标准/快）
  *   · 删除记录 → storage `wb_voice_hidden`
@@ -15,6 +16,10 @@
  *      · 设为默认  → 立刻生效（保留设计稿的即时语义）
  *      · 删除      → 仅自定义音色，二次确认
  *   ③ 语速调节（设计稿无，按需求增补）④ 保存（落盘音色 + 语速）
+ *
+ * ⚠️ 2026-11-17 修：早期目录是本地 preset_* 四项（含潮汕话）+ 远端 qwen3-* 两项两套 id，
+ *    `_refresh()` 走本地全集而首屏走远端 → 一保存列表就从 2 项膨胀成 6 项。
+ *    现统一为远端口径（services/voice.js CATALOG 注释有完整归因）。
  *
  * 试听走 services/speech.js 的 TTS 合成固定示例句（契约 /api/v1/voice/tts）；
  * 语音服务不可用时如实提示，不伪造音频、不假装在播。
@@ -79,6 +84,7 @@ Page({
       if (this._gone || (this._userGen || 0) !== gen) return
       const pending = this.data.pending
       const okPending = c.rows.some((r) => r.id === pending) ? pending : ''
+      const hitPending = c.rows.filter((r) => r.id === okPending)[0]
       const rows = c.rows.map((r) => ({
         id: r.id,
         name: r.name,
@@ -93,7 +99,9 @@ Page({
         currentName: c.currentName,
         currentDesc: c.currentDesc,
         hiddenCount: c.hiddenCount,
-        pending: okPending
+        pending: okPending,
+        // 列表被远端刷新后，待保存提示的名称/有效性必须跟着重算（否则文案指向已下架音色）
+        pendingName: hitPending ? hitPending.name : ''
       })
     }).catch(() => {})
   },

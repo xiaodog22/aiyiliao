@@ -69,13 +69,13 @@
       <!-- 空列表 -->
       <view wx:if="{{!shown.length}}" class="cp-state cp-state-inline">
         <view class="cp-state-title">该科室暂无医生</view>
-        <view class="cp-state-sub">请选择其他科室，或由智能分诊匹配</view>
+        <view class="cp-state-sub">请选择其他科室，或随机匹配在线医生</view>
       </view>
     </view>
 
     <!-- 不指定医生入口 -->
-    <view class="cp-foot" bindtap="onSkip" hover-class="cp-doc-hover">
-      <text class="cp-foot-t">不指定医生，由智能分诊匹配</text>
+    <view class="cp-foot {{matching ? 'cp-foot-disabled' : ''}}" bindtap="onSkip" hover-class="cp-doc-hover">
+      <text class="cp-foot-t">{{matching ? '正在匹配在线医生…' : '不指定医生，随机匹配在线医生'}}</text>
     </view>
 
   </block>

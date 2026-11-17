@@ -10,7 +10,8 @@
  *   审批通过且指定了床位时后端在同一事务内落床。
  *
  * 契约要点（backend · BedApplicationRequest / BedApplicationData）：
- *   · patientRef 只接受内部患者 ID，姓名/手机号一律 422 → 抽屉里只收 patientRef
+ *   · 默认从近期接诊患者选择，提交 appointmentId（服务端解析内部患者 ID）；
+ *     手动 patientRef 仅作兜底，姓名/手机号一律 422
  *   · reason ≤200；priority 只认 NORMAL / URGENT，其余按 NORMAL
  *   · 申请状态：PENDING（待审批）/ APPROVED（已通过）/ REJECTED（已驳回）/ CANCELLED（已撤销）
  *   · 中文文案与配色**只在本文件**映射（BED_META / APP_META），模板不写英文判断
@@ -22,6 +23,7 @@ const app = getApp()
 const icons = require('../../../utils/icons.js')
 const doctorService = require('../../../services/doctor.js')
 const { errText } = require('../../../utils/err-text.js')
+const { aptDisplayStatus } = require('../../../utils/apt-status.js')
 const { paginate } = require('../../../utils/paginate.js')
 const req = require('../../../services/request.js')
 
@@ -52,6 +54,12 @@ const LEGEND_EXTRA = {
   CLEANING: { cls: 'clean', text: '待消毒' },
   RESERVED: { cls: 'reserved', text: '已预留' }
 }
+
+/* 申请抽屉的快捷原因：点一下填入，减少手机端打字；仍可在文本框改写 */
+const REASON_CHIPS = ['术后观察', '呼吸困难', '需心电监护', '行动不便', '发热待查']
+
+/* 已取消/已过期/未到诊的预约不作为候选（后端也会拒绝，这里只做展示层过滤） */
+const CAND_EXCLUDE = { CANCELLED: true, EXPIRED: true, NO_SHOW: true }
 
 Page({
   data: {
@@ -94,8 +102,23 @@ Page({
     applyBedId: '',
     applyBedNo: '',
     applyWardId: '',
+    applyWardName: '',
+    /* 默认从近期接诊患者选；applyPatientRef 仅作“找不到患者”时的兜底 */
+    applyCandidates: [],
+    applyCandidatesView: [],
+    applyCandidatesLoading: false,
+    applyCandidatesError: '',
+    applySearch: '',
+    applySelected: false,
+    applySelectedLabel: '',
+    applySelectedId: '',
+    applySelectedName: '',
+    applyAppointmentId: '',
+    applyManual: false,
     applyPatientRef: '',
     applyReason: '',
+    applyReasonChip: '',
+    applyReasonChips: REASON_CHIPS,
     applyPriority: 'NORMAL',
     applyErr: '',
     applying: false,
@@ -190,18 +213,133 @@ Page({
       applyBedId: String(ds.id || ''),
       applyBedNo: String(ds.no || ''),
       applyWardId: String(ds.ward || ''),
+      applyWardName: String(ds.wardname || ''),
+      applyCandidates: [],
+      applyCandidatesView: [],
+      applyCandidatesLoading: false,
+      applyCandidatesError: '',
+      applySearch: '',
+      applySelected: false,
+      applySelectedLabel: '',
+      applySelectedId: '',
+      applySelectedName: '',
+      applyAppointmentId: '',
+      applyManual: false,
       applyPatientRef: '',
       applyReason: '',
+      applyReasonChip: '',
       applyPriority: 'NORMAL',
       applyErr: '',
       idemKey: req.newIdempotencyKey()
+    }, () => this.fetchApplyCandidates())
+  },
+
+  /** 读取近期接诊患者：预约列表已含患者脱敏姓名/手机号，选择后传 appointmentId 给后端解析 */
+  fetchApplyCandidates() {
+    if (this._candLoading) return
+    this._candLoading = true
+    this.setData({ applyCandidatesLoading: true, applyCandidatesError: '' })
+    doctorService.listAppointments({ limit: 50 }).then((page) => {
+      const items = (page && page.items) || []
+      const list = items
+        .map(toCandidate)
+        .filter((c) => c.id && !CAND_EXCLUDE[c.status])
+      this.setData({
+        applyCandidates: list,
+        applyCandidatesView: list,
+        applyCandidatesLoading: false
+      })
+    }).catch((err) => {
+      this.setData({
+        applyCandidates: [],
+        applyCandidatesView: [],
+        applyCandidatesLoading: false,
+        applyCandidatesError: errText(err, '近期患者加载失败，可手动输入患者编号')
+      })
+    }).then(() => {
+      this._candLoading = false
+    })
+  },
+
+  onCandidateSearch(e) {
+    this.setData({ applySearch: String((e.detail && e.detail.value) || '') }, () => this._filterCandidates())
+  },
+
+  _filterCandidates() {
+    const q = String(this.data.applySearch || '').trim()
+    const all = this.data.applyCandidates || []
+    if (!q) {
+      this.setData({ applyCandidatesView: all })
+      return
+    }
+    const view = all.filter((c) => c.name.indexOf(q) >= 0 || c.phone.indexOf(q) >= 0 ||
+      (c.queueText && c.queueText.indexOf(q) >= 0))
+    this.setData({ applyCandidatesView: view })
+  },
+
+  onCandidateTap(e) {
+    const ds = e.currentTarget.dataset
+    const id = String((ds && ds.id) || '')
+    if (!id) return
+    const name = String((ds && ds.name) || '')
+    this.setData({
+      applySelected: true,
+      applySelectedLabel: '已选择：' + name,
+      applySelectedId: id,
+      applySelectedName: name,
+      applyAppointmentId: id,
+      applyManual: false,
+      applyPatientRef: '',
+      applyErr: ''
+    })
+  },
+
+  /** 选错了患者 → 回到列表重新选（不保留旧 appointmentId） */
+  onReselect() {
+    this.setData({
+      applySelected: false,
+      applySelectedLabel: '',
+      applySelectedId: '',
+      applySelectedName: '',
+      applyAppointmentId: '',
+      applySearch: '',
+      applyErr: ''
+    })
+  },
+
+  /** 兜底入口：近期列表找不到时，才展开内部患者编号输入 */
+  toggleManual() {
+    const manual = !this.data.applyManual
+    this.setData({
+      applyManual: manual,
+      applySelected: false,
+      applySelectedLabel: '',
+      applySelectedId: '',
+      applySelectedName: '',
+      applyAppointmentId: '',
+      applyPatientRef: '',
+      applyErr: ''
     })
   },
 
   onApplyInput(e) {
     const field = e.currentTarget.dataset.field
     if (!field) return
-    this.setData({ [field]: e.detail.value })
+    const patch = { [field]: e.detail.value, applyErr: '' }
+    if (field === 'applyReason') patch.applyReasonChip = ''
+    if (field === 'applyPatientRef') {
+      const ref = String(e.detail.value || '').trim()
+      patch.applySelected = !!ref
+      patch.applySelectedLabel = ref ? '已填写患者内部编号' : ''
+    }
+    this.setData(patch)
+  },
+
+  onReasonChipTap(e) {
+    const label = String((e.currentTarget.dataset && e.currentTarget.dataset.label) || '')
+    if (!label) return
+    const on = this.data.applyReasonChip === label
+    this.setData({ applyReason: on ? '' : label, applyReasonChip: on ? '' : label })
   },
 
   onPriorityTap(e) {
@@ -218,24 +356,27 @@ Page({
 
   confirmApply() {
     if (this.data.applying) return
+    const appointmentId = String(this.data.applyAppointmentId || '').trim()
     const ref = String(this.data.applyPatientRef || '').trim()
-    if (!ref) {
-      this.setData({ applyErr: '请填写患者内部 ID（patientRef）' })
+    if (!appointmentId && !ref) {
+      this.setData({ applyErr: this.data.applyManual ? '请填写患者内部编号' : '请先选择患者' })
       return
     }
     // 与后端同口径的前置拦截：手机号一律 422，提前提示省一次往返
-    if (/^1\d{10}$/.test(ref)) {
-      this.setData({ applyErr: 'patientRef 只接受内部患者 ID，不接受手机号' })
+    if (!appointmentId && /^1\d{10}$/.test(ref)) {
+      this.setData({ applyErr: '这里只接受内部患者编号，不接受手机号；请从上方患者列表选择' })
       return
     }
     this.setData({ applying: true, applyErr: '' })
-    doctorService.submitBedApplication({
-      patientRef: ref,
+    const body = {
       bedId: this.data.applyBedId,
       wardId: this.data.applyWardId,
       reason: String(this.data.applyReason || '').trim(),
       priority: this.data.applyPriority
-    }, { idempotencyKey: this.data.idemKey }).then(() => {
+    }
+    if (appointmentId) body.appointmentId = appointmentId
+    else body.patientRef = ref
+    doctorService.submitBedApplication(body, { idempotencyKey: this.data.idemKey }).then(() => {
       this.setData({ applying: false, showApply: false })
       wx.showToast({ title: '已提交，待护士站审批', icon: 'none' })
       this.fetchApplications()
@@ -307,9 +448,28 @@ function toViewRow(b) {
   }
 }
 
+/** 预约项 → 申请抽屉里的患者候选卡（用 appointmentId 提交，避免医生抄内部 ID） */
+function toCandidate(it) {
+  const raw = String((it && it.status) || '').toUpperCase()
+  const name = String((it && it.patientName) || '').trim() || '未命名患者'
+  const phone = String((it && it.patientPhoneMasked) || '') || '手机号未提供'
+  const timeText = fmtTime(it && it.startTime)
+  return {
+    id: String((it && it.id) || ''),
+    name,
+    initial: name.slice(0, 1),
+    phone,
+    timeText,
+    metaText: timeText ? phone + ' · ' + timeText : phone,
+    status: raw,
+    statusText: aptDisplayStatus(raw, it && it.startTime, it && it.endTime),
+    queueText: it && it.queueNumber ? '第 ' + it.queueNumber + ' 号' : '',
+    symptom: String((it && it.symptomSummary) || '').trim()
+  }
+}
+
 /** 后端申请单 → 视图行；未识别状态按「待审批」中性展示 */
-function toAppRow(a) {
-  const raw = String((a && a.status) || '').toUpperCase()
+function toAppRow(a) {  const raw = String((a && a.status) || '').toUpperCase()
   const meta = APP_META[raw] || APP_META.PENDING
   return {
     id: String((a && a.id) || ''),

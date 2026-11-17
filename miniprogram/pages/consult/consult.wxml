@@ -19,6 +19,8 @@
     </view>
   </view>
 
+  <offline-bar />
+
   <!-- 加载中 -->
   <skeleton wx:if="{{loading}}" type="list" rows="4" />
 
@@ -64,8 +66,8 @@
       <!-- 无会话：空态（未选医生 → 引导选择；已选医生 → 等待首条消息创建） -->
       <view wx:if="{{!activeId && !hasDoctor}}" class="state">
         <view class="state-badge state-badge-gray"><image class="state-ic" src="{{icons.chatGray}}" /></view>
-        <view class="state-title">暂无进行中的问诊</view>
-        <view class="state-sub">选择医生发起在线问诊，医生接诊后即时沟通</view>
+        <view class="state-title">请选择医生发起问诊</view>
+        <view class="state-sub">不指定医生时，系统会随机匹配一位在线医生</view>
         <view class="btn btn-primary state-btn" bindtap="onPickDoctor">选择医生</view>
       </view>
       <view wx:elif="{{!activeId && hasDoctor}}" class="state">

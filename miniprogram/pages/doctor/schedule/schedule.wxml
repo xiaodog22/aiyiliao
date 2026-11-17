@@ -15,6 +15,8 @@
     </view>
   </view>
 
+  <offline-bar />
+
   <!-- 在线接诊开关 -->
   <view class="ds-online">
     <view class="ds-online-body">
@@ -22,6 +24,15 @@
       <view class="ds-online-sub">开启后患者可在「在线问诊」中选择您；关闭后不再接收新预约</view>
     </view>
     <switch checked="{{online}}" color="#0B6EF8" bindchange="onOnlineChange" />
+  </view>
+
+  <!-- 排班与在线状态矛盾：只配了时段但没开接诊，患者端仍会显示「暂不接诊」 -->
+  <view wx:if="{{!loading && !error && !online && weekSlots > 0}}" class="ds-warn">
+    <view class="ds-warn-body">
+      <view class="ds-warn-title">排班已配置，但「在线接诊」未开启</view>
+      <view class="ds-warn-sub">患者端会显示「暂不接诊」，无法选择您。开启后才能接收新的在线问诊。</view>
+    </view>
+    <view class="ds-warn-btn" bindtap="onEnableOnline" hover-class="ds-hover">开启</view>
   </view>
 
   <!-- 加载中 / 失败 -->

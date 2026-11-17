@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 床位申请（申请制，2026-11-15）。
  *
  *   GET  /api/v1/beds/applications        我的申请（按登录医生的任职关系过滤）
- *   POST /api/v1/beds/applications        提交申请（Idempotency-Key 必填）
+ *   POST /api/v1/beds/applications        提交申请（Idempotency-Key 必填；患者用 appointmentId 或 patientRef 指定）
  *
  * ⚠️ 路径刻意与 {@link BedController} 的 /api/v1/beds 分开挂：
  *    字面量段 applications 优先于 {bedId} 变量段，不存在路由歧义。

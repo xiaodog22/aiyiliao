@@ -9,6 +9,8 @@
 -->
 <view class="page theme-{{theme}} {{hc ? 'high-contrast' : ''}} page-shell apt-page">
 
+  <offline-bar />
+
   <view class="shell-cols">
 
     <view class="shell-main">

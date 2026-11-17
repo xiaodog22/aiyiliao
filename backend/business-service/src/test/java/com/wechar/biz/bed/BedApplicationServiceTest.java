@@ -1,5 +1,6 @@
 package com.wechar.biz.bed;
 
+import com.wechar.biz.appointment.AppointmentRepository;
 import com.wechar.biz.bed.dto.BedApplicationRequest;
 import com.wechar.biz.common.ApiException;
 import com.wechar.biz.common.Digests;
@@ -25,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -46,6 +48,7 @@ class BedApplicationServiceTest {
 
     @Mock private BedApplicationRepository applications;
     @Mock private BedRepository beds;
+    @Mock private AppointmentRepository appointments;
     @Mock private DoctorService doctorService;
     @Mock private UserRepository users;
     @Mock private Clock clock;
@@ -81,6 +84,13 @@ class BedApplicationServiceTest {
                 "ik-1", digest);
     }
 
+    private AppointmentRepository.AppointmentRow appt(String doctorId, String userId,
+                                                      String familyMemberId, String status) {
+        return new AppointmentRepository.AppointmentRow("apt-1", userId, familyMemberId,
+                "slot-1", doctorId, "dep-1", "张建国", null, "胸闷待查", status, 1,
+                null, null, null, 1, NOW, NOW, null, "LOCAL_DEMO");
+    }
+
     @Test
     void submitRejectsPhoneAsPatientRef() {
         ApiException e = assertThrows(ApiException.class,
@@ -114,6 +124,57 @@ class BedApplicationServiceTest {
         ApiException e = assertThrows(ApiException.class,
                 () -> service.submit("u-doc", "ik-a", req("u-pat", "bed-9", null, null, null)));
         assertEquals("BED_NOT_FOUND", e.getCode());
+    }
+
+    @Test
+    void submitResolvesPatientRefFromOwnAppointment() {
+        when(applications.findByIdempotencyKey("ik-a")).thenReturn(Optional.empty());
+        when(appointments.findById("apt-1"))
+                .thenReturn(Optional.of(appt("doc-1", "u-pat", null, "CHECKED_IN")));
+        when(applications.findById(anyString())).thenReturn(Optional.of(row("PENDING", null,
+                Digests.sha256Hex("u-pat|||胸闷待查|NORMAL"))));
+        var out = service.submit("u-doc", "ik-a",
+                new BedApplicationRequest(null, "apt-1", null, null, "胸闷待查", null));
+        assertEquals("PENDING", out.status());
+        verify(applications).insert(anyString(), eq("doc-1"), eq("dep-1"), isNull(), isNull(),
+                eq("u-pat"), anyString(), eq("胸闷待查"), eq("NORMAL"), eq("PENDING"),
+                eq("ik-a"), anyString(), eq(NOW));
+    }
+
+    @Test
+    void submitRejectsAppointmentOfAnotherDoctor() {
+        when(appointments.findById("apt-1"))
+                .thenReturn(Optional.of(appt("doc-other", "u-pat", null, "CHECKED_IN")));
+        ApiException e = assertThrows(ApiException.class,
+                () -> service.submit("u-doc", "ik-a",
+                        new BedApplicationRequest(null, "apt-1", null, null, null, null)));
+        assertEquals("APPOINTMENT_NOT_FOUND", e.getCode());
+    }
+
+    @Test
+    void submitRejectsFamilyMemberAppointment() {
+        when(appointments.findById("apt-1"))
+                .thenReturn(Optional.of(appt("doc-1", "u-pat", "fm-1", "CHECKED_IN")));
+        ApiException e = assertThrows(ApiException.class,
+                () -> service.submit("u-doc", "ik-a",
+                        new BedApplicationRequest(null, "apt-1", null, null, null, null)));
+        assertEquals("VALIDATION_FAILED", e.getCode());
+    }
+
+    @Test
+    void submitRejectsBothPatientRefAndAppointment() {
+        ApiException e = assertThrows(ApiException.class,
+                () -> service.submit("u-doc", "ik-a",
+                        new BedApplicationRequest("u-pat", "apt-1", null, null, null, null)));
+        assertEquals("VALIDATION_FAILED", e.getCode());
+    }
+
+    @Test
+    void submitRejectsMissingPatientIdentity() {
+        ApiException e = assertThrows(ApiException.class,
+                () -> service.submit("u-doc", "ik-a",
+                        new BedApplicationRequest(null, null, null, null, null, null)));
+        assertEquals("VALIDATION_FAILED", e.getCode());
     }
 
     @Test

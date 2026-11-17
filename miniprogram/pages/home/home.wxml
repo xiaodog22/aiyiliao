@@ -1,5 +1,8 @@
 <view class="page theme-{{theme}} {{hc ? 'high-contrast' : ''}} page-shell home">
 
+  <!-- 离线/降级只读条：有缓存内容可继续看，提交类操作由请求层统一拦截 -->
+  <offline-bar />
+
   <!-- 平板横屏：左右双栏（左=参考图版式主体，右=短视频/导诊说明/导航/科普）。
        手机与平板竖屏：shell-* 是普通块级流，按 DOM 顺序纵向排列。 -->
   <view class="shell-cols">

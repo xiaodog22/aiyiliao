@@ -26,6 +26,7 @@ Page({
 
     loading: true,
     error: '',
+    matching: false,
     departments: [],
     activeDept: '',
     doctors: [],
@@ -77,7 +78,7 @@ Page({
         shown: this._filter(docArr, '')
       })
       // 同步医生端「线上问诊设置」的在线状态（异步补齐，不阻塞列表首屏）
-      this._loadAvailability(docArr)
+      this._availabilityPromise = this._loadAvailability(docArr) || Promise.resolve()
     }).catch(() => this.setData({ loading: false }))
   },
 
@@ -89,8 +90,8 @@ Page({
    */
   _loadAvailability(docs) {
     const arr = Array.isArray(docs) ? docs : []
-    if (!arr.length) return
-    Promise.all(arr.map((d) => doctorService.getAvailability(d.id).catch(() => null)))
+    if (!arr.length) return Promise.resolve()
+    return Promise.all(arr.map((d) => doctorService.getAvailability(d.id).catch(() => null)))
       .then((list) => {
         const av = {}
         arr.forEach((d, i) => { av[d.id] = list[i] || {} })
@@ -138,9 +139,36 @@ Page({
     this._gotoConsult(d)
   },
 
-  /** 不指定医生：进入 consult 页「智能匹配」空态（可再选医生） */
+  /** 不指定医生：从在线医生里随机匹配一位，带 doctorId 进入会话（不进入 AI 问诊） */
   onSkip() {
-    wx.navigateTo({ url: '/pages/consult/consult' })
+    if (this._matching) return
+    if (this.data.loading) {
+      wx.showToast({ title: '医生列表加载中，请稍后再试', icon: 'none' })
+      return
+    }
+    this._matching = true
+    this.setData({ matching: true })
+    const ready = this._availabilityPromise || Promise.resolve()
+    ready.then(() => {
+      const docs = Array.isArray(this.data.doctors) ? this.data.doctors : []
+      const eligible = docs.filter((d) => d && d.id && d.available !== false)
+      const online = eligible.filter((d) => d.available === true)
+      // 在线状态接口失败时 available=null：按 fail-open 处理，仍可随机匹配；
+      // 但已知离线的医生绝不参与匹配。
+      const candidates = online.length ? online : eligible.filter((d) => d.available !== true)
+      if (!candidates.length) {
+        wx.showToast({ title: '当前没有可接诊医生，请选择具体医生', icon: 'none', duration: 2500 })
+        return
+      }
+      const pick = candidates[Math.floor(Math.random() * candidates.length)]
+      wx.showToast({ title: '已匹配 ' + (pick.name || '在线医生'), icon: 'none', duration: 1800 })
+      this._gotoConsult(pick)
+    }).catch(() => {
+      wx.showToast({ title: '匹配失败，请选择具体医生', icon: 'none' })
+    }).then(() => {
+      this._matching = false
+      this.setData({ matching: false })
+    })
   },
 
   _gotoConsult(d) {

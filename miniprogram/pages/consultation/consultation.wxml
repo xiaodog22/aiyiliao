@@ -24,6 +24,8 @@
     </view>
   </view>
 
+  <offline-bar />
+
   <!-- 双栏外壳：手机=单列（侧栏内容 .side-only 隐藏）；平板横屏=右栏常驻就医助手 -->
   <view class="shell-cols consult-cols">
 

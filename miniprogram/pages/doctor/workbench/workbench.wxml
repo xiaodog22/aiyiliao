@@ -38,6 +38,8 @@
     </view>
   </view>
 
+  <offline-bar />
+
   <view class="shell-cols">
 
     <!-- 平板横屏（≥900px 且 ≥700px 且横屏）左侧栏：与效果图 02-平板横屏工作台 的左栏同构 -->

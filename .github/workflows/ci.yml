@@ -64,6 +64,19 @@ jobs:
           java-version: "17"
           cache: maven
           cache-dependency-path: backend/business-service/pom.xml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # backend/deploy/resources/ 是构建产物（.gitignore 排除，换机器可再生），但
+      # ResourceAssetService 构造期会 fail-fast 校验该目录、ResourceAssetTest 还按 sha256
+      # 读真实文件 → 干净 clone 上 341 项里 256 项上下文起不来。
+      # 这里按部署前同一口径重建：先补入 3 个视频种子（唯一无法从包内再生的二进制），
+      # 再用 resource-import.py 复制图片副本（与 docs 里「部署前跑一次」完全同一命令）。
+      - name: 准备 deploy/resources（不入库的构建产物）
+        run: |
+          mkdir -p backend/deploy/resources
+          cp backend/deploy/resources-seed/*.mp4 backend/deploy/resources/
+          python tools/resource-import.py --write
       - name: mvnw test
         working-directory: backend/business-service
         run: |

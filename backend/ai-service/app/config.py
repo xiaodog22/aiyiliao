@@ -140,6 +140,12 @@ class Settings:
     llm_http_max_retries: int = field(
         default_factory=lambda: int(_env("AI_LLM_HTTP_MAX_RETRIES", "0"))
     )
+    # SSE 订阅空闲超时（秒）：超过该时长无增量即发 error 收尾。
+    # 必须 > 7B CPU 上两 token 之间的最大间隔（实测 deep 模式 57s 总时长、块间隔 <5s），
+    # 默认 120 给足余量，同时避免断开的客户端把长连接挂成僵尸。
+    stream_idle_timeout_seconds: float = field(
+        default_factory=lambda: float(_env("AI_STREAM_IDLE_TIMEOUT_SECONDS", "120"))
+    )
 
     # ---- M4 硬化前瞻（提前到 M3）：周期清理与保留策略 ----
     # 历史任务保留期（sweep 裁剪阈值）与周期清理间隔。

@@ -20,7 +20,7 @@ import logging
 import time
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 import httpx
 
@@ -108,8 +108,13 @@ async def generate(
     first_token_timeout_s: float,
     fallback_timeout_s: Optional[float] = None,
     transport: Optional[httpx.AsyncBaseTransport] = None,
+    on_token: Optional[Callable[[str], None]] = None,
 ) -> ChainResult:
-    """按 provider 顺序尝试；逐级失败可识别上报，全部失败抛最后一个真实失败。"""
+    """按 provider 顺序尝试；逐级失败可识别上报，全部失败抛最后一个真实失败。
+
+    `on_token`：增量文本回调（对外流式第一期）。只透传给 Ollama —— DeepSeek 当前走
+    非流式接口，若发生降级则无增量，由 SSE 端点用最终结果补一块完整文本。
+    """
     order = provider_order(settings)
     if not order:
         raise TaskFailure(
@@ -142,6 +147,7 @@ async def generate(
                     timeout_s=timeout_s,
                     first_token_timeout_s=first_token_timeout_s,
                     transport=transport,
+                    on_token=on_token,
                 )
             else:
                 # 预算按「是不是首级」分配，而不是按 provider 名字写死：
