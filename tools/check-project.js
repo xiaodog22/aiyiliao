@@ -44,7 +44,11 @@ const js = []
 const json = []
 const wxml = []
 const wxss = []
+// 本地环境覆盖文件（.gitignore 内、不入库）：按设计就含本机地址与联调密钥，
+// 由 tools/check-build-env.js 单独把关"发布包不得带它"，这里不做通用扫描。
+const LOCAL_OVERRIDE = /miniprogram[\\/]config[\\/]env\.local\.js$/
 walk(ROOT, (p) => {
+  if (LOCAL_OVERRIDE.test(p)) return
   if (p.endsWith('.js')) js.push(p)
   else if (p.endsWith('.json')) json.push(p)
   else if (p.endsWith('.wxml')) wxml.push(p)

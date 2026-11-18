@@ -93,8 +93,13 @@ if (-not $SkipStart) {
     $up = (Test-Port 8088) -and (Test-Port 8080)
     Write-Output ("backend: " + $(if ($up) { 'ready' } else { 'NOT READY' }))
     # 隧道路由自检（只为提示，不阻断）
-    $code = & curl.exe -s -o NUL -w '%{http_code}' --noproxy '*' --max-time 8 'https://qv56gv32944.vicp.fun/health'
-    Write-Output "tunnel: HTTP $code"
+    # 2026-11-18（审计 H8）：隧道域名不入库，从环境变量 WECHAR_TUNNEL_BASE 读；未设置则跳过。
+    if ($env:WECHAR_TUNNEL_BASE) {
+        $code = & curl.exe -s -o NUL -w '%{http_code}' --noproxy '*' --max-time 8 ($env:WECHAR_TUNNEL_BASE.TrimEnd('/') + '/health')
+        Write-Output "tunnel: HTTP $code"
+    } else {
+        Write-Output "tunnel: skipped (WECHAR_TUNNEL_BASE not set)"
+    }
 }
 
 if (-not (Test-Path $DevDir)) { New-Item -ItemType Directory -Path $DevDir -Force | Out-Null }

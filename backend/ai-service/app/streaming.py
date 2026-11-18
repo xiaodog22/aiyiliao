@@ -52,19 +52,6 @@ def current_sink() -> Optional[Callable[[str], None]]:
     return _SINK.get()
 
 
-def publish(chunk: str) -> None:
-    """执行器侧调用：把增量交给当前出口。无绑定 / 空块 → 直接返回（零开销路径）。"""
-    if not chunk:
-        return
-    sink = _SINK.get()
-    if sink is None:
-        return
-    try:
-        sink(chunk)
-    except Exception:  # 订阅端异常不得影响生成主流程
-        logger.warning("token 投递失败（已忽略，不影响生成）", exc_info=True)
-
-
 def new_queue() -> asyncio.Queue:
     return asyncio.Queue(maxsize=QUEUE_MAX)
 
@@ -88,16 +75,51 @@ class TextFieldExtractor:
         - 跨块转义（结尾反斜杠、`\\uXXXX` 半截）暂存到下一块，绝不吐半个字符；
         - 找不到 `"text"` 键（模型没按格式输出）→ 返回空，端点末尾用最终结果补一块；
         - 只抽取、不改写，不解析其余字段。
+        - **UTF-16 代理对必须合并**（2026-11-18）：模型输出 emoji 时 JSON 转义是
+          `\\uD83D\\uDE00` 这种**两个** `\\uXXXX`，逐个 `chr()` 会得到两个孤立代理码点；
+          出站 UTF-8 编码遇孤立代理直接抛 `UnicodeEncodeError` → SSE 半路断流。
+          故高代理先暂存，等下一个 `\\uXXXX` 判断是否拼成完整码点；拼不上就降级 U+FFFD。
     """
 
     def __init__(self) -> None:
         self._seek_buf = ""
         self._state = "seek"  # seek | value | done
         self._esc: Optional[str] = None
+        # 已解出但尚未配对的高代理码点（`\\uD83D`）。必须跨块保留：代理对可能被切在
+        # 两个增量块里，逐块 flush 会把 emoji 拆成两个 �。
+        self._high: Optional[int] = None
 
     @property
     def done(self) -> bool:
         return self._state == "done"
+
+    def _flush_high(self, out: list[str]) -> None:
+        """把没有配对的孤立高代理降级成 U+FFFD（宁可显示 �，也不让流中断）。"""
+        if self._high is not None:
+            out.append("\ufffd")
+            self._high = None
+
+    def _emit_code(self, code: int, out: list[str]) -> None:
+        """按 UTF-16 代理规则输出码点：高代理暂存、低代理合并、孤立代理降级。"""
+        if 0xD800 <= code <= 0xDBFF:
+            self._flush_high(out)   # 连续两个高代理：前一个已是孤立
+            self._high = code
+            return
+        if 0xDC00 <= code <= 0xDFFF:
+            high = self._high
+            self._high = None
+            if high is None:
+                out.append("\ufffd")
+            else:
+                out.append(chr(0x10000 + ((high - 0xD800) << 10) + (code - 0xDC00)))
+            return
+        self._flush_high(out)
+        out.append(chr(code))
+
+    def _literal(self, text: str, out: list[str]) -> None:
+        """输出一个普通字符：先结算待配的高代理，保证替换字符落在原位置而不是句尾。"""
+        self._flush_high(out)
+        out.append(text)
 
     def feed(self, chunk: str) -> str:
         if not chunk or self._state == "done":
@@ -124,20 +146,22 @@ class TextFieldExtractor:
                 if char == '"':
                     self._state = "done"
                     break
-                out.append(char)
+                self._literal(char, out)
                 continue
             if self._esc == "":
                 if char == "u":
                     self._esc = "u"
                     continue
-                out.append(_SIMPLE_ESCAPES.get(char, char))
+                self._literal(_SIMPLE_ESCAPES.get(char, char), out)
                 self._esc = None
                 continue
             self._esc += char
             if len(self._esc) == 5:  # u + 4 hex
                 try:
-                    out.append(chr(int(self._esc[1:], 16)))
+                    self._emit_code(int(self._esc[1:], 16), out)
                 except ValueError:
                     out.append("")  # 非法码点：丢弃该字符，不抛异常打断生成
                 self._esc = None
+        if self._state == "done":
+            self._flush_high(out)  # 正文已结束：残留的孤立代理降级，避免出站编码失败
         return "".join(out)

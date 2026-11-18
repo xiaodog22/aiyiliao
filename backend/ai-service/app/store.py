@@ -25,6 +25,9 @@ from typing import Optional
 
 _STORE_VERSION = 1
 
+#: 终态集合（与 tasks.TERMINAL 同义；此处独立定义避免 store ↔ tasks 循环导入）
+_TERMINAL_STATUSES = frozenset({"SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"})
+
 logger = logging.getLogger("ai-service.store")
 
 #: `os.replace` 重试的退避梯度（秒）。合计约 155ms，覆盖杀毒/索引服务的瞬时占用，
@@ -65,7 +68,7 @@ class TaskStore:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
                 payload = {
                     "version": _STORE_VERSION,
-                    "tasks": self.tasks,
+                    "tasks": self._tasks_for_disk(),
                     "idempotency": self.idempotency,
                 }
                 tmp = self.path.with_suffix(".tmp")
@@ -89,6 +92,24 @@ class TaskStore:
                 return False
 
     # ---- 任务 ----
+
+    def _tasks_for_disk(self) -> dict:
+        """落盘前的 PHI 收敛（审计 M2）。
+
+        `tasks.json` 原先原样保存 `inputInline`（患者症状/对话原文），保留 24h 且无加密：
+        任何能读该文件的主机进程/运维动作都能拿到全量 PHI 时序档案。
+        终态任务不再需要 inputInline（不会被重新执行），因此落盘时剥掉；
+        QUEUED/RUNNING 仍保留 —— 那样重启后还能续跑，功能不受影响。
+        """
+        out: dict = {}
+        for task_id, task in self.tasks.items():
+            if task.get("status") in _TERMINAL_STATUSES and task.get("inputInline") is not None:
+                scrubbed = dict(task)
+                scrubbed["inputInline"] = None
+                out[task_id] = scrubbed
+            else:
+                out[task_id] = task
+        return out
 
     def get(self, task_id: str) -> Optional[dict]:
         task = self.tasks.get(task_id)

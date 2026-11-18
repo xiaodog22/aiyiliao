@@ -59,7 +59,11 @@ class TaskSubmitRequest(BaseModel):
     policy_version: str = Field(alias="policyVersion", max_length=40)
     trace_id: str = Field(alias="traceId", max_length=64)
 
-    input_ref: Optional[str] = Field(default=None, alias="inputRef", max_length=256)
+    # inputRef 只接受 `asr:<id>` 形态（审计 C2）：白名单字符 + 长度上限，
+    # 盘符/斜杠/点号在入口层即被 422 拒绝，纵深到 voice.resolve_audio_path 还有第二道断言。
+    input_ref: Optional[str] = Field(
+        default=None, alias="inputRef", max_length=256, pattern=r"^asr:[A-Za-z0-9_-]{1,64}$"
+    )
     input_inline: Optional[str] = Field(default=None, alias="inputInline", max_length=2000)
     voice: Optional[str] = Field(default=None, max_length=64)
     locale: Optional[str] = Field(default=None, max_length=20)

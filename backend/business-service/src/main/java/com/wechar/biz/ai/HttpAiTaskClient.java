@@ -187,6 +187,8 @@ public class HttpAiTaskClient implements AiTaskClient {
                 .timeout(timeout)
                 .header("X-Request-Id", RequestIds.current())
                 .header("X-Trace-Id", traceId())
+                // 租户边界（审计 C3）：ai-service 据此校验任务归属，跨租户读取/取消/订阅一律 404。
+                .header("X-Tenant-Id", config.getTenantId() == null ? "" : config.getTenantId())
                 .header("Accept", accept);
         if (config.getToken() != null && !config.getToken().isBlank()) {
             builder.header("Authorization", "Bearer " + config.getToken());

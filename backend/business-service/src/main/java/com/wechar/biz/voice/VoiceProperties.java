@@ -15,14 +15,22 @@ import org.springframework.context.annotation.Configuration;
 public class VoiceProperties {
 
     public static class Tts {
-        /** 合成适配器标识（如实回传到 TtsResult.engine）。 */
-        private String engine = "qwen3-tts-local";
+        /**
+         * 合成适配器标识的**兜底值**（仅当上游结果未带 engine 时使用）。
+         * 2026-11-18 起上游按实际引擎返回 qwen3 / edge，本层不得再硬编码成 edge-tts，
+         * 否则 qwen3 本地合成会被误标成 edge（O-10：引擎标识如实回传）。
+         */
+        private String engine = "auto";
 
         /** 短期签名 URL 有效秒数（过期后重新申请，不长期留存）。 */
         private int urlTtlSeconds = 900;
 
-        /** 合成轮询总预算（超预算按 TTS_UNAVAILABLE 降级，不无限等待）。 */
-        private long taskBudgetSeconds = 30;
+        /**
+         * 合成轮询总预算（超预算按 TTS_UNAVAILABLE 降级，不无限等待）。
+         * 2026-11-18 由 30 提到 60：ai-service 链预算 55（qwen3 35 + edge 12 + 余量），
+         * 30s 会把"qwen3 慢一点但仍能成功"的请求判成超时；60 > 55，且前端 ttsTimeout 90。
+         */
+        private long taskBudgetSeconds = 60;
 
         public String getEngine() { return engine; }
         public void setEngine(String engine) { this.engine = engine; }

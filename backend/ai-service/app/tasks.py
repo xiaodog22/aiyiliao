@@ -254,10 +254,21 @@ class TaskService:
 
     # ---------- 对外操作 ----------
 
+    @staticmethod
+    def idempotency_scope(tenant_id: str, raw_key: str) -> str:
+        """幂等键落库前的租户域化（审计 C3/M7）。
+
+        原始键由调用方自由编造，跨租户同名键会命中他人的幂等索引：轻则泄露"键已存在"
+        的事实（409），重则拿到他人任务回放。这里把 tenantId 并进哈希域，
+        使不同租户的同一字符串天然落在不同槽位；哈希同时收敛长度与不可打印字符。
+        """
+        return hashlib.sha256(f"{tenant_id}\x00{raw_key}".encode("utf-8")).hexdigest()
+
     async def submit(self, req: TaskSubmitRequest, idempotency_key: str, request_id: str) -> tuple[dict, bool]:
         """返回 (任务视图, 是否新建)。相同键相同载荷 → 返回既有任务；不同载荷 → 409。"""
         digest = _payload_digest(req)
-        existing = self.store.get_idempotency(idempotency_key)
+        scoped_key = self.idempotency_scope(req.tenant_id, idempotency_key)
+        existing = self.store.get_idempotency(scoped_key)
         if existing is not None:
             if existing.get("digest") != digest:
                 raise idempotency_conflict()
@@ -308,7 +319,7 @@ class TaskService:
         # put_nowait 之前，索引一旦抛错任务就永远进不了队列 —— 内存里有、队列里没有，
         # 比"卡住"更彻底（DEF-06 加重因素，2026-11-12）。这里显式兜住，保证入队一定执行。
         try:
-            await self.store.put_idempotency(idempotency_key, task["taskId"], digest)
+            await self.store.put_idempotency(scoped_key, task["taskId"], digest)
         except Exception as exc:  # noqa: BLE001 —— 索引失败不得阻断受理，仅告警
             logger.warning("幂等索引写入失败（任务照常入队）task=%s err=%s",
                            task["taskId"], exc.__class__.__name__)
@@ -316,17 +327,28 @@ class TaskService:
         logger.info("任务已受理 task=%s type=%s", task["taskId"], task["taskType"])
         return self._view(task), True
 
-    async def get_view(self, task_id: str) -> Optional[dict]:
+    async def get_view(self, task_id: str, tenant_id: Optional[str] = None) -> Optional[dict]:
+        """任务视图。传 tenant_id 时做归属校验（审计 C3）。
+
+        归属不符与"任务不存在"返回同一个 None：调用方统一 404，不给越权者任何
+        「该 taskId 确实存在、只是不属于你」的探测信号（避免 IDOR 枚举侧信道）。
+        """
         task = self.store.get(task_id)
         if task is None:
+            return None
+        if tenant_id is not None and task.get("tenantId") != tenant_id:
+            logger.warning("拒绝跨租户任务访问（已按不存在处理）task=%s", task_id)
             return None
         if self._expire(task):
             await self.store.save()
         return self._view(task)
 
-    async def cancel(self, task_id: str, reason: Optional[str]) -> Optional[dict]:
+    async def cancel(self, task_id: str, reason: Optional[str], tenant_id: Optional[str] = None) -> Optional[dict]:
         task = self.store.get(task_id)
         if task is None:
+            return None
+        if tenant_id is not None and task.get("tenantId") != tenant_id:
+            logger.warning("拒绝跨租户任务取消（已按不存在处理）task=%s", task_id)
             return None
         if task["status"] in TERMINAL:
             # 幂等：对终态任务重复取消返回同一终态，不报错。
@@ -344,7 +366,13 @@ class TaskService:
     # ---------- token 订阅（对外流式旁路） ----------
 
     def has_stream(self, task_id: str) -> bool:
-        """是否已有 SSE 订阅者（供执行器判断"没人听就别做增量相关的额外工作"）。"""
+        """该任务当前是否有订阅者。
+
+        ⚠️ 生产路径**不读**它（worker 投递不依赖订阅者是否存在，队列满就丢块并计数）。
+        实际调用方只有 `tests/test_stream_sse.py` 的夹具：等订阅者就位再造增量，
+        避免断言"活流"时被终态回放顶替。真要做「没人听就跳过额外工作」的优化，
+        应当复用本方法而不是另建一套判断。
+        """
         return task_id in self._streams
 
     def open_stream(self, task_id: str) -> asyncio.Queue:

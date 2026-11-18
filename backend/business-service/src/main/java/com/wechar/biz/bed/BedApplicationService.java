@@ -71,12 +71,15 @@ public class BedApplicationService {
                     "appointmentId 与 patientRef 只能二选一，避免患者身份歧义");
         }
         if (appointmentId != null) {
+            // 404 文案分开写（2026-11-18 审查 m-09）：原先两者共用「不存在或不属于当前医生」，
+            // 医生看到 404 无法判断是 ID 抄错还是选错了别人的患者，排障全靠猜。
+            // 预约 ID 是 ap-<uuid>（不可枚举），区分文案不构成批量探测面。
             AppointmentRepository.AppointmentRow appt = appointmentRepository.findById(appointmentId)
                     .orElseThrow(() -> new ApiException("APPOINTMENT_NOT_FOUND", HttpStatus.NOT_FOUND,
-                            "预约不存在或不属于当前医生"));
+                            "预约不存在（appointmentId 无效或已被清理）"));
             if (!doctor.id().equals(appt.doctorId())) {
                 throw new ApiException("APPOINTMENT_NOT_FOUND", HttpStatus.NOT_FOUND,
-                        "预约不存在或不属于当前医生");
+                        "该预约不属于当前医生，请从「近期接诊患者」重新选择");
             }
             if (blankToNull(appt.familyMemberId()) != null) {
                 throw new ApiException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY,

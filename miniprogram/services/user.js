@@ -235,11 +235,37 @@ function deleteAttachment(recordId, attachmentId) {
   return req.del(spec)
 }
 
+/**
+ * 资源 URL 域名白名单（审计 L8）。
+ *
+ * 原实现把后端返回的 http(s) 地址原样塞进 `<image src>`：响应被篡改或入库被注入时，
+ * 图片组件会去加载任意外部域（钓鱼/追踪像素）。这里只放行**网关同源**地址，
+ * 其余一律回落占位（附件落空串、头像落包内默认图），并在控制台留一条告警便于定位。
+ */
+function isTrustedResourceUrl(u) {
+  const url = String(u || '')
+  if (!/^https?:\/\//i.test(url)) return false
+  const gw = String(ENV.gateway || '')
+  if (!gw) return false
+  try {
+    // 只比较 host：网关可能带 /base 前缀，也可能由 http 升级到 https
+    const a = url.replace(/^https?:\/\//i, '').split('/')[0].split('#')[0].split('?')[0]
+    const b = gw.replace(/^https?:\/\//i, '').split('/')[0]
+    return !!a && a.toLowerCase() === b.toLowerCase()
+  } catch (e) {
+    return false
+  }
+}
+
 /** 附件短期签名 URL（相对路径）→ 完整 URL（<image> 组件需要绝对地址；空值原样返回） */
 function resolveAttachmentUrl(attachmentUrl) {
   const u = String(attachmentUrl || '')
   if (!u) return ''
-  if (/^https?:\/\//.test(u)) return u
+  if (/^https?:\/\//i.test(u)) {
+    if (isTrustedResourceUrl(u)) return u
+    console.warn('[user] 拒绝加载非网关域附件', u.slice(0, 80))
+    return ''
+  }
   if (u.charAt(0) === '/') return ENV.gateway + u
   return u
 }
@@ -425,7 +451,11 @@ const DEFAULT_AVATAR = '/assets/img/avatar-default.png'
 function resolveAvatar(avatarUrl) {
   const u = String(avatarUrl || '')
   if (!u) return DEFAULT_AVATAR
-  if (/^https?:\/\//.test(u)) return u
+  if (/^https?:\/\//i.test(u)) {
+    if (isTrustedResourceUrl(u)) return u
+    console.warn('[user] 拒绝加载非网关域头像', u.slice(0, 80))
+    return DEFAULT_AVATAR
+  }
   if (u.charAt(0) === '/') return ENV.gateway + u
   return u
 }

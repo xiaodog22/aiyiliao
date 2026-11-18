@@ -42,6 +42,16 @@ def build_asr_executor(
     resolve_audio = audio_resolver or resolve_audio_path
 
     async def executor(task: dict, ctx: TaskContext) -> dict:
+        locale = task.get("locale")
+        # locale 路由（2026-11-18）：粤语/潮汕不喂给普通话 FunASR，快速失败交给端侧/文字，
+        # 避免"识别出一段看似合理但实际错误的普通话"污染问诊上下文。
+        if not settings.asr_locale_supported(locale):
+            raise TaskFailure(
+                "CAPABILITY_UNAVAILABLE",
+                f"本地 ASR 仅支持普通话（locale={locale}）；请使用端侧识别或文字输入",
+                dependency="asr_model", retryable=False,
+            )
+
         status, detail = asr_status(settings)
         if status != "available":
             raise TaskFailure("CAPABILITY_UNAVAILABLE", detail, dependency="asr_model", retryable=True)
@@ -72,6 +82,9 @@ def build_asr_executor(
                 "transcript": transcript,
                 "language": language,
                 "hasTimestamps": False,
+                # 如实标注本地引擎；端侧 WechatSI 不经过本服务，不会出现在这里
+                "engine": "funasr",
+                "degraded": False,
             },
             "model": {
                 "modelId": "asr-funasr",

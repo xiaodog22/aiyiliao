@@ -108,7 +108,8 @@ async def generate(
     失败一律 TaskFailure（可识别码 + provider 归因）。
 
     `on_token`：每个增量块的旁路回调。**只做投递，不改累积逻辑** ——
-    回流失败（回调抛异常）不得影响生成，由 streaming.publish 内部兜住。
+    回流失败（回调抛异常）不得影响生成：兜底在本函数下方的 `try/except` 里
+    （捕获后记 WARN 继续累积），不在 streaming 侧。
     """
     # 模型常驻（2026-11-14，响应速度）：Ollama 默认 5 分钟无请求就卸载模型，
     # 7B 在 CPU 上重新加载要 10~30s，"隔一会儿再问一次"会突然很慢。

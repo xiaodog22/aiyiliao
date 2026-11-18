@@ -162,6 +162,7 @@ Page({
   },
 
   onUnload() {
+    this._pageVisible = false
     // 离场即结束本次导诊（2026-11-16「不会自动清空」修复）：
     // 原实现无条件落快照 → 用户返回首页/切别的页面再进导诊，看到的是上一次的旧对话、
     // 旧采集条甚至「已生成」按钮，像卡在上一轮里。
@@ -174,10 +175,22 @@ Page({
   },
 
   onShow() {
+    this._pageVisible = true
     const theme = app.globalData.theme || 'standard'
     if (theme !== this.data.theme) this.setData({ theme })
     // 每次回到本页都重新拉预约进度：用户可能刚在挂号页完成预约/取号（D4）
     this._loadProgress()
+    // 首句固定问候预取一次；命中后播报无需等待网关合成
+    if (!this._prefetched) {
+      this._prefetched = true
+      speechService.prefetch(['您好！我是AI健康助手。请简单描述您哪里不舒服，我来帮您初步判断就医方向。'])
+    }
+  },
+
+  onHide() {
+    this._pageVisible = false
+    // 进入结果页/切后台时取消在飞行 TTS，防止页面退出后迟到音频补播
+    speechService.stopSpeak()
   },
 
   /**
@@ -754,12 +767,14 @@ Page({
 
   _speakAdvice(result) {
     if (!speechService.voiceReadEnabled()) return
+    if (this._pageVisible === false) return
     const p = result.primary || {}
     const text = (result.levelText || '') + '。建议就诊科室：' + (p.dept || '全科医学科') + '。' + (result.levelAdvice || '')
     // 朗读走受保护接口（/voice/tts）：先保会话就绪；未登录直接不发声，
     // 避免每次出结论都打一个注定 401 的请求（朗读只是锦上添花，不阻断主流程）。
     req.ensureSessionReady().then((ready) => {
       if (!ready) return
+      if (this._pageVisible === false) return
       speechService.speak(text, { onError: () => {} })
     })
   },

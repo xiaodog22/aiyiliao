@@ -131,7 +131,9 @@ app:
   #   真实网关接入前如实 503 SMS_UNAVAILABLE（不伪造发送成功）。
   # cooldown-seconds：同一手机号下发冷却（契约 60s）；max-attempts：连续输错上限（5 次即废）。
   sms:
-    provider: ${APP_SMS_PROVIDER:dev}
+    # 2026-11-18（审计 H1）：缺省反转为 prod —— 漏配环境变量时如实 503（ProdSmsSender 未配置网关凭据），
+    # 而不是静默装配 dev provider「假装已下发」。联调档必须在 env.local 显式写 APP_SMS_PROVIDER=dev。
+    provider: ${APP_SMS_PROVIDER:prod}
     ttl-seconds: ${APP_SMS_TTL_SECONDS:300}
     cooldown-seconds: ${APP_SMS_COOLDOWN_SECONDS:60}
     max-attempts: ${APP_SMS_MAX_ATTEMPTS:5}
@@ -149,6 +151,19 @@ voice:
     - id: qwen3-male-1
       display-name: 沉稳男声
       locale: zh-CN
+      gender: male
+      default: false
+      available: true
+    # 粤语只做书面朗读或人工审校过的固定话术；不做机器口语化改写（2026-11-18 降级方案）。
+    - id: yue-female-1
+      display-name: 粤语女声
+      locale: zh-HK
+      gender: female
+      default: false
+      available: true
+    - id: yue-male-1
+      display-name: 粤语男声
+      locale: zh-HK
       gender: male
       default: false
       available: true

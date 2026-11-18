@@ -179,6 +179,33 @@ class AiTaskEventsStreamTest {
     }
 
     /**
+     * M-01 回归锁（2026-11-18）：实时增量与权威全文不一致时必须整段替换。
+     *
+     * <p>两个真实场景在此合流：上游订阅队列满丢块（慢消费者）、任务运行中途才建立订阅
+     * （小程序不发 Last-Event-ID，缺前缀）。两者都表现为 seq 连续、completed 正常，
+     * 用户却拿到缺中段/缺前缀的残文 —— 必须由终态校验兜住。
+     */
+    @Test
+    void 增量与权威全文不一致时终态整段替换() throws Exception {
+        AiTaskService service = mock(AiTaskService.class);
+        AiTaskClient client = mock(AiTaskClient.class);
+        when(service.get(USER, TASK))
+                .thenReturn(task("RUNNING", null))
+                .thenReturn(task("SUCCEEDED", "你好，在的"));
+        // 上游只吐出后半段：前缀已丢（或这条连接中途才接入）
+        when(client.openStream(UPSTREAM)).thenReturn(upstream("，在的"));
+
+        SseEmitter emitter = mock(SseEmitter.class);
+        controller(service, client).streamEvents(USER, TASK, 0L, emitter);
+        String body = awaitBody(emitter, 8_000);
+
+        Assertions.assertTrue(body.contains("\"text\":\"你好，在的\""), "必须补发权威全文");
+        Assertions.assertTrue(body.contains("\"replace\":true"),
+                "补发必须是替换语义：客户端追加会得到残文+全文的重复文本");
+        Assertions.assertTrue(body.contains("completed"));
+    }
+
+    /**
      * 回归锁：openStream 必须收到**上游任务 id**。
      *
      * <p>2026-11-17 真机冒烟踩过：控制器把对外 `task-<uuid>` 传给上游，

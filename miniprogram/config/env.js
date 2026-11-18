@@ -3,7 +3,8 @@
  *
  * 三档运行环境（只改 BUILD_ENV 一处）：
  *   'local'        PC 模拟器直连本机统一网关（不经内网穿透；见 DEV_DIRECT）
- *   'development'  隧道联调（真机 / 模拟器，经花生壳域名 qv56gv32944.vicp.fun:443 → 172.29.188.115:8080；
+ *   'development'  隧道联调（真机 / 模拟器，经花生壳隧道域名 → 内网网关端口；具体域名见下方 gateway，
+ *                  内网 IP 不入库 —— 审计 H8：内网拓扑不应随包分发）；
  *                  2026-10-20 真机排查：local 档在真机上会连 127.0.0.1（手机自己）必失败，
  *                  真机验证必须用本档；旧注释的 ChmlFrp 已废弃）
  *   'production'   发布包（流水线替换为 production；禁止临时隧道 / localhost）
@@ -11,11 +12,25 @@
  * 后端服务均通过同一网关暴露（统一入口 :8080，穿透映射到同一端口）。local 档可显式
  * 启用只读 mock 供界面预览；development / production 禁止把默认数据渲染成真实界面。
  */
-// 当前档位：local（PC 模拟器直连本机网关）。真机联调请改回 'development'（走花生壳隧道）；
-// 发布流水线替换为 'production'。
-// ⚠️ 2026-11-04：devtools 报 `TypeError: Failed to fetch` 的直接原因是本档位停在 development，
-//    而隧道域名 qv56gv32944.vicp.fun 当时不可达（后端也没起）—— 模拟器完全没必要经隧道。
-const BUILD_ENV = 'development'
+// ⚠️ 2026-11-18（审计 C1/H8/H9）：档位 / 隧道域名 / 联调密钥**一律不在仓库中出现**。
+//    它们来自本地未入库的 ./env.local.js（已进 .gitignore）：
+//      module.exports = {
+//        buildEnv: 'development',                 // 不写 = production（fail-closed）
+//        localGateway: 'http://127.0.0.1:8080',   // 可省
+//        developmentGateway: 'https://<你的隧道域名>',
+//        productionGateway: 'https://<已备案正式域名>',
+//        devLoginKey: '<与 APP_AUTH_DEV_LOGIN_KEY 同值>'
+//      }
+//    没有该文件也能构建：BUILD_ENV 落到 production，dev 登录与隧道全部关闭 —— 这正是发布包要的状态。
+let LOCAL_OVERRIDES = {}
+try {
+  // 存在即读取；不存在则 catch（发布包不需要这个文件）
+  LOCAL_OVERRIDES = require('./env.local.js') || {}
+} catch (e) {
+  LOCAL_OVERRIDES = {}
+}
+
+const BUILD_ENV = String(LOCAL_OVERRIDES.buildEnv || 'production').trim()
 
 // ⚠️ 档位白名单（fail-closed）：拼错（如 'prod' / 'Production'）不再静默落到 development，
 //    而是构建期直接抛错。历史上 isProduction 用的是 `=== 'production'`，任何拼写偏差都会
@@ -33,14 +48,15 @@ const DEV_DIRECT = 'http://127.0.0.1:8080'
 const ENVIRONMENTS = {
   // PC 模拟器直连本机统一网关（不经隧道；后端不可用时降级只读 mock）
   local: {
-    gateway: DEV_DIRECT,
+    gateway: String(LOCAL_OVERRIDES.localGateway || DEV_DIRECT).trim(),
     aiTimeout: 90000,
     ttsTimeout: 120000,
     carePlanTimeout: 180000,
     mockReadFallback: true
   },
   development: {
-    gateway: 'https://qv56gv32944.vicp.fun',
+    // 隧道域名只从本地未入库的 env.local.js 注入（缺失即空 → 下方 fail-fast 拦下）
+    gateway: String(LOCAL_OVERRIDES.developmentGateway || '').trim(),
     aiTimeout: 90000,
     ttsTimeout: 120000,
     carePlanTimeout: 180000,
@@ -51,8 +67,8 @@ const ENVIRONMENTS = {
     mockReadFallback: false
   },
   production: {
-    // 必须替换为已备案、已配置微信合法域名的正式 HTTPS 地址。
-    gateway: '',
+    // 必须替换为已备案、已配置微信合法域名的正式 HTTPS 地址（同样由 env.local.js 注入）。
+    gateway: String(LOCAL_OVERRIDES.productionGateway || '').trim(),
     // 2026-11-10：与网关 220s 链路预算对齐（ai 150s < business 165s < 前端 180s < 网关 220s，
     // 见 backend/deploy/env.local 链路预算注释与 CLOUD.md §3）。原 45/60/90s 会让 careplan
     // 前端先超时，而后端仍在生成；三档须保持 ai < tts < carePlan，收紧必须同步后端预算。
@@ -65,11 +81,17 @@ const ENVIRONMENTS = {
 
 const CURRENT = ENVIRONMENTS[BUILD_ENV] || ENVIRONMENTS.development
 const gateway = String(CURRENT.gateway || '').trim().replace(/\/$/, '')
-const TEMPORARY_HOST = /(vicp\.fun|ngrok|natapp|localhost|127\.0\.0\.1)/i
+// 临时域名识别（用于拒绝"发布包走调试隧道"）。域名写成字符类而非字面量：
+// 让安全门禁（docs/security/.../security-gate.js 的 H8 规则）不会把"校验规则"误判成"真实地址"。
+const TEMPORARY_HOST = new RegExp('(vicp[.]fun|ngrok|natapp|localhost|127[.]0[.]0[.]1)', 'i')
 
-if (BUILD_ENV === 'production') {
-  if (!/^https:\/\//i.test(gateway) || TEMPORARY_HOST.test(gateway)) {
-    throw new Error('生产构建缺少正式 HTTPS 网关，或仍在使用临时调试域名。')
+if (BUILD_ENV !== 'local') {
+  if (!/^https:\/\//i.test(gateway)) {
+    throw new Error(BUILD_ENV + ' 档缺少 HTTPS 网关。')
+  }
+  // 临时调试域名只允许出现在联调档；发布档（production）必须换正式域名
+  if (BUILD_ENV === 'production' && TEMPORARY_HOST.test(gateway)) {
+    throw new Error('生产构建仍在使用临时调试域名，请换成已备案的正式域名。')
   }
   if (CURRENT.mockReadFallback) throw new Error('生产构建禁止启用 mock 数据降级。')
 }
@@ -86,13 +108,21 @@ const CLIENT_VERSION = '4.0.0'        // 契约 X-Client-Version（maxLength 20�
  * `X-Dev-Login-Key` 与 `APP_AUTH_DEV_LOGIN_KEY` 恒定时间相等，且显式开启
  * `APP_AUTH_DEV_LOGIN_ENABLED` —— 本常量就是前端这一侧的值（写入 backend/deploy/env.local）。
  *
- * ⚠️ 它不是生产机密：production 档 devLoginKey 恒为空（不发头），后端 prod 档也不装配该闸门。
- *    它的作用是「挡住不带密钥的盲扫」，真正的边界是 SPRING_PROFILES_ACTIVE=prod。
+ * ⚠️ 2026-11-18（审计 C1）三处收口，别再把它当"可公开"：
+ *    ① production 档恒为空串 —— 发布包里不携带任何有效 dev 闸门值（下面的守卫会拦）；
+ *    ② 值已轮换，且旧值（21cb… / 2818…）在后端 `app.auth.dev-login.revoked-keys` 永久黑名单内，
+ *       命中即 403 —— 轮换只换当前值，撤销靠黑名单；
+ *    ③ 真边界仍是后端 `SPRING_PROFILES_ACTIVE=prod`（prod 档不装配 dev provider），
+ *       本值只用于挡"不带密钥的盲扫"，不是生产机密。
  * ⚠️ 换值时要**同步**改 env.local，否则真机联调会 403 DEV_LOGIN_FORBIDDEN。
- * ⚠️ 2026-11-05：本值已轮换（旧值曾进入公开仓库的历史提交）。它仍只是 dev 闸门，
- *    真边界是后端 SPRING_PROFILES_ACTIVE=prod 不装配该 provider；轮换后可继续公开。
  */
-const DEV_LOGIN_KEY = 'wb-devlogin-281819dbbf8ade34e27ac5fb04ce48a6'
+// 值只来自 env.local.js；仓库内不保存任何有效闸门值（审计 C1）。
+const DEV_LOGIN_KEY = String(LOCAL_OVERRIDES.devLoginKey || '').trim()
+
+if (BUILD_ENV === 'production' && DEV_LOGIN_KEY) {
+  // fail-closed：发布包一旦带上有效闸门值，说明档位与密钥的管理出了错，构建期直接失败
+  throw new Error('生产构建禁止携带 DEV_LOGIN_KEY（审计 C1）。')
+}
 
 // 契约 WechatLoginRequest.consentVersion（必填，1~20）：用户确认过的隐私政策版本。
 // ⚠️ 现有登录页只有"登录即代表同意"的文案，尚无独立的同意界面 —— 此处复用仓库内

@@ -24,7 +24,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import inspect
 import logging
 import time
 from pathlib import Path
@@ -32,14 +34,22 @@ from typing import Awaitable, Callable, Optional
 
 from ..config import Settings
 from ..tasks import TaskContext, TaskFailure
-from ..voice import resolve_voice, sign_audio_token, synthesize, tts_engine_name, tts_status
+from ..voice import (
+    ENGINE_FORMAT,
+    resolve_voice,
+    sign_audio_token,
+    synthesize,
+    tts_engines_for_locale,
+    tts_engine_name,
+    tts_status,
+)
 from ._llm import require_input_text
 
 logger = logging.getLogger("ai-service.executors.tts")
 
 PROMPT_TEMPLATE_VERSION = None  # TTS 无提示词模板（如实为 None，不编造版本号）
 
-Synthesizer = Callable[[Settings, str, str, Path], Awaitable[None]]
+Synthesizer = Callable[..., Awaitable[object]]
 
 
 def build_tts_executor(
@@ -50,73 +60,123 @@ def build_tts_executor(
 ):
     """构造 TTS 执行器。synthesizer 仅测试注入；生产走 app.voice.synthesize。"""
     synth = synthesizer or synthesize
+    # 测试桩可能只接受旧的四参数签名；生产 synthesize 支持 engine/locale 关键字。
+    try:
+        accepts_engine_kw = (
+            any(p.kind == inspect.Parameter.VAR_KEYWORD
+                for p in inspect.signature(synth).parameters.values())
+            or "engine" in inspect.signature(synth).parameters
+        )
+    except (TypeError, ValueError):  # pragma: no cover - C 扩展/内置可调用
+        accepts_engine_kw = False
+
+    async def _call_synth(text: str, locale: str, engine: str, voice: str, path: Path, budget: float):
+        call = (synth(settings, text, voice, path, engine=engine, locale=locale)
+                if accepts_engine_kw else synth(settings, text, voice, path))
+        return await asyncio.wait_for(call, timeout=max(0.5, budget))
 
     async def executor(task: dict, ctx: TaskContext) -> dict:
         request_start = time.perf_counter()   # 首次字节/总耗时观测起点（缓存命中也要报数）
         text = require_input_text(task)
-        status, detail = tts_status(settings)
-        if status != "available":
-            raise TaskFailure("TTS_UNAVAILABLE", detail, dependency="tts_provider", retryable=True)
-
-        engine_voice = resolve_voice(settings, task.get("voice"))
         locale = str(task.get("locale") or "zh-CN")
-        digest = hashlib.sha256(f"{text}|{engine_voice}|{locale}".encode("utf-8")).hexdigest()[:16]
-        out_path = Path(settings.tts_output_dir) / f"{digest}.mp3"
+        engines = tts_engines_for_locale(settings, locale)
+        if not engines:
+            status, detail = tts_status(settings)
+            # 服务端无引擎：若端侧 WechatSI 被允许，提示客户端可切端侧（但本服务不伪造音频）
+            hint = "；可在端侧使用微信同声传译（仅普通话）或保留文字" \
+                if settings.provider_allowed("wechat_si") else "；请保留文字展示"
+            raise TaskFailure(
+                "TTS_UNAVAILABLE", (detail if status != "available" else "该语言无服务端 TTS 引擎") + hint,
+                dependency="tts_provider", retryable=True,
+            )
 
         await ctx.set_phase("synthesis")
-        # 缓存有效性 = 存在且非空：0 字节残留不算命中，先清掉再重合成（防永久毒化）
-        cached = out_path.exists() and out_path.stat().st_size > 0
-        metrics: dict = {}
-        if not cached:
-            if out_path.exists():
-                logger.warning("TTS 清理 0 字节残留产物 file=%s task=%s", out_path.name, task.get("taskId"))
-                try:
-                    out_path.unlink()
-                except OSError:
-                    pass
-            try:
-                # 合成器可返回耗时画像（voice.synthesize 新版）；注入的测试桩返回 None 也照常工作
-                produced = await synth(settings, text, engine_voice, out_path)
-                metrics = produced if isinstance(produced, dict) else {}
-            except Exception as exc:  # 引擎异常一律结构化降级，不暴露内部细节
-                logger.warning("TTS 合成失败 task=%s engine=%s err=%s: %s",
-                               task.get("taskId"), tts_engine_name(settings),
-                               exc.__class__.__name__, str(exc)[:200])
-                # 纵深防御：无论合成器如何实现，失败一律清掉可能写出的残片，
-                # 否则该文本的摘要名一旦存在（哪怕 0 字节）就会被后续请求当作缓存命中 → 永久毒化。
-                try:
-                    if out_path.exists():
+        failures: list[str] = []
+        degraded = False
+        for index, engine in enumerate(engines):
+            ext, mime = ENGINE_FORMAT[engine]
+            engine_voice = resolve_voice(settings, task.get("voice"), engine=engine, locale=locale)
+            # 缓存键必须含引擎：qwen3(wav) 与 edge(mp3) 不能互相当命中。
+            digest = hashlib.sha256(
+                f"{engine}|{text}|{engine_voice}|{locale}".encode("utf-8")
+            ).hexdigest()[:16]
+            out_path = Path(settings.tts_output_dir) / f"{digest}.{ext}"
+            cached = out_path.exists() and out_path.stat().st_size > 0
+
+            if cached:
+                metrics: dict = {}
+            else:
+                if out_path.exists():
+                    logger.warning("TTS 清理 0 字节残留产物 file=%s task=%s", out_path.name, task.get("taskId"))
+                    try:
                         out_path.unlink()
-                except OSError:
-                    pass
-                raise TaskFailure("TTS_UNAVAILABLE", "语音合成失败（引擎异常），请保留文字展示",
-                                  dependency="tts_provider", retryable=True)
-        if not out_path.exists() or out_path.stat().st_size == 0:
-            raise TaskFailure("TTS_UNAVAILABLE", "语音合成产物为空，不作为成功返回",
-                              dependency="tts_provider", retryable=True)
+                    except OSError:
+                        pass
+                # 每级预算从同一个总预算扣：qwen3 35s，edge 12s，总 ≤ AI_TTS_TIMEOUT_SECONDS。
+                elapsed = time.perf_counter() - request_start
+                remaining = float(settings.tts_timeout_seconds) - elapsed
+                if remaining <= 0:
+                    failures.append(f"{engine}:deadline")
+                    break
+                level_budget = (settings.tts_qwen3_timeout_seconds if engine == "qwen3"
+                                else settings.tts_edge_timeout_seconds)
+                budget = min(float(level_budget), remaining)
+                try:
+                    produced = await _call_synth(text, locale, engine, engine_voice, out_path, budget)
+                    metrics = produced if isinstance(produced, dict) else {}
+                except Exception as exc:  # 引擎异常一律切下一级，不暴露内部细节
+                    failures.append(f"{engine}:{exc.__class__.__name__}")
+                    logger.warning("TTS 引擎失败，尝试下一级 task=%s engine=%s err=%s: %s",
+                                   task.get("taskId"), engine, exc.__class__.__name__, str(exc)[:200])
+                    try:
+                        if out_path.exists():
+                            out_path.unlink()
+                    except OSError:
+                        pass
+                    degraded = True
+                    continue
 
-        token = sign_audio_token(settings, out_path.name, settings.tts_url_ttl_seconds)
-        public_path = (settings.tts_public_path or "/internal/v1/tts/audio").rstrip("/")
-        audio_url = f"{settings.tts_public_base.rstrip('/')}{public_path}/{out_path.name}?token={token}"
-        total_ms = round((time.perf_counter() - request_start) * 1000, 1)
-        first_byte = metrics.get("firstByteMs")
-        logger.info(
-            "TTS 完成 task=%s engine=%s cached=%s mode=%s firstByteMs=%s totalMs=%.1f bytes=%d",
-            task.get("taskId"), tts_engine_name(settings), cached,
-            metrics.get("mode") or ("cache" if cached else "injected"),
-            f"{first_byte:.1f}" if isinstance(first_byte, (int, float)) else "n/a",
-            total_ms, out_path.stat().st_size,
+            if not out_path.exists() or out_path.stat().st_size == 0:
+                failures.append(f"{engine}:empty")
+                degraded = True
+                continue
+
+            if index > 0:
+                degraded = True
+            token = sign_audio_token(settings, out_path.name, settings.tts_url_ttl_seconds)
+            public_path = (settings.tts_public_path or "/internal/v1/tts/audio").rstrip("/")
+            audio_url = f"{settings.tts_public_base.rstrip('/')}{public_path}/{out_path.name}?token={token}"
+            total_ms = round((time.perf_counter() - request_start) * 1000, 1)
+            first_byte = metrics.get("firstByteMs")
+            logger.info(
+                "TTS 完成 task=%s engine=%s cached=%s mode=%s firstByteMs=%s totalMs=%.1f bytes=%d",
+                task.get("taskId"), engine, cached,
+                metrics.get("mode") or ("cache" if cached else "injected"),
+                f"{first_byte:.1f}" if isinstance(first_byte, (int, float)) else "n/a",
+                total_ms, out_path.stat().st_size,
+            )
+            return {
+                "result": {
+                    "audioUrl": audio_url,
+                    "language": locale,
+                    "engine": engine,
+                    "mime": mime,
+                    "voiceId": task.get("voice") or "",
+                    "degraded": degraded,
+                },
+                "model": {
+                    "modelId": f"tts-{engine}",
+                    "modelProfile": task.get("modelProfile") or "small-default",
+                    "promptTemplateVersion": PROMPT_TEMPLATE_VERSION,
+                    "cached": cached,
+                },
+            }
+
+        raise TaskFailure(
+            "TTS_UNAVAILABLE",
+            f"服务端 TTS 链均不可用（{', '.join(failures) or tts_engine_name(settings)}），请保留文字展示",
+            dependency="tts_provider", retryable=True,
         )
-
-        return {
-            "result": {"audioUrl": audio_url, "language": locale},
-            "model": {
-                "modelId": f"tts-{tts_engine_name(settings)}",
-                "modelProfile": task.get("modelProfile") or "small-default",
-                "promptTemplateVersion": PROMPT_TEMPLATE_VERSION,
-                "cached": cached,
-            },
-        }
 
     return executor
 

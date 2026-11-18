@@ -71,6 +71,8 @@ ttsEngine=… | ttsStream=on|off | llmSmall=… | llmLarge=… | queueMax=… | 
 | `AI_TTS_ENGINE` | none | none=未配置（→ `TTS_UNAVAILABLE`）/ edge=edge-tts（需本地可导入 `edge_tts`）。**生产默认取 edge**（O-10 定稿） |
 | `AI_TTS_TIMEOUT_SECONDS` | 30 | TTS 合成超时（引擎异常一律结构化降级）；**2026-10-22 起真正下传到引擎** `receive_timeout`，仅流式档生效 |
 | `AI_TTS_STREAM` / `TTS_STREAM` | true | **流式合成开关（性能/回滚）**：true=共享连接池 + `stream()` 增量落盘（首字节可观测）；false=旧 `save()` 路径。两个变量名等价 |
+| `AI_TTS_PREGEN_ENABLED` | true | **固定句式预生成开关（性能）**：启动时后台遍历清单，对默认音色 + 内置男女音色分别预合成；已存在跳过、失败仅 WARN。`false` 可完全回滚（2026-11-17 默认开启） |
+| `AI_TTS_PREGEN_PHRASES_PATH` | `config/tts-pregen-phrases.json` | 预生成清单；只放可完整命中的纯固定句，禁止占位符模板 |
 | `AI_LLM_WORKER_POOL_SIZE` | 1 | **LLM 并发 worker 池大小（性能/回滚）**：>1 时启用多协程 worker 池并发消费任务队列，并启 supervisor 监督异常退出；`1`=旧行为（严格串行，向后兼容）。队列 `AI_QUEUE_MAX` 提供一级背压、httpx 连接池 `max_connections` 为二级背压 |
 | `AI_LLM_STREAM` | false | **Ollama 流式开关（性能/回滚）**：true=优先走 `stream=true` NDJSON 累积（可观测首 token）；流式中途失败**自动回退非流式**（WARN + metrics 计数，返回契约不变）。false=始终非流式（旧行为）。`transport` 注入（测试）也走流式，回退同样走注入通道 |
 | `AI_LLM_HTTP_CLIENT_REUSE` | true | **httpx 连接复用开关（性能/回滚）**：true=进程级单例 `AsyncClient`（连接池/超时/重试可配，shutdown 释放）；false=每次调用新建一次性 client（旧行为）。两者错误映射一致（统一 `_post_ollama_generate`） |
@@ -78,7 +80,7 @@ ttsEngine=… | ttsStream=on|off | llmSmall=… | llmLarge=… | queueMax=… | 
 | `AI_LLM_HTTP_POOL_KEEPALIVE` | 20 | 连接池 keep-alive 连接数（`httpx.Limits.max_keepalive_connections`） |
 | `AI_LLM_HTTP_TIMEOUT_SECONDS` | 30 | 复用 client 的读超时（`httpx.Timeout` 主值，connect 仍取探针超时） |
 | `AI_LLM_HTTP_MAX_RETRIES` | 0 | 底层传输层重试次数（`httpx.AsyncHTTPTransport(retries=)`）；默认 0 不重试，避免与执行器级快降级叠加 |
-| `AI_TTS_VOICE_MAP` | （空） | 业务音色 ID → 引擎音色映射，如 `qwen3-female-1=zh-CN-XiaoxiaoNeural`；未命中回退默认 |
+| `AI_TTS_VOICE_MAP` | （空） | 业务音色 ID → 引擎音色映射，如 `qwen3-female-1=zh-CN-XiaoxiaoNeural,qwen3-male-1=zh-CN-YunxiNeural`；未命中回退默认。**内置男女音色在代码里有兜底映射**，空值也不会都落成同一个女声 |
 | `AI_TTS_DEFAULT_VOICE` | zh-CN-XiaoxiaoNeural | 默认引擎音色 |
 | `AI_TTS_OUTPUT_DIR` | runtime/tts | 合成产物目录（非权威，重启可失） |
 | `AI_TTS_PUBLIC_BASE` | http://127.0.0.1:8001 | `audioUrl` 基址：对外部署须指向客户端可达入口（经网关 = 网关对外域名）；未设则内网默认、真机不可达 |
@@ -294,6 +296,13 @@ ttsEngine=… | ttsStream=on|off | llmSmall=… | llmLarge=… | queueMax=… | 
 | 旧路径 `save()`（`TTS_STREAM=false`） | 不可观测（`n/a`） | 1948.3ms（1594.7~2143.0） | 整段写完才知道结果，无音频只能事后暴露 |
 | 流式 `stream()`（新默认） | **1222.5ms** | 1799.0ms（1438.4~2165.3） | 首字节≈总耗时 68%，剩余为尾包/落盘/原子替换/签名 |
 | 缓存命中 | — | **0.2ms** | 纯文件 + 签名，无网络、无引擎调用 |
+
+**固定句式预生成**（2026-11-17 默认开启）：
+
+- `AI_TTS_PREGEN_ENABLED=true` 时，启动后后台遍历 `config/tts-pregen-phrases.json`；
+- 对默认音色 + `qwen3-female-1` / `qwen3-male-1` 分别预合成，已存在且非空则跳过（增量）；
+- 清单只放可完整命中的纯固定句（导诊/问诊/养生首句、试听句等），**不放带占位符的模板**；
+- 失败仅 WARN，不阻塞主服务；`AI_TTS_PREGEN_ENABLED=false` 可完全回滚。
 
 **开关与降级**：
 

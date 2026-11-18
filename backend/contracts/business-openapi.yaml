@@ -1874,7 +1874,9 @@ paths:
 
         流**只是增量通道**：收到 `completed` 后客户端仍需以 `GET /api/v1/ai/tasks/{taskId}`
         的终态为准，避免丢帧导致的半截内容被当成完整结果。服务端不得伪造模型不提供的
-        精确进度百分比，`progressPhase` 只能是阶段名。
+        精确进度百分比，`progressPhase` 只能是阶段名。终态若发现已发增量与权威全文不一致，
+        会补一条 `replace: true` 的 `delta`（整段替换语义），客户端按替换处理后即可与
+        `GET` 结果一致。
       parameters:
         - name: taskId
           in: path
@@ -4360,6 +4362,12 @@ components:
           type: string
           enum: [accepted, status, delta, citation, safety, tts, completed, cancelled, error]
         text: {type: [string, 'null'], description: "`delta` 事件的增量文本。"}
+        replace:
+          type: boolean
+          description: |
+            `delta` 事件专用，缺省 `false`。`true` 表示本段**替换**客户端此前收到的全部正文
+            （不是追加）：服务端在终态用 `GET /api/v1/ai/tasks/{taskId}` 的权威全文校验实时增量，
+            发现丢块或缺前缀（上游队列满、任务运行中途才接入等）时下发。客户端必须先清空已收正文。
         citation: {$ref: '#/components/schemas/Citation'}
         safety: {$ref: '#/components/schemas/SafetyNotice'}
         status: {$ref: '#/components/schemas/AiTaskStatus'}

@@ -21,7 +21,9 @@ import jakarta.validation.constraints.Size;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record BedApplicationRequest(
         String patientRef,
-        String appointmentId,
+        // 上限与契约 taskId/appointmentId 同口径（ap-<uuid> = 39 字符，留足余量）：
+        // 原实现没有任何长度约束，超长串会一路走到 DB 查询，属可放大的无效请求。
+        @Size(max = 64) String appointmentId,
         String bedId,
         String wardId,
         @Size(max = 200) String reason,

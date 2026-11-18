@@ -8,13 +8,15 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
- * dev 档短信网关（app.sms.provider=dev，缺省即此档）：
+ * dev 档短信网关（**必须显式** app.sms.provider=dev 才装配）：
  * 不真正发短信，只打印**脱敏**日志（手机号 138****1234，验证码与完整号码不入日志）。
  * 为集成测试保留 {@link #lastCode(String)} 读取入口——仅 dev 档存在该能力，
  * 生产档由 {@link ProdSmsSender}（或后续真实网关实现）提供，不存在任何"取验证码"旁路。
  */
 @Component
-@ConditionalOnProperty(name = "app.sms.provider", havingValue = "dev", matchIfMissing = true)
+// 2026-11-18（审计 H1）：去掉 matchIfMissing —— 缺省不再装配 dev 发送器。
+// 漏配 APP_SMS_PROVIDER 时由 ProdSmsSender 如实 503（不再"假装已下发"）。
+@ConditionalOnProperty(name = "app.sms.provider", havingValue = "dev")
 public class DevSmsSender implements SmsSender {
 
     private static final Logger log = LoggerFactory.getLogger(DevSmsSender.class);

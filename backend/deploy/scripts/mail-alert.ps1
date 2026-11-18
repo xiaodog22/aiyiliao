@@ -186,7 +186,14 @@ function New-AlertBody([hashtable]$Report) {
 
 # ---------------------------------------------------------------- 主题渲染
 function New-AlertSubject([hashtable]$Report) {
-    $svcNames = @($Report.Services | ForEach-Object { $_.Name }) -join "/"
+    # 主题只列**仍 DOWN** 的服务（m-08，2026-11-18）：Report.Services 是复查后的全量快照，
+    # 全拼进主题会让单服务故障看起来像全线崩溃，误导排障。
+    # 兼容旧报告：没有 DownServices 字段时从 Services 里按 State 过滤。
+    $down = @($Report.DownServices)
+    if ($down.Count -eq 0) {
+        $down = @($Report.Services | Where-Object { $_.State -eq 'DOWN' } | ForEach-Object { $_.Name })
+    }
+    $svcNames = @($down) -join "/"
     if ([string]::IsNullOrWhiteSpace($svcNames)) { $svcNames = "未知服务" }
     $time = [string]$Report.DetectTime
     if ([string]::IsNullOrWhiteSpace($time)) { $time = Get-Date -Format "yyyy-MM-dd HH:mm:ss" }
@@ -250,6 +257,8 @@ if ($SelfTest) {
     $demo = @{
         DetectTime   = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         Host         = $env:COMPUTERNAME
+        # 与 guardian.ps1 的真实报告同形：主题只认这一份「仍 DOWN」名单
+        DownServices = @("business")
         Services     = @(
             @{ Name = "business"; Port = "8088"; State = "DOWN"; Health = "连接失败"; Reason = "进程 PID 已消失，端口无监听" },
             @{ Name = "ai";       Port = "8001"; State = "UP";    Health = "HTTP 200"; Reason = "" },

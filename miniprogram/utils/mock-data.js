@@ -6,7 +6,7 @@
 
 // 当前登录患者（登录页「我是患者」成功后写入）
 const PATIENT = {
-  name: '张建国',
+  name: '张演示',
   gender: '男',
   age: 65,
   phone: '138****0001',
@@ -64,13 +64,13 @@ const APPOINTMENTS = [
 
 // 健康档案（我的 → 健康档案）
 const HEALTH_RECORDS = {
-  basic: { bloodType: 'A 型', height: '172 cm', weight: '68 kg', allergies: '青霉素过敏', history: '高血压（5 年）' },
+  basic: { bloodType: 'A 型', height: '172 cm', weight: '68 kg', allergies: '无（演示数据）', history: '演示用既往史' },
   visits: [
     {
       date: '2026-07-15',
       dept: '心血管内科',
       doctor: '王主任医师',
-      diagnosis: '高血压 2 级',
+      diagnosis: '演示诊断（非真实病例）',
       prescription: '氨氯地平片 5mg 每日一次',
       // 每条档案记录对应一份报告文件（2026-11-15）：resourceKey 指向后端资源库，
       // sha256 为文件内容摘要，用于完整性校验与同记录内去重（同一文件不重复出现）。
@@ -148,9 +148,9 @@ const CONSULTATIONS = [
 
 // 家庭成员（我的 → 家庭成员管理）
 const FAMILY = [
-  { id: 1, name: '张建国', relation: '本人', age: 65, gender: '男', phone: '138****0001' },
-  { id: 2, name: '李秀英', relation: '配偶', age: 58, gender: '女', phone: '139****0002' },
-  { id: 3, name: '张伟', relation: '儿子', age: 38, gender: '男', phone: '137****0003' }
+  { id: 1, name: '张演示', relation: '本人', age: 65, gender: '男', phone: '138****0001' },
+  { id: 2, name: '李示例', relation: '配偶', age: 58, gender: '女', phone: '139****0002' },
+  { id: 3, name: '张示例', relation: '儿子', age: 38, gender: '男', phone: '137****0003' }
 ]
 
 // AI 养生（小安：气虚质 + 处暑节气 + 三天方案）
@@ -181,26 +181,28 @@ const WELLNESS = {
 
 // 智能电视投屏设备列表（演示）
 const TV_DEVICES = [
-  { name: '客厅小米电视', ip: '192.168.1.102', connected: false },
-  { name: '候诊区大屏电视', ip: '192.168.1.108', connected: false }
+  // 审计 M10：院内网段 IP 一律用 RFC 5737 文档保留地址（192.0.2.0/24），不暴露真实拓扑
+  { name: '演示投屏设备 A', ip: '192.0.2.10', connected: false },
+  { name: '候诊区大屏（演示）', ip: '192.0.2.11', connected: false }
 ]
 
 // 电视端大屏预览（叫号屏演示）
 const TV_PREVIEW = {
   title: '康诊云 · 候诊叫号大屏',
-  current: { no: '001 号', name: '张*国', room: '1 号诊室', dept: '呼吸内科' },
-  waiting: ['002 号 李*英', '003 号 王*强']
+  current: { no: '001 号', name: '张*示', room: '1 号诊室', dept: '呼吸内科' },
+  waiting: ['002 号 李*例', '003 号 王*示']
 }
 
 // 医生端（深海青工作台演示）
 const DOCTOR = {
-  account: '13900139001',
-  password: 'doc123',
+  // 审计 M10/H8：不再内置任何可用账号（原预置号是后端 dev 白名单里的真实可登录号）。
+  // 联调要用的账号见 backend/deploy/env.local 的 APP_AUTH_DEV_LOGIN_IDENTITY_MAP，不入前端包。
+  account: '',
   profile: { name: '王主任', dept: '呼吸科', title: '主任医师' },
   overview: { waiting: 12, inProgress: 1, done: 18 },
   timeline: [
-    { time: '09:00', no: '001 号', name: '张建国', gender: '男', age: 65, chief: '咳嗽两周、带痰', status: '就诊中', hasReport: true },
-    { time: '09:30', no: '002 号', name: '李秀英', gender: '女', age: 58, chief: '胸闷 1 天', status: '待就诊', hasReport: true },
+    { time: '09:00', no: '001 号', name: '张演示', gender: '男', age: 65, chief: '咳嗽两周、带痰（演示）', status: '就诊中', hasReport: true },
+    { time: '09:30', no: '002 号', name: '李示例', gender: '女', age: 58, chief: '胸闷 1 天（演示）', status: '待就诊', hasReport: true },
     { time: '10:00', no: '003 号', name: '王强', gender: '男', age: 42, chief: '过敏性鼻炎复发', status: '待就诊', hasReport: false },
     { time: '10:30', no: '004 号', name: '陈芳', gender: '女', age: 70, chief: '慢阻肺随访', status: '待就诊', hasReport: true }
   ]

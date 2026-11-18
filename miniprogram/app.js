@@ -9,6 +9,7 @@ const session = require('./services/session.js')
 const { ensureAccessToken, revokeSession, clearGetCache } = require('./services/request.js')
 const resource = require('./services/resource.js')
 const connectivity = require('./services/connectivity.js')
+const capabilities = require('./services/capabilities.js')
 
 // 登录会话有效期：72 小时（毫秒）。超过则需重新登录。
 const SESSION_TTL_MS = 72 * 60 * 60 * 1000
@@ -51,6 +52,10 @@ App({
     // 非关键远端资源清单后台刷新（docs/v4/09 §4.4-1）：仅写入本地缓存供 resolveResource/fallbackFor
     // 消费；清单或单资源失败一律静默回退内置素材，绝不阻断启动、绝不弹错。
     resource.refreshManifest().catch(() => {})
+
+    // 降级开关快照（2026-11-18）：从后端读取 degradeMode/switches，供 WechatSI 等云端兜底判定；
+    // 失败保持本地旧快照/构建档位兜底，不阻断启动，也不因读不到而放开云端。
+    capabilities.refresh().catch(() => {})
   },
 
   // 判断登录会话是否已过期（loginAt 为登录时间戳；0/空视为未登录，不判过期）

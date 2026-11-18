@@ -13,7 +13,7 @@
 - **V1.20 受控基线（2026-11-16 入库，PR-1 交付）**：`REQUIREMENTS_BASELINE_V1.20.md`（A16 必达 / B8 登记 V1.21 / C4 长期）、
   `PRODUCTION_GATE.md`（PG9 + SC8，清单化不要求本轮全绿）、`V1.20_EXECUTION_PLAN.md`（PR-1~7，仅 PR-6 涉及业务代码）。
   审查文档 `AIYILIAO_REPOSITORY_REVIEW_2026-11-16.md` 已标「输入归档 · 不派工」，不直接驱动开发。
-- **门禁基线（2026-11-16 实测，全绿）**：`check-project` 36 页 / 40 表一致性 + 品牌名唯一（窗口标题须为「康诊云」，运行时 4 词黑名单零命中）；`check-v4-docs` `DOC_CHECK_OK routes=36 prompts=24`（KF2 遗留 11 条路由登记缺口已清零）；`check-v4-contracts` `business=94 ai=5 ops=117`（补入已实现的 `/api/v1/beds/applications`）；`check-v4-prototypes` `html=24 postFreeze=12`（24 页原型齐全，12 条冻结后路由登记为无原型）；`test-fe` 25/25；`test-voice-local` 25/25；`test-profile-deep-audit` 27/27；Java `mvnw -o test` 341/0（53 类）；网关 `pytest tests` 132/0；AI 全量 **242 passed**（并发/持久化/执行器专项 35）；30 个 `test-*.js` 全 exit=0。
+- **门禁基线（2026-11-18 实测，全绿）**：`check-project` 37 页 / 40 表一致性 + 品牌名唯一（窗口标题须为「康诊云」，运行时 4 词黑名单零命中）；`check-v4-docs` `DOC_CHECK_OK routes=37 prompts=24`（患者消息中心已登记为冻结后新增）；`check-v4-contracts` `business=94 ai=5 ops=117`（补入已实现的 `/api/v1/beds/applications`）；`check-v4-prototypes` `html=24 postFreeze=13`（24 页原型齐全，13 条冻结后路由登记为无原型）；`test-fe` 70/70；`test-voice-local` 26/0；Java `mvnw -o test` 357/0；网关 `pytest tests` 132/0；AI 全量 **265 passed**（含 SSE 15 项）。
 - **`check-build-env` 在 dev 档按设计为红**（BUILD_ENV≠production、无 HTTPS 备案域名），对应下方发布门禁 🚫 项，**不得**靠改代码或改配置绕过；只有拿到备案域名后它才应转绿。
 - **两项门禁只在本机有效**：`check-v4-docs` / `check-v4-prototypes` 校验的 `design-output/`、`prototype-web/` 在 `.gitignore` 内，干净 clone 下输出 `*_SKIP`（exit 0）。结论：**它们不能进 CI 阻断**，B4-01 只能把 `check-project` / `test-fe` / `mvnw test` / `pytest` 作为 CI 门禁；若要 CI 校验设计文档，前置是把设计存档入库或改为生成物。
 - **已知陈旧产物**：`docs/v4/api-catalog.json` 与 `docs/v4/09-API调试台.html` 是 2026-11-05 快照，未随契约再生（`tools/gen-api-catalog.py` 为一次性生成器，占位符已消费，重跑即报错）。接口事实以 `backend/contracts/business-openapi.yaml` 为准，该调试台不得作为契约依据。
@@ -39,9 +39,9 @@
 | 9 | 健康档案 / 报告查询 | 已实现 | 联调 | 真机 T31 PASS；7 条演示报告 READY | 待指派 | 2026-11-14 | 演示库数据，非真实患者 |
 | 10 | 院内导航（平面图/路线/语音） | 已实现 | 联调 | 导航页面 + canvas 渲染 | 待指派 | 2026-11-13 | **仅一楼 14 个目的地**，多楼层为规划 |
 | 11 | 健康科普 | **部分** | 开发 | 前端本地 KB 兜底；后端 `health_articles` 0 条 | 待指派 | 2026-11-15 | 服务端优先 + 本地降级方案待批准（B3-03） |
-| 12 | 音色管理（Qwen3-TTS） | 已实现 | 联调 | 音色设置页 + 云端偏好 | 待指派 | 2026-11-16 | **B1-01 已修竞态**（代次守卫 + 远端可见全集）；`test-voice-local` 25/25、`test-profile-deep-audit` 27/27 |
+| 12 | 音色管理（edge-tts） | 已实现 | 联调 | 音色设置页 + 云端偏好 | 待指派 | 2026-11-17 | **B1-01 已修竞态**（代次守卫 + 远端可见全集）；内置男女音色已分离映射；高频句预生成默认开启（23 条/男女音色）；`stopSpeak` 播报代次防退出补播；`test-voice-local` 25/25、`test-profile-deep-audit` 27/27 |
 | 13 | 家庭成员协助 | 部分 | 开发 | `family_members` / `family_invitations` 表 + 页面 | 待指派 | 2026-11-13 | "本人接受邀请"流程待完善（B2-05） |
-| 14 | 消息通知 | 已实现 | 联调 | `/messages/unread-count` 契约快照覆盖 | 待指派 | 2026-11-13 | — |
+| 14 | 消息通知 | 已实现 | 联调 | `/messages/unread-count` 契约快照覆盖；患者端消息中心已接真实列表/已读接口 | 待指派 | 2026-11-17 | 报告出具/缴费/病历查询三类事件后端暂无写入点，前端已预留类型映射 |
 | 15 | 适老化（大字三档/高对比） | 部分 | 联调 | 真机 T15/T39 PASS；超大字档线条/配色已修（`test-a11y-touch` F05 共 22 项） | 待指派 | 2026-11-16 | **T33 代码层已修**（B1-02：4 项含预约挂号；找不到映射时清除高亮），**待真机复测截图**；超大字档仍需真机视觉复核（门禁绿≠能看）；手机触控 88rpx=44px，Pad 档 48px，未全量 48px |
 | 16 | 完整语音交互（说症状→播报结果） | 规划 | — | — | 待指派 | — | 评审 7-5；范围大，列 B2 之后 |
 | 17 | 微信隐私保护授权 | 部分 | 联调 | `miniprogram/utils/privacy.js` + `app.json` `__usePrivacyCheck__` + `services/speech.js` 前置校验；`privacy.test.js` 6 项 | 待指派 | 2026-11-17 | 代码侧已接入；小程序后台《隐私保护指引》与 `scope.record` 文案仍需人工配置 |
@@ -52,6 +52,7 @@
 | 22 | 模型调用韧性（超时/熔断/并发/降级） | 已实现 | 联调 | `providers/chain.py` 熔断、`config.py` 超时与并发、`tasks.py` 任务超时 | 待指派 | 2026-11-16 | 熔断 3 次/冷却、`AI_LLM_WORKER_POOL_SIZE` 并发上限、provider 降级链 |
 | 23 | HIS 受限接入（REQ-14） | 部分 | 联调 | `HisBooking*ContractTest` 3 项（关闭/成功/失败不落单）+ Flyway V31 success=1 + 真实库列已验 | 待指派 | 2026-11-16 | **只做 Mock 受理，不接真实凭据/号源**；开关默认关闭；真实 HIS 闭环仍为 #19 阻塞 |
 | 24 | 真机 adb 测试器（device-test） | 已实现 | 联调 | `tools/device-test/`（adb 探测/用例执行/断言/报告）+ 2 用例 + skill | 待指派 | 2026-11-16 | 无设备/无 token 一律 SKIP（exit 2）；不伪造 PASS |
+| 25 | AI 任务事件流（SSE 增量） | **部分** | 联调 | ai-service `/internal/v1/tasks/{id}/stream` + business `/api/v1/ai/tasks/{id}/events`；Python SSE 15 项 + Java 流 6 项；终态以权威全文校验，不一致下发 `replace:true` 整段 | 待指派 | 2026-11-18 | **前端下一批接入**：`services/stream.js` / `sse.js` / `AI_TASK_EVENTS` 已就绪且有 10 项单测，但业务页面零引用，问诊页仍为 2s 轮询（修复任务书 M-02 选型②）。服务端可作为增量通道上线，客户端接入前不得对外称"流式问答已可用" |
 
 ## 2. 发布前强制门禁（评审 6.1；🚫 = 本期阻塞，不允许以"演示环境"冒充生产）
 

@@ -108,7 +108,7 @@ archive/              已退出活动链的本地归档（重复副本 / 旧产�
 
 | 项 | 体积 | 限制 |
 | --- | --- | --- |
-| 主包 | **1.336MB** | 微信硬上限 2MB |
+| 主包 | **1.343MB** | 微信硬上限 2MB |
 | 分包 `packageContent` | 0.052MB | 单包 2MB |
 | 分包 `packageNav` | 0.083MB | 单包 2MB |
 | 包内图片+音频+视频 | **184.5KB** | 质量面板建议 200K |
@@ -158,11 +158,12 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
   `app.his.enabled` 默认关闭，模拟单号前缀 `HIS-MOCK-`，不接真实凭据、不承诺真实号源），预约页与成功页标「演示预约」
 - 电视投屏为本地模拟，DLNA / 局域网协议尚未接入
 - 院内导航为 1F 示意平面图，不是全院楼层
-- 语音能力依赖后端在线，失败时自动退回文字输入
+- 语音能力按 `AI_DEGRADE_ENABLED` 总开关降级：开启=全链路（TTS：预生成→Qwen3→edge→WechatSI；ASR：本地 FunASR→WechatSI），
+  关闭=仅本地；前端启动读取 `/api/v1/voice/capabilities` 快照，被否决的云端供应商不建连、不重试；全部失败时自动退回文字输入
 - 平台隐私授权已接入（`app.json` 的 `__usePrivacyCheck__` + `utils/privacy.js` 在录音前调 `wx.requirePrivacyAuthorize`）；
   **上线前仍需在小程序后台配置《隐私保护指引》**，并核对 `scope.record` 用途文案与实际采集一致
 - 在线问诊仍是双端 2s 轮询（WebSocket 化需后端事件通道，列为 V1.21）
-- 方言识别未专项适配（通用 ASR + 失败退回文字；**明确不做，任务已归档**）
+- 方言识别：本地 FunASR 只覆盖普通话；粤语（`zh-HK`）/四川话（`zh-SICHUAN`）显式 locale 走 WechatSI（仅总开关开启时），潮汕话不做专项模型，识别失败退回文字
 
 ## 性能测试
 
@@ -197,7 +198,7 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 | 网关行为 | `backend/edge-gateway/tests` | 134 项 pytest（含全链路 `X-Request-Id` 2 项） |
 | SQL 次数预算（防 N+1） | `DoctorQueryBudgetTest` + `QueryCounter` | 5 项 |
 | 端点级 SQL 画像 | `EndpointSqlProfileTest` | 2 项（逐端点上限 + 与数据量无关） |
-| **小程序逻辑层（并发）** | `miniprogram/tests/` + `tools/test-fe.js` | **64 项 / 14 个测试文件**（零依赖 `node:test`；含隐私授权 6 项、患者端问诊/消息/接诊状态回归 5 项） |
+| **小程序逻辑层（并发）** | `miniprogram/tests/` + `tools/test-fe.js` | **68 项 / 15 个测试文件**（零依赖 `node:test`；含隐私授权 6 项、患者端问诊/消息/接诊状态回归 5 项、音色映射/语速/语音取消与预取回归 5 项） |
 | **导诊效果（golden set）** | `tools/data/triage-golden.json` + `tools/eval-triage.js` | **66 科室 + 20 红旗 + 3 兜底**；红旗召回/兜底 100% 为硬门禁，科室 Top-1 门槛 85% |
 | **前后端契约快照** | `tools/contract-snapshot.js` + `contracts/snapshots/` | **5 端点**结构快照 |
 | 持续集成 | `.github/workflows/ci.yml` | 4 job：前端 / Java / 网关 / AI（PR 阻断） |
@@ -312,9 +313,49 @@ skill 见 `.workbuddy/skills/wechar-device-test/SKILL.md`。
 
 漏洞请走 GitHub Security Advisory 私密渠道，不要开公开 Issue，详见 **[SECURITY.md](SECURITY.md)**。
 
-关于仓库内的 `DEV_LOGIN_KEY`：它是**本地联调演示值**，只用于 `dev` profile 的派生登录闸门；
-生产 profile 不装配该 provider，且真实边界在「后端开关 + 手机号白名单 + 生产不装配」，
-因此它不构成生产凭据。部署方仍应使用自己的随机值并保持 `APP_AUTH_DEV_LOGIN_ENABLED=false`。
+### 2026-11-18 敌意审计整改（39 项发现的落地情况）
+
+基线报告：`aiyiliao_敌意安全审计报告.docx`（CRITICAL 3 / HIGH 11 / MEDIUM 14 / LOW 11）。
+本轮修复以「不改变现有功能与行为」为前提，逐项落地情况与残留风险见 `DEV_LOG.md` 对应条目。
+
+**已收口的关键红线**：
+
+| 项 | 口径 |
+| --- | --- |
+| C2 路径穿越 | `resolve_audio_path` 只接受 `^[A-Za-z0-9_-]{1,64}$` 的 ref_id，且 `resolve()` 后必须仍在音频目录内；`inputRef` 在 Pydantic 层就用同一正则拦截 |
+| C3 服务间零信任 | business 启动即校验 `AI_SERVICE_TOKEN`（≥32 字符，缺失/过短拒绝启动）；ai 侧 `/internal/v1/tasks` 的读取/取消/SSE 订阅必须带 `X-Tenant-Id` 且与任务租户一致（不符按 404）；幂等键并入租户哈希 |
+| C1 联调密钥 | `DEV_LOGIN_KEY` 已轮换，旧值（`21cb…` / `2818…`）进后端**永久黑名单**（配置成旧值会拒绝启动）；production 档该常量恒为空并带构建期守卫 |
+| H3 身份回退 | strict 档删除 `X-User-Id` / 「非 `at-` 令牌即 openid」两条回退；无身份时 `currentUserId()` 抛 401，不再兜底 `dev-user-1` |
+| H6 限流 | 网关 `rateLimit.enabled=true` 成为部署默认；转发前统一归一 `X-Forwarded-For`（不信任客户端自报）；business 登录限流改按归一后的客户端 IP |
+| H10 数据出境 | 新增 `AI_EGRESS_POLICY=domestic`（境外 provider 一律否决）；DeepSeek / edge-tts 调用前强制 `deep_sanitize()` 打码 |
+| H11 探针 | `probe_redis` 改线程池执行（不再阻塞事件循环）；未持服务令牌只回 `{status, degraded}`；探针 30 次/分/IP |
+| H1/H2 认证强度 | `app.sms.provider` 缺省反转为 `prod`（漏配即如实 503）；验证码改 HMAC-SHA256（`APP_CODE_HASH_SECRET`）；验证码校验改原子扣减 + 恒定时间比较 |
+
+**遗留（需排期，非本轮可安全落地）**：`phone_hash` 改 HMAC 需库表双写迁移（H2 后半）、
+头像签名 URL（M5）、独立同意页（M11）、会话拓扑与 refresh 存储（M12/M13/M14）、
+`tasks.json` 结果正文加密（M2 仅剥离了 `inputInline`）、TTS 配额（M4）、
+ASR 上传魔数嗅探（L9，pcm/webm 无可靠魔数，需按机型采样）、SBOM（L6）、
+prod 档 JDBC 变量强制注入（L5）。
+
+### 本地联调档（`env.local.js`，不入库）
+
+2026-11-18 起 `miniprogram/config/env.js` **不再包含任何真实地址或密钥**：
+档位、隧道域名、dev 登录密钥全部来自本地未入库的 `miniprogram/config/env.js` 同目录
+`env.local.js`（`.gitignore` 已忽略）。没有该文件时构建 fail-closed 到 `production`
+（dev 登录与隧道全部关闭）。
+
+```js
+// miniprogram/config/env.local.js（自己创建，勿提交）
+module.exports = {
+  buildEnv: 'development',                 // 真机联调；不写 = production
+  developmentGateway: 'https://<你的隧道域名>',
+  devLoginKey: '<与 backend/deploy/env.local 的 APP_AUTH_DEV_LOGIN_KEY 同值>'
+}
+```
+
+发布前跑 `node tools/check-build-env.js`（不带 `--allow-dev`）：它要求默认档位为 `production`、
+`env.js` 内不含隧道域名/联调密钥，并校验后端默认档位与闸门默认关闭。
+`node docs/security/2026-11-18-remediation/security-gate.js` 是仓库级敏感信息门禁，两者应同时为绿。
 
 ## 免责声明
 

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import re
@@ -63,8 +64,20 @@ def _result_text(result) -> str:
     return text if isinstance(text, str) else ""
 
 
+# 请求 ID 白名单（审计 L3）：客户端可控且会回显进响应信封 + 两侧日志，
+# 允许任意字符串等于开放日志注入（ANSI 转义、换行伪造日志行）。
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+
+# 请求体上限（审计 M3）：Starlette 会把 JSON 整读进内存，无上限即单请求 OOM。
+_MAX_REQUEST_BYTES = 1 << 20  # 1 MiB（业务侧最大载荷是长文本 prompt，远低于该值）
+
+
 def _rid(request: Request) -> str:
-    return getattr(request.state, "request_id", None) or request.headers.get("x-request-id") or new_request_id()
+    cached = getattr(request.state, "request_id", None)
+    if cached:
+        return cached
+    raw = request.headers.get("x-request-id") or ""
+    return raw if _REQUEST_ID_RE.match(raw) else new_request_id()
 
 
 def _validation_details(exc: ValidationError) -> list:
@@ -110,7 +123,7 @@ def create_app(
         import json
         import time
         from pathlib import Path
-        from .voice import resolve_voice, synthesize, tts_status
+        from .voice import EDGE_BUILTIN_VOICES, ENGINE_FORMAT, resolve_voice, synthesize, tts_engine_name, tts_status
         try:
             phrases_path = Path(settings.tts_pregen_phrases_path)
             if not phrases_path.exists():
@@ -127,33 +140,45 @@ def create_app(
                 return
             out_dir = Path(settings.tts_output_dir)
             out_dir.mkdir(parents=True, exist_ok=True)
-            voice = resolve_voice(settings, None)
             locale = "zh-CN"
+            engine = tts_engine_name(settings)
+            if engine == "none":
+                logger.warning("TTS 预生成跳过：服务端无可用引擎（端侧兜底不预生成）")
+                return
+            ext, _ = ENGINE_FORMAT.get(engine, ("mp3", "audio/mpeg"))
+            # 预生成必须覆盖前端可选音色：只预生成默认女声会让男声首播仍走实时合成。
+            # 粤语音色不在这里预生成：预生成清单是普通话语料，用粤语音色读普通话会音色/语言错配。
+            voice_ids = [None] + [v for v in EDGE_BUILTIN_VOICES if not v.startswith("yue-")]
             t0 = time.perf_counter()
             ok = skip = fail = 0
             for ph in phrases:
                 text = ph["text"]
-                d = hashlib.sha256(f"{text}|{voice}|{locale}".encode("utf-8")).hexdigest()[:16]
-                out_path = out_dir / f"{d}.mp3"
-                if out_path.exists() and out_path.stat().st_size > 0:
-                    skip += 1
-                    continue
-                try:
-                    await synthesize(settings, text, voice, out_path)
-                    ok += 1
-                except Exception as exc:
-                    fail += 1
-                    logger.warning("TTS 预生成失败 id=%s err=%s: %s",
-                                   ph.get("id"), exc.__class__.__name__, str(exc)[:120])
+                for voice_id in voice_ids:
+                    voice = resolve_voice(settings, voice_id, engine=engine, locale=locale)
+                    d = hashlib.sha256(
+                        f"{engine}|{text}|{voice}|{locale}".encode("utf-8")
+                    ).hexdigest()[:16]
+                    out_path = out_dir / f"{d}.{ext}"
+                    if out_path.exists() and out_path.stat().st_size > 0:
+                        skip += 1
+                        continue
                     try:
-                        if out_path.exists():
-                            out_path.unlink()
-                    except OSError:
-                        pass
+                        await synthesize(settings, text, voice, out_path, engine=engine, locale=locale)
+                        ok += 1
+                    except Exception as exc:
+                        fail += 1
+                        logger.warning("TTS 预生成失败 id=%s voice=%s err=%s: %s",
+                                       ph.get("id"), voice_id or "default",
+                                       exc.__class__.__name__, str(exc)[:120])
+                        try:
+                            if out_path.exists():
+                                out_path.unlink()
+                        except OSError:
+                            pass
             elapsed = time.perf_counter() - t0
             logger.info(
-                "TTS 预生成完成 | 清单=%d 合成=%d 跳过=%d 失败=%d 耗时=%.1fs",
-                len(phrases), ok, skip, fail, elapsed,
+                "TTS 预生成完成 | 条目=%d 音色=%d 合成=%d 跳过=%d 失败=%d 耗时=%.1fs",
+                len(phrases), len(voice_ids), ok, skip, fail, elapsed,
             )
         except Exception:
             logger.exception("TTS 预生成后台任务异常（已忽略，不影响主服务）")
@@ -181,7 +206,7 @@ def create_app(
             )
 
         # TTS 固定句式预生成（2026-10-22）：后台遍历清单，命中缓存后首字节=文件读取。
-        # 失败仅 WARN，不阻塞主服务；开关：AI_TTS_PREGEN_ENABLED（默认 false）。
+        # 失败仅 WARN，不阻塞主服务；开关：AI_TTS_PREGEN_ENABLED（默认 true）。
         tts_pregen_task: Optional[asyncio.Task] = None
         if settings.tts_pregen_enabled:
             tts_pregen_task = asyncio.create_task(
@@ -269,6 +294,29 @@ def create_app(
 
     install_auth(app, settings)
 
+    @app.middleware("http")
+    async def _request_guard(request: Request, call_next):
+        """请求入口守卫（审计 M3/L3）：请求体上限 + requestId 白名单。
+
+        顺序说明：本中间件在 install_auth 之后注册 → 位于更外层，
+        非法超大体在下沉到业务逻辑（以及鉴权错误回显）之前就被 413 拒绝。
+        """
+        raw_len = request.headers.get("content-length")
+        if raw_len and raw_len.isdigit() and int(raw_len) > _MAX_REQUEST_BYTES:
+            rid = _rid(request)
+            return JSONResponse(
+                status_code=413,
+                content=error_payload(
+                    "PAYLOAD_TOO_LARGE", "请求体过大（上限 1MiB）", rid, retryable=False
+                ),
+            )
+        header_rid = request.headers.get("x-request-id")
+        # 非法 requestId 一律丢弃并重新生成：不写进 state、不进日志、不回显
+        request.state.request_id = (
+            header_rid if header_rid and _REQUEST_ID_RE.match(header_rid) else new_request_id()
+        )
+        return await call_next(request)
+
     # ---------- 异常处理 ----------
 
     @app.exception_handler(ApiError)
@@ -295,9 +343,22 @@ def create_app(
 
     # ---------- 内部任务接口 ----------
 
+    # 租户归属校验（审计 C3）：/internal/v1/tasks 的读取、取消、SSE 订阅必须证明"调用方租户
+    # = 任务租户"，否则同一服务令牌下的任一主体可枚举他人任务的转写/对话原文。
+    # 缺省策略：服务令牌开启（static/jwks）时必须携带 X-Tenant-Id；off 档为本机联调，允许缺省。
+    _tenant_required = (settings.auth_mode or "static").lower() != "off"
+
+    def _tenant(request: Request) -> Optional[str]:
+        raw = (request.headers.get("x-tenant-id") or "").strip()
+        if not raw:
+            if _tenant_required:
+                raise bad_request("缺少 X-Tenant-Id（服务间调用必须声明租户边界）")
+            return None
+        return raw
+
     @app.post("/internal/v1/tasks")
     async def submit_task(request: Request):
-        request.state.request_id = request.headers.get("x-request-id") or new_request_id()
+        request.state.request_id = _rid(request)  # 已由请求守卫校验过（非法值不落地）
         idempotency_key = (request.headers.get("idempotency-key") or "").strip()
         if not (8 <= len(idempotency_key) <= 128):
             raise bad_request("缺少或不合法的 Idempotency-Key（8~128 字符）")
@@ -309,21 +370,26 @@ def create_app(
             payload = TaskSubmitRequest.model_validate(body)
         except ValidationError as exc:
             raise validation_failed("请求校验失败", details=_validation_details(exc))
+        declared = _tenant(request)
+        if declared is not None and declared != payload.tenant_id:
+            # 代他人提交 = 直接以他人租户写任务；一律拒绝，不做"以载荷为准"的宽容处理
+            raise bad_request("X-Tenant-Id 与载荷 tenantId 不一致")
         task, created = await service.submit(payload, idempotency_key, request.state.request_id)
         meta = None if created else {"idempotentReplay": True}
         return ok_envelope(request.state.request_id, task, meta=meta)
 
     @app.get("/internal/v1/tasks/{task_id}")
     async def get_task(task_id: str, request: Request):
-        request.state.request_id = request.headers.get("x-request-id") or new_request_id()
-        task = await service.get_view(task_id)
+        request.state.request_id = _rid(request)  # 已由请求守卫校验过（非法值不落地）
+        task = await service.get_view(task_id, _tenant(request))
         if task is None:
             raise ApiError(404, "NOT_FOUND", "任务不存在", retryable=False)
         return ok_envelope(request.state.request_id, task)
 
     @app.post("/internal/v1/tasks/{task_id}/cancel")
     async def cancel_task(task_id: str, request: Request):
-        request.state.request_id = request.headers.get("x-request-id") or new_request_id()
+        request.state.request_id = _rid(request)  # 已由请求守卫校验过（非法值不落地）
+        tenant = _tenant(request)
         reason = None
         raw = await request.body()
         if raw:
@@ -332,7 +398,7 @@ def create_app(
                 reason = cancel_req.reason.value if cancel_req.reason else None
             except ValidationError as exc:
                 raise validation_failed("请求校验失败", details=_validation_details(exc))
-        task = await service.cancel(task_id, reason)
+        task = await service.cancel(task_id, reason, tenant)
         if task is None:
             raise ApiError(404, "NOT_FOUND", "任务不存在", retryable=False)
         return ok_envelope(request.state.request_id, task)
@@ -342,8 +408,10 @@ def create_app(
     # 旁路设计：不订阅时任务行为与轮询链路完全一致；端点可独立下线，不影响任务队列。
     @app.get("/internal/v1/tasks/{task_id}/stream")
     async def stream_task(task_id: str, request: Request):
-        request.state.request_id = request.headers.get("x-request-id") or new_request_id()
-        view = await service.get_view(task_id)
+        request.state.request_id = _rid(request)  # 已由请求守卫校验过（非法值不落地）
+        # 订阅位必须先过租户归属（审计 C3）：SSE 直通的是对话增量原文，
+        # 越权订阅等价于实时窃听他人问诊。
+        view = await service.get_view(task_id, _tenant(request))
         if view is None:
             raise ApiError(404, "NOT_FOUND", "任务不存在", retryable=False)
 
@@ -354,7 +422,16 @@ def create_app(
         _metrics().record_stream_subscriber()
 
         def frame(event: str, data: dict, seq: int) -> str:
-            return f"event: {event}\nid: {seq}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+            raw = json.dumps(data, ensure_ascii=False)
+            # 出站兜底（2026-11-18）：正文若仍含无法编码的字符（孤立 UTF-16 代理等），
+            # Starlette 写 UTF-8 时会抛 UnicodeEncodeError 把整条流打断。这里先试编码，
+            # 失败才降级为 U+FFFD 并留 WARN —— 宁可显示 �，也不能让用户拿半截答案。
+            try:
+                raw.encode("utf-8")
+            except UnicodeEncodeError:
+                logger.warning("SSE 帧含不可编码字符，已降级为替换字符 | event=%s", event)
+                raw = raw.encode("utf-8", "replace").decode("utf-8")
+            return f"event: {event}\nid: {seq}\ndata: {raw}\n\n"
 
         def error_payload(view: dict) -> dict:
             """任务未成功时的统一 error 载荷（活流与终态回放共用，避免两处口径漂移）。"""
@@ -485,12 +562,46 @@ def create_app(
     async def liveness():
         return {"status": "ok", "uptimeSeconds": round(time.time() - _STARTED_AT, 1), "version": APP_VERSION}
 
+    # 探针限速（审计 H11）：未鉴权者以低频请求 ready 也能把同步 Redis ping 打成 loop 阻塞，
+    # 且响应会泄露内部拓扑（模型名、索引在位性）。两道处理：
+    #  1) 本进程内按来源 IP 固定窗口限速（默认 30 次/分，业务侧轮询远低于此）；
+    #  2) 未携带有效服务令牌时只回 {status, degraded}，不再回模型名/引擎/依赖明细。
+    _READY_LIMIT_PER_MINUTE = 30
+    _ready_hits: dict[str, list] = {}
+
+    def _ready_rate_limited(host: str) -> bool:
+        now = time.time()
+        window = _ready_hits.setdefault(host, [0.0, 0])
+        if now - window[0] >= 60:
+            window[0] = now
+            window[1] = 0
+        window[1] += 1
+        return window[1] > _READY_LIMIT_PER_MINUTE
+
+    def _service_token_ok(request: Request) -> bool:
+        expected = "Bearer " + (settings.service_token or "")
+        provided = request.headers.get("authorization", "")
+        return bool(settings.service_token) and hmac.compare_digest(provided, expected)
+
     @app.get("/internal/health/ready")
-    async def readiness(response: Response):
+    async def readiness(request: Request, response: Response):
+        host = request.client.host if request.client else "unknown"
+        if _ready_rate_limited(host):
+            raise ApiError(429, "RATE_LIMITED", "探针请求过于频繁", retryable=True)
         result = await probe.readiness()
         if result.get("status") == "down":
             response.status_code = 503
-        return result
+        # off 档是本机联调（服务令牌本身已关闭），没有需要保护的"内网拓扑"边界，保留明细；
+        # static/jwks 档对未持令牌者只回聚合状态，避免把模型名/索引在位性变成侦察情报。
+        if (settings.auth_mode or "static").lower() == "off" or _service_token_ok(request):
+            return result
+        # 未鉴权：只暴露聚合状态与"谁降级"，供外部探活判断，不暴露模型名/引擎/内部地址
+        degraded = [
+            item.get("name")
+            for item in (result.get("dependencies") or [])
+            if item.get("status") != "available"
+        ]
+        return {"status": result.get("status"), "degraded": degraded}
 
     # ---------- 内部可观测（仅运维，不在 ai-openapi 契约内） ----------
     @app.get("/internal/metrics/llm")

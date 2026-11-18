@@ -53,8 +53,18 @@ async def generate(
     if not settings.deepseek_api_key:
         raise NotConfigured()
 
+    # 出境策略（审计 H10）：domestic = 医疗数据不出境，即使本 provider 被误装配也在此拦死。
+    if (settings.egress_policy or "allow") == "domestic":
+        raise NotConfigured()
+
     system = str(payload.get("system") or "")
     prompt = str(payload.get("prompt") or "")
+    # 出境前强制脱敏（审计 H10）：第三方云只会拿到打过码的文本。
+    # 这里不做语义改写（会破坏诊疗语境），只做可机器判定的 PHI 替换。
+    from ..redact import deep_sanitize
+
+    system = deep_sanitize(system)
+    prompt = deep_sanitize(prompt)
     json_mode = str(payload.get("format") or "") == "json"
     if json_mode and "json" not in (system + prompt):
         system = (system + "\n" + _JSON_HINT).strip()

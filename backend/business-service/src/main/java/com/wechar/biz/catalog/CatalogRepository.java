@@ -83,8 +83,9 @@ public class CatalogRepository {
             args.add(hospitalId);
         }
         if (keyword != null && !keyword.isBlank()) {
-            sql.append(" AND name LIKE ?");
-            args.add("%" + keyword + "%");
+            // 审计 L11：关键词内的 %/_ 必须转义，否则 %%% 会强制全表模糊扫描
+            sql.append(" AND name LIKE ?" + com.wechar.biz.common.SqlLike.ESCAPE_CLAUSE);
+            args.add(com.wechar.biz.common.SqlLike.contains(keyword));
         }
         sql.append(" ORDER BY sort_order, id");
         return jdbc.query(sql.toString(), CatalogRepository::mapDept, args.toArray());

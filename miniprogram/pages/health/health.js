@@ -70,9 +70,12 @@ Page({
       flowStarted: false,
       messages: [{ id: msgId, role: 'ai', content: '您好，我是小安，AI 养生助手。为了给您定制合适的调理方案，我先了解一下您的情况。' }]
     })
+    // 首屏固定问候预取：命中后点播报不必等 TTS 网关
+    speechService.prefetch(['您好，我是小安，AI 养生助手。为了给您定制合适的调理方案，我先了解一下您的情况。'])
   },
 
   onShow() {
+    this._pageVisible = true
     // 主题跟随：TabBar 页 onLoad 只走一次，设置页切换字号档后需在 onShow 同步刷新
     const theme = app.globalData.theme || 'standard'
     if (theme !== this.data.theme) this.setData({ theme })
@@ -82,7 +85,14 @@ Page({
     }
   },
 
+  onHide() {
+    this._pageVisible = false
+    // 离开页面就取消在飞行的 TTS，避免退出后补播（页面可能已经不在栈顶）
+    speechService.stopSpeak()
+  },
+
   onUnload() {
+    this._pageVisible = false
     // ⚠️ care-plan 约 100s，阶段提示每 8s setData 一次：句柄不清，退出后仍会往已销毁页面写数据。
     //    同时清掉"下一题"延时器，避免 300~400ms 后向已卸载页面追加消息。
     this._clearStepTimer()
@@ -406,6 +416,7 @@ Page({
   },
 
   onRead() {
+    if (this._pageVisible === false) return
     if (this.data.speaking) {
       speechService.stopSpeak()
       this.setData({ speaking: false })

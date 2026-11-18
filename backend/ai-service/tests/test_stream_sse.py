@@ -73,6 +73,66 @@ def test_extractor_stops_at_closing_quote():
     assert got == "正文"
 
 
+# ---------- m-05：emoji（UTF-16 代理对）不得把流打断 ----------
+
+def test_extractor_merges_utf16_surrogate_pairs():
+    """`\\uD83D\\uDE00` 是两个 `\\uXXXX`：必须合并成一个码点。
+
+    逐个 `chr()` 会得到两个孤立代理，出站 UTF-8 编码直接抛 UnicodeEncodeError → 流中断。
+    """
+    ext = streaming.TextFieldExtractor()
+    out = []
+    # 代理对被切在两个增量块里（真实 Ollama 按 token 切，边界不可控）
+    for chunk in ['{"text":"好的\\uD83D', '\\uDE00，注意休息","refused":false}']:
+        out.append(ext.feed(chunk))
+    text = "".join(out)
+    assert text == "好的😀，注意休息"
+    text.encode("utf-8")  # 不得抛 UnicodeEncodeError
+
+
+def test_extractor_degrades_lone_surrogate_in_place():
+    """孤立高代理降级为 U+FFFD，且落在原位（不能被挤到句尾）。"""
+    ext = streaming.TextFieldExtractor()
+    assert ext.feed('{"text":"孤立\\uD83D代理"}') == "孤立\ufffd代理"
+
+
+def test_sse_emoji_stream_is_not_interrupted(tmp_path):
+    """含 emoji 的活流：帧可被 UTF-8 编码，正文不丢不回退。"""
+    async def emoji_executor(task, ctx):
+        await ctx.set_phase("generation")
+        for _ in range(300):
+            if ctx._service.has_stream(task["taskId"]):
+                break
+            await asyncio.sleep(0.01)
+        for piece in ('{"text":"放心\\uD83D', '\\uDE00，多喝水"}'):
+            ctx.emit_token(piece)
+            await asyncio.sleep(0)
+        return {"result": {"text": "放心😀，多喝水"}, "model": {"modelId": "stub-emoji"}}
+
+    settings = Settings(
+        store_path=tmp_path / "tasks.json",
+        ollama_url="http://127.0.0.1:9",
+        probe_timeout_seconds=0.2,
+        task_timeout_seconds=60,
+        auth_mode="off",
+        log_level="WARNING",
+    )
+    app = create_app(
+        settings,
+        executors={TaskType.CHAT: emoji_executor},
+        ollama_probe=_ready,
+    )
+    with TestClient(app) as c:
+        task_id = _submit(c, "CHAT", "emoji")
+        body = _stream(c, task_id)
+
+    body.encode("utf-8")  # 帧里不得残留孤立代理
+    assert "😀" in body
+    assert body.count("event: delta") == 2
+    assert "event: done" in body
+
+
+
 # ---------- 端点：活流 ----------
 
 @pytest.fixture()

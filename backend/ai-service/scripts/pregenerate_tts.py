@@ -33,7 +33,7 @@ _SERVICE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_SERVICE_DIR))
 
 from app.config import Settings  # noqa: E402
-from app.voice import resolve_voice, synthesize, tts_status  # noqa: E402
+from app.voice import EDGE_BUILTIN_VOICES, resolve_voice, synthesize, tts_status  # noqa: E402
 
 
 def digest_for(text: str, voice: str, locale: str) -> str:
@@ -57,8 +57,9 @@ async def run(settings: Settings, dry_run: bool, force: bool) -> int:
 
     out_dir = Path(settings.tts_output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    default_voice = settings.tts_default_voice
     locale = "zh-CN"
+    # 默认音色 + 前端内置可选音色都要预生成，否则切换男声后首播仍要实时合成
+    voice_ids = [None] + list(EDGE_BUILTIN_VOICES.keys())
 
     synthesized = 0
     skipped = 0
@@ -68,34 +69,35 @@ async def run(settings: Settings, dry_run: bool, force: bool) -> int:
     for ph in phrases:
         text = ph["text"]
         pid = ph["id"]
-        voice = resolve_voice(settings, None)  # None → 默认音色
-        d = digest_for(text, voice, locale)
-        out_path = out_dir / f"{d}.mp3"
+        for voice_id in voice_ids:
+            voice = resolve_voice(settings, voice_id)
+            d = digest_for(text, voice, locale)
+            out_path = out_dir / f"{d}.mp3"
 
-        if out_path.exists() and out_path.stat().st_size > 0 and not force:
-            skipped += 1
-            print(f"  [skip] {pid} ({d}.mp3 已存在)")
-            continue
+            if out_path.exists() and out_path.stat().st_size > 0 and not force:
+                skipped += 1
+                print(f"  [skip] {pid} voice={voice_id or 'default'} ({d}.mp3 已存在)")
+                continue
 
-        if dry_run:
-            print(f"  [dry-run] {pid} → {d}.mp3 ({len(text)} 字)")
-            continue
+            if dry_run:
+                print(f"  [dry-run] {pid} voice={voice_id or 'default'} → {d}.mp3 ({len(text)} 字)")
+                continue
 
-        try:
-            print(f"  [synth] {pid} ({d}.mp3) ...", end=" ", flush=True)
-            await synthesize(settings, text, voice, out_path)
-            sz = out_path.stat().st_size if out_path.exists() else 0
-            print(f"ok ({sz} bytes)")
-            synthesized += 1
-        except Exception as exc:
-            print(f"FAIL: {exc.__class__.__name__}: {str(exc)[:100]}")
-            failed += 1
-            # 清理残片（与 tts.py 一致）
             try:
-                if out_path.exists():
-                    out_path.unlink()
-            except OSError:
-                pass
+                print(f"  [synth] {pid} voice={voice_id or 'default'} ({d}.mp3) ...", end=" ", flush=True)
+                await synthesize(settings, text, voice, out_path)
+                sz = out_path.stat().st_size if out_path.exists() else 0
+                print(f"ok ({sz} bytes)")
+                synthesized += 1
+            except Exception as exc:
+                print(f"FAIL: {exc.__class__.__name__}: {str(exc)[:100]}")
+                failed += 1
+                # 清理残片（与 tts.py 一致）
+                try:
+                    if out_path.exists():
+                        out_path.unlink()
+                except OSError:
+                    pass
 
     elapsed = time.perf_counter() - t0
     print(f"\n[pregen] 完成: 合成={synthesized} 跳过={skipped} 失败={failed} 耗时={elapsed:.1f}s")

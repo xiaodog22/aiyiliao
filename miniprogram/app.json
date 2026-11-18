@@ -110,9 +110,10 @@
   },
   "style": "v2",
   "__usePrivacyCheck__": true,
-  "permission": {
-    "scope.record": {
-      "desc": "用于用语音描述症状与语音问诊，录音仅用于本次语音识别，不作其他用途"
+  "plugins": {
+    "WechatSI": {
+      "version": "0.3.10",
+      "provider": "wx069ba97219f66d99"
     }
   },
   "resizable": true,

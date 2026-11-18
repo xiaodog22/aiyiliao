@@ -13,18 +13,63 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import hmac
+import json
 import logging
 import os
+import re
 import time
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+import httpx
+
 from .config import Settings
 
 logger = logging.getLogger("ai-service.voice")
+
+# 内置业务音色 → 引擎音色。
+# 为什么必须有兜底：AI_TTS_VOICE_MAP 默认是空串，若只靠环境变量映射，
+# qwen3-female-1 / qwen3-male-1 会一起回落到 tts_default_voice（同一个女声），
+# 患者端切换音色听起来完全没变化（2026-11-17 实测两段音频 SHA256 相同）。
+# 2026-11-18 增加粤语：粤语只做书面朗读或人工审校过的固定话术，不做机器口语化改写。
+EDGE_BUILTIN_VOICES = {
+    "qwen3-female-1": "zh-CN-XiaoxiaoNeural",
+    "qwen3-male-1": "zh-CN-YunxiNeural",
+    "yue-female-1": "zh-HK-HiuMaanNeural",
+    "yue-male-1": "zh-HK-WanLungNeural",
+}
+
+# 本地 Qwen3-TTS sidecar 的音色标识（由适配器自行解释；未接入时不会走到这里）
+QWEN3_BUILTIN_VOICES = {
+    "qwen3-female-1": "female-1",
+    "qwen3-male-1": "male-1",
+    "yue-female-1": "yue-female-1",
+    "yue-male-1": "yue-male-1",
+}
+
+# 引擎产物形态：缓存键与文件后缀都按引擎隔离，避免 mp3/wav 互相当缓存命中。
+ENGINE_FORMAT = {
+    "qwen3": ("wav", "audio/wav"),
+    "edge": ("mp3", "audio/mpeg"),
+}
+
+_LOCALE_ALIASES = {
+    "zh": "zh-cn", "zh-hans": "zh-cn", "cmn": "zh-cn", "mandarin": "zh-cn",
+    "yue": "zh-hk", "zh-yue": "zh-hk", "cantonese": "zh-hk",
+    "zh-hant": "zh-tw", "nan": "zh-nan", "zh-nan": "zh-nan", "teochew": "zh-nan",
+}
+
+
+def normalize_locale(locale: Optional[str]) -> str:
+    """统一 locale 写法；空值按普通话处理（不影响历史调用）。"""
+    value = str(locale or "").strip().lower().replace("_", "-")
+    if not value:
+        return "zh-cn"
+    return _LOCALE_ALIASES.get(value, value)
 
 # 未配置 AI_TTS_URL_SECRET 时用进程内随机密钥（重启后旧签名 URL 失效，符合"短期"语义）
 _PROCESS_SECRET: Optional[bytes] = None
@@ -56,32 +101,113 @@ def _edge_tts_module():
         return None
 
 
-def tts_status(settings: Settings) -> tuple[str, str]:
-    """返回 (status, detail)：status ∈ available/unavailable（degraded 留作引擎部分可用）。"""
-    engine = (settings.tts_engine or "none").lower()
-    if engine in ("", "none"):
-        return "unavailable", "TTS 引擎未配置（O-10 未定稿；文字展示不受影响）"
-    if engine == "edge":
+def tts_engine_state(settings: Settings, engine: str) -> tuple[str, str]:
+    """单个引擎的可用性（不做网络探测；运行时失败由执行器链降级）。"""
+    name = str(engine or "").lower()
+    if name == "qwen3":
+        if not settings.tts_qwen3_enabled:
+            return "unavailable", "Qwen3-TTS 已被供应商开关关闭"
+        if not settings.tts_qwen3_endpoint:
+            return "unavailable", "Qwen3-TTS sidecar 未接入（AI_TTS_QWEN3_ENDPOINT 为空）"
+        return "available", "Qwen3-TTS sidecar 已配置（运行时以合成结果为准）"
+    if name == "edge":
+        if not settings.provider_allowed("edge"):
+            return "unavailable", "edge-tts 已被降级开关否决（local 模式或供应商关闭）"
         if _edge_tts_module() is None:
-            return "unavailable", "TTS 引擎 edge-tts 未安装（安装后启用；不播占位音）"
-        return "available", "TTS 引擎 edge-tts 已就绪（引擎标识如实返回，不构成 SLA）"
-    return "unavailable", f"未识别的 TTS 引擎：{engine}（不猜测、不降级为占位音）"
+            return "unavailable", "edge-tts 未安装（安装后启用；不播占位音）"
+        return "available", "edge-tts 已就绪（引擎标识如实返回，不构成 SLA）"
+    if name in ("wechat_si", "wechatsi", "wechat-si"):
+        if not settings.provider_allowed("wechat_si"):
+            return "unavailable", "微信同声传译已被降级开关否决"
+        return "available", "微信同声传译由端侧合成（仅普通话；服务端不产出音频）"
+    return "unavailable", f"未识别的 TTS 引擎：{name}"
+
+
+def tts_engine_states(settings: Settings) -> list[dict]:
+    """配置链上每个引擎的状态（供 readiness 如实展示，不合并成一个布尔）。"""
+    states: list[dict] = []
+    for engine in settings.tts_engine_candidates():
+        status, detail = tts_engine_state(settings, engine)
+        states.append({"name": engine, "status": status, "detail": detail})
+    if settings.provider_allowed("wechat_si"):
+        status, detail = tts_engine_state(settings, "wechat_si")
+        states.append({"name": "wechat_si", "status": status, "detail": detail})
+    return states
+
+
+def tts_status(settings: Settings) -> tuple[str, str]:
+    """返回 (status, detail)：只要链上有一个**服务端可合成**引擎可用即 available。"""
+    states = [s for s in tts_engine_states(settings)
+              if s["name"] in ("qwen3", "edge") and s["status"] == "available"]
+    if states:
+        names = ",".join(s["name"] for s in states)
+        return "available", f"TTS 服务端引擎可用：{names}（引擎标识如实返回，不构成 SLA）"
+    reasons = [f"{s['name']}:{s['detail']}" for s in tts_engine_states(settings)
+               if s["name"] in ("qwen3", "edge")]
+    return "unavailable", "；".join(reasons) or "TTS 引擎未配置（文字展示不受影响）"
 
 
 def tts_engine_name(settings: Settings) -> str:
-    status, _ = tts_status(settings)
-    return (settings.tts_engine or "none").lower() if status == "available" else "none"
+    """首个服务端可用引擎名；无可用引擎返回 none（端侧 WechatSI 由客户端兜底）。"""
+    for engine in settings.tts_engine_candidates():
+        if engine in ("qwen3", "edge") and tts_engine_state(settings, engine)[0] == "available":
+            return engine
+    return "none"
 
 
-def resolve_voice(settings: Settings, voice_id: Optional[str]) -> str:
-    """业务音色 ID → 引擎音色；未知音色回退默认（契约：未知音色回退而非报错）。"""
+def tts_engines_for_locale(settings: Settings, locale: Optional[str]) -> list[str]:
+    """按 locale 给出本次可尝试的服务端引擎顺序。
+
+    粤语/潮汕不走本地 Qwen3（当前权重以普通话为主，硬读会产出"普通话腔粤语"），
+    直接交给 edge 的 zh-HK 音色；潮汕话无服务端引擎，返回空 → 由端侧/文字承接。
+    """
+    value = normalize_locale(locale)
+    order: list[str] = []
+    for engine in settings.tts_engine_candidates():
+        if engine not in ("qwen3", "edge"):
+            continue
+        if tts_engine_state(settings, engine)[0] != "available":
+            continue
+        if value in ("zh-hk", "zh-nan") and engine == "qwen3":
+            continue
+        order.append(engine)
+    return order
+
+
+def resolve_voice(
+    settings: Settings,
+    voice_id: Optional[str],
+    *,
+    engine: Optional[str] = None,
+    locale: Optional[str] = None,
+) -> str:
+    """业务音色 ID → 引擎音色；未知音色回退默认（契约：未知音色回退而非报错）。
+
+    `engine` 不传时取当前首个可用引擎；`locale` 只用于**未知音色**的默认回退，
+    已知业务音色的映射优先（避免用户选了粤语男声却被 locale 覆盖）。
+    """
+    name = str(engine or tts_engine_name(settings) or "edge").lower()
+    value = normalize_locale(locale)
+
+    if name == "qwen3":
+        if voice_id and voice_id in QWEN3_BUILTIN_VOICES:
+            return QWEN3_BUILTIN_VOICES[voice_id]
+        return settings.tts_qwen3_default_voice
+
     mapping: dict[str, str] = {}
     for pair in (settings.tts_voice_map or "").split(","):
         if "=" in pair:
-            key, _, value = pair.partition("=")
-            mapping[key.strip()] = value.strip()
+            key, _, mapped = pair.partition("=")
+            mapping[key.strip()] = mapped.strip()
     if voice_id and voice_id in mapping:
         return mapping[voice_id]
+    if voice_id and voice_id in EDGE_BUILTIN_VOICES:
+        return EDGE_BUILTIN_VOICES[voice_id]
+    # 未知音色：按 locale 给一个合理的默认，而不是把粤语文本交给普通话女声
+    if value == "zh-hk":
+        return "zh-HK-HiuMaanNeural"
+    if value == "zh-tw":
+        return "zh-TW-HsiaoChenNeural"
     return settings.tts_default_voice
 
 
@@ -176,7 +302,7 @@ async def _synthesize_streaming(
         engine_voice,
         connector=_tts_connector(),
         connect_timeout=_TTS_CONNECT_TIMEOUT_S,
-        receive_timeout=max(1, int(settings.tts_timeout_seconds or 30)),
+        receive_timeout=max(1, int(settings.tts_edge_timeout_seconds or 12)),
     )
     audio_bytes = 0
     started = metrics["_started"]
@@ -205,8 +331,125 @@ async def _synthesize_save(
     await communicate.save(str(tmp_path))
 
 
-async def synthesize(settings: Settings, text: str, engine_voice: str, out_path: Path) -> dict:
-    """调用引擎合成并落盘；返回本次合成的耗时画像（**返回契约仍是文件**，调用方按需记录）。
+def _qwen3_url(endpoint: str) -> str:
+    """sidecar 地址归一：既接受 base URL，也接受完整 /tts 地址。"""
+    url = str(endpoint or "").strip().rstrip("/")
+    if not url:
+        return ""
+    if url.endswith("/tts") or url.endswith("/synthesize"):
+        return url
+    return url + "/tts"
+
+
+async def _synthesize_qwen3(
+    settings: Settings, text: str, engine_voice: str, out_path: Path, locale: Optional[str]
+) -> dict:
+    """本地 Qwen3-TTS sidecar 适配（HTTP JSON，2026-11-18 新增）。
+
+    适配器契约（我们这一侧定义；sidecar 只需满足其一）：
+      请求：POST {AI_TTS_QWEN3_ENDPOINT}/tts
+            JSON {"text": str, "voice": str, "locale": str, "format": "wav"}
+      响应 A：Content-Type audio/* 或 application/octet-stream → 直接是 WAV 字节
+      响应 B：JSON {"audio_base64": "<b64>", "mime": "audio/wav"}
+      响应 C：JSON {"audioUrl": "http://..."} → 本服务再取一次字节
+    任何 4xx/5xx、空音频、JSON 解析失败 → RuntimeError（由执行器切下一引擎）。
+    """
+    url = _qwen3_url(settings.tts_qwen3_endpoint)
+    if not url:
+        raise RuntimeError("Qwen3-TTS sidecar 未配置")
+
+    started = time.perf_counter()
+    timeout = max(1.0, float(settings.tts_qwen3_timeout_seconds))
+    body = {"text": text, "voice": engine_voice, "locale": normalize_locale(locale), "format": "wav"}
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(url, json=body)
+            if resp.status_code >= 400:
+                raise RuntimeError(f"Qwen3-TTS sidecar 返回 HTTP {resp.status_code}")
+            content_type = (resp.headers.get("content-type") or "").lower()
+            audio: bytes
+            if content_type.startswith("audio/") or "octet-stream" in content_type:
+                audio = resp.content
+                first_byte_ms = round((time.perf_counter() - started) * 1000, 1)
+            else:
+                try:
+                    data = resp.json()
+                except (ValueError, TypeError):
+                    raise RuntimeError("Qwen3-TTS sidecar 响应不是音频也不是 JSON")
+                # V02 Qwen3-TTS sidecar 返回 {code,message,data:{audio_base64,...}}；
+                # 兼容旧契约的顶层 audio_base64/audioUrl。
+                payload = data.get("data") if isinstance(data.get("data"), dict) else data
+                b64 = (payload.get("audio_base64") or payload.get("audio") or payload.get("wav_base64")
+                       or payload.get("data"))
+                if b64:
+                    try:
+                        audio = base64.b64decode(str(b64))
+                    except Exception:
+                        raise RuntimeError("Qwen3-TTS sidecar 返回的 base64 无法解码")
+                    first_byte_ms = round((time.perf_counter() - started) * 1000, 1)
+                else:
+                    audio_url = str(payload.get("audioUrl") or payload.get("audio_url") or "").strip()
+                    if not audio_url:
+                        raise RuntimeError("Qwen3-TTS sidecar 响应缺少音频字段")
+                    audio_resp = await client.get(audio_url)
+                    if audio_resp.status_code >= 400:
+                        raise RuntimeError(f"Qwen3-TTS 音频地址返回 HTTP {audio_resp.status_code}")
+                    audio = audio_resp.content
+                    first_byte_ms = round((time.perf_counter() - started) * 1000, 1)
+    except httpx.TimeoutException as exc:
+        raise RuntimeError(f"Qwen3-TTS sidecar 超时（{timeout:.0f}s）") from exc
+    except httpx.HTTPError as exc:
+        raise RuntimeError(f"Qwen3-TTS sidecar 连接失败：{exc.__class__.__name__}") from exc
+
+    if not audio:
+        raise RuntimeError("Qwen3-TTS sidecar 返回空音频")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = out_path.with_name(f"{out_path.name}.{uuid.uuid4().hex[:12]}.part")
+    try:
+        tmp_path.write_bytes(audio)
+        if tmp_path.stat().st_size == 0:
+            raise RuntimeError("Qwen3-TTS sidecar 返回空文件")
+        tmp_path.replace(out_path)
+    except BaseException:
+        _remove_quietly(tmp_path)
+        raise
+
+    total_ms = round((time.perf_counter() - started) * 1000, 1)
+    logger.info("TTS 合成完成 | engine=qwen3 | total=%.1fms | bytes=%d", total_ms, len(audio))
+    return {"mode": "http", "firstByteMs": first_byte_ms, "totalMs": total_ms,
+            "bytes": len(audio), "fallback": None}
+
+
+async def synthesize(
+    settings: Settings,
+    text: str,
+    engine_voice: str,
+    out_path: Path,
+    *,
+    engine: Optional[str] = None,
+    locale: Optional[str] = None,
+) -> dict:
+    """按引擎合成并落盘（qwen3=本地 sidecar，edge=在线朗读）。"""
+    name = str(engine or tts_engine_name(settings) or "none").lower()
+    if name == "qwen3":
+        return await _synthesize_qwen3(settings, text, engine_voice, out_path, locale)
+    if name == "edge":
+        # 出境策略（审计 H10）：edge-tts 走微软公共端点，domestic 策略下一律拒绝，
+        # 由调用方回落到"无音频/端侧朗读"，而不是把患者原文送到境外。
+        if (settings.egress_policy or "allow") == "domestic":
+            raise RuntimeError("TTS 引擎不可用：出境策略 domestic 禁止使用在线朗读（edge）")
+        # 出境前强制脱敏（审计 H10）：朗读文本里的手机号/证件号/姓名先打码
+        from .redact import deep_sanitize
+
+        text = deep_sanitize(text)
+        return await _synthesize_edge(settings, text, engine_voice, out_path)
+    raise RuntimeError(f"TTS 引擎不可用：{name}")
+
+
+async def _synthesize_edge(settings: Settings, text: str, engine_voice: str, out_path: Path) -> dict:
+    """edge-tts 合成并落盘；返回本次合成的耗时画像（**返回契约仍是文件**，调用方按需记录）。
 
     落盘契约（防「残次产物毒化缓存」）：
     - 先写临时文件 `.part`，**成功且非空**才原子替换到目标名；
@@ -219,9 +462,6 @@ async def synthesize(settings: Settings, text: str, engine_voice: str, out_path:
       "bytes": 落盘字节, "fallback": 流式失败后降级的异常类名|None}`。
     `mode="save"` 时 `firstByteMs` 恒为 None —— 旧路径没有任何首字节观测点，**不编造数字**。
     """
-    engine = tts_engine_name(settings)
-    if engine != "edge":
-        raise RuntimeError("TTS 引擎未配置")
     edge_tts = _edge_tts_module()
     if edge_tts is None:
         raise RuntimeError("TTS 引擎 edge-tts 未安装")
@@ -310,21 +550,48 @@ def asr_engine_name(settings: Settings) -> str:
     return (settings.asr_engine or "none").lower() if asr_status(settings)[0] == "available" else "none"
 
 
+# ref_id 白名单（2026-11-18 · 审计 C2）：只允许字母/数字/下划线/连字符，长度 1~64。
+# 为什么必须白名单而不是"过滤 .."：黑名单永远漏（Windows 盘符、UNC、`..\\`、编码变体），
+# 而业务侧写入的文件名本来就是 UUID/雪花 ID 形态，收紧不会误伤。
+_ASR_REF_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+# 允许的音频扩展名（与业务侧落盘一致）
+_ASR_AUDIO_SUFFIXES = (".wav", ".mp3", ".m4a", ".pcm", ".ogg", ".webm")
+
+
 def resolve_audio_path(settings: Settings, input_ref: Optional[str]) -> Optional[Path]:
     """把 `inputRef`（`asr:{id}`）解析为音频目录下的实际文件；无约定义务时返回 None。
 
     目录由 `AI_ASR_AUDIO_DIR` 约定（业务侧写入、任务侧只读）。未配置 → 能力如实不可用。
+
+    安全口径（审计 C2 · 路径穿越/任意文件读取）：
+    1. `ref_id` 必须命中 `^[A-Za-z0-9_-]{1,64}$` —— 盘符、斜杠、点号、UNC 一律进不来；
+    2. 命中后仍做 `resolve()` 前缀断言，最终路径必须落在 base 目录内（防符号链接逃逸）；
+    3. 任何一条不满足即返回 None（调用方按 CAPABILITY_UNAVAILABLE 如实失败，不猜测文件）。
     """
     if not settings.asr_audio_dir or not input_ref:
         return None
     prefix, _, ref_id = input_ref.partition(":")
-    if prefix != "asr" or not ref_id:
+    if prefix != "asr" or not _ASR_REF_ID_RE.fullmatch(ref_id):
+        if ref_id and not _ASR_REF_ID_RE.fullmatch(ref_id):
+            logger.warning("拒绝非法 ASR 音频引用（ref_id 未通过白名单）")
         return None
     base = Path(settings.asr_audio_dir)
-    for suffix in (".wav", ".mp3", ".m4a", ".pcm", ".ogg", ".webm"):
+    try:
+        base_resolved = base.resolve()
+    except OSError:  # 目录不可解析（不存在/无权限）→ 能力不可用
+        return None
+    for suffix in _ASR_AUDIO_SUFFIXES:
         candidate = base / f"{ref_id}{suffix}"
-        if candidate.exists():
-            return candidate
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if not resolved.is_relative_to(base_resolved):
+            logger.warning("拒绝越界 ASR 音频引用（解析后不在音频目录内）")
+            return None
+        if resolved.is_file():
+            return resolved
     return None
 
 
@@ -386,6 +653,10 @@ async def transcribe(settings: Settings, audio_path: Path, locale: Optional[str]
     - 目标：第 2 次起响应 0.5~2s（CPU 环境实测记录）。
     """
     request_start = time.time()
+    # locale 路由（2026-11-18）：本地 FunASR 只覆盖普通话。粤语/潮汕若继续喂给普通话模型，
+    # 会产出"像普通话又不像"的错误转写——宁可快速失败让客户端切 WechatSI/文字，也不伪造。
+    if not settings.asr_locale_supported(locale):
+        raise RuntimeError(f"本地 ASR 仅支持普通话，locale={locale} 需端侧识别或文字输入")
     engine = asr_engine_name(settings)
     if engine != "funasr":
         raise RuntimeError("ASR 引擎未配置")

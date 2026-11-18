@@ -11,6 +11,8 @@ backend/deploy/resources/
 # 本地环境与凭据（口令值单一事实源，不入库）
 backend/deploy/env.local
 *.local
+# 小程序联调覆盖（档位 / 隧道域名 / dev 登录密钥，审计 C1/H8/H9）—— 发布流水线按需生成
+miniprogram/config/env.local.js
 
 # 运行证据/临时产物（含运行时凭据快照，不入库）
 backend/deploy/run/
@@ -156,6 +158,13 @@ miniprogram/tools/_assets_src/
 # 报告 .md / .jtl / 日志保留，便于回看。
 /tools/e2e-weapp/node_modules/
 /artifacts/e2e-weapp/jmeter-*/html/
+
+# ===== 敌意安全审计整改材料（2026-11-18）=====
+# 本仓库是公开仓库（Public）。这批文档逐条写明系统缺陷与「尚未修复」清单
+# （phone_hash、M4/M5/M11-M14、L5/L6/L9 等），推到公开仓库等于公示剩余攻击面，
+# 且进 git 历史后不可撤回、会被 fork 存档。故只留本机，不作为交付物发布。
+/docs/security/
+/docs/安全审查_20261118_253f05d修复面.md
 
 
 

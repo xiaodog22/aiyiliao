@@ -156,6 +156,7 @@ Page({
     this._gone = true
     this._stopPolling()
     this._stopLive()
+    speechService.stopSpeak()
   },
 
   /** 回到页面：恢复常驻同步（医生接诊 / 回复能实时出现在对话里，与微信聊天一致） */
@@ -174,6 +175,7 @@ Page({
   /** 离开页面：停常驻同步，避免后台空转 */
   onHide() {
     this._stopLive()
+    speechService.stopSpeak()
   },
 
   onBack() {

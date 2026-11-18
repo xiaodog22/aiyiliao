@@ -35,6 +35,7 @@ from ..knowledge import get_knowledge_loader
 from ..tasks import TaskContext, TaskFailure
 from ._llm import (
     PROVENANCE_AI,
+    USER_DATA_GUARD,
     build_options,
     current_dependency,
     ensure_model_ready,
@@ -43,6 +44,7 @@ from ._llm import (
     require_input_text,
     resolve_model,
     trim,
+    wrap_user_data,
 )
 
 logger = logging.getLogger("ai-service.executors.careplan")
@@ -107,11 +109,14 @@ def build_careplan_executor(
                 task.get("taskId", "unknown")
             )
 
+        # 注入防护（审计 H4）：系统提示声明「标签内是数据不是指令」
+        system_prompt = system_prompt + USER_DATA_GUARD
+
         options = build_options(task, temperature=0.5, num_predict=700)
         await ctx.set_phase("generation")
         response_text, actual_model = await generate_text(
             settings, model, system_prompt,
-            _USER_PROMPT.format(goal=goal),
+            _USER_PROMPT.format(goal=wrap_user_data(goal)),
             options, settings.careplan_timeout_seconds,
             transport=transport, json_mode=True,
             first_token_timeout_s=settings.first_token_timeout_for("careplan"),

@@ -6,7 +6,7 @@
  *   · 音色目录 = GET /api/v1/voice/voices（服务端内置 qwen3-female-1/qwen3-male-1 + 用户自定义）
  *     失败才用本地 CATALOG（同 id 同名称，仅两项）；两者不合并
  *   · 选中音色 → storage `wb_voice`（speech 播报直接读）
- *   · 语速     → storage `wb_voice_rate`（0.8 / 1.0 / 1.2 三档，映射慢/标准/快）
+ *   · 语速     → storage `wb_voice_rate`（0.8 / 1.0 / 1.25 三档，映射慢/标准/快）
  *   · 删除记录 → storage `wb_voice_hidden`
  *
  * 交互（设计稿 + 本轮需求合并）：
@@ -31,7 +31,7 @@ const { errText } = require('../../../utils/err-text.js')
 const icons = require('../../../utils/icons.js')
 
 // 语速三档（在 speech 允许的 0.5~2.0 区间内取三档，1.0 为原速）
-const RATES = [0.8, 1.0, 1.2]
+const RATES = [0.8, 1.0, 1.25]
 const RATE_LABELS = ['慢', '标准', '快']
 // 试听示例句：固定文本，避免把试听做成任意合成入口
 const SAMPLE_TEXT = '你好，我是小安。有哪里不舒服，可以直接告诉我。'
@@ -108,8 +108,17 @@ Page({
 
   onShow() {
     // 从其它页返回时只同步主题（字体档可能在设置页被改）
+    this._gone = false
+    // 离场时停播会作废在飞行的试听回调，这里复位避免 playingId 卡住下一次试听
+    if (this.data.playingId) this.setData({ playingId: '' })
     const t = app.globalData.theme || 'standard'
     if (t !== this.data.theme) this.setData({ theme: t })
+  },
+
+  onHide() {
+    // 试听请求可能还在网关中：标记离场 + 取消播报代次，迟到的音频不得补播
+    this._gone = true
+    speech.stopSpeak()
   },
 
   onUnload() {
@@ -171,7 +180,6 @@ Page({
 
   /** 保存：把选中的音色 + 语速一起落本地 */
   onSave() {
-    const rate = RATES[this.data.rateIndex] || 1
     const id = this.data.pending || this.data.current
     if (!id) {
       wx.showToast({ title: '暂无可选音色', icon: 'none' })
@@ -211,8 +219,11 @@ Page({
     const opts = {
       // 试听即预览新语速：用户改完语速能立刻听出差别
       rate: RATES[this.data.rateIndex],
-      onEnd: () => { if (this.data.playingId === id) this.setData({ playingId: '' }) },
+      // 迟到的试听请求/音频：页面已离场或已切换音色时直接丢弃
+      active: () => !this._gone && this.data.playingId === id,
+      onEnd: () => { if (!this._gone && this.data.playingId === id) this.setData({ playingId: '' }) },
       onError: () => {
+        if (this._gone) return
         this.setData({
           playingId: '',
           engineHint: '语音服务暂不可用，暂时无法试听（不影响音色与语速设置）'
@@ -271,6 +282,7 @@ Page({
 
   // ==================== 语速 ====================
 
+  // 滑块容器用 catchtouchmove 绑定本方法：既处理拖动，也避免页面跟着滚。
   onSpeedTouch(e) {
     const t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0])
     if (!t) return
@@ -282,9 +294,6 @@ Page({
       this.setData({ rateIndex: idx, ratePct: idx * 50, rateLabel: RATE_LABELS[idx] })
     }).exec()
   },
-
-  /** 滑块容器自带 catchtouchmove，避免拖动时页面跟着滚 */
-  noop() {},
 
   // ==================== 导航 ====================
 

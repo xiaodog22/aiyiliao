@@ -36,6 +36,10 @@ logger = logging.getLogger("edge-gateway")
 PROXY_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"]
 
 
+# 请求 ID 白名单（审计 L3）：见 _request_id_middleware
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+
+
 def _rid(request: Request) -> str:
     # 2026-11-17 全链路 trace：优先用中间件落定的 id，保证「信封 requestId / 响应头 /
     # 转发给 Java·AI 的 X-Request-Id」是同一个值；没有中间件上下文时退回旧行为。
@@ -145,7 +149,10 @@ def create_app(settings: Optional[GateSettings] = None) -> FastAPI:
     #    响应既没有 requestId 也没有 X-Request-Id，线上排障只能靠猜。
     @app.middleware("http")
     async def _request_id_middleware(request: Request, call_next):
-        rid = request.headers.get("x-request-id") or new_request_id()
+        # 审计 L3：入站 X-Request-Id 由客户端控制，会被回显进响应信封并写入两侧日志。
+        # 不校验等于开放日志注入（换行伪造日志行、ANSI 控制序列污染终端）。
+        header = request.headers.get("x-request-id") or ""
+        rid = header if _REQUEST_ID_RE.match(header) else new_request_id()
         request.state.request_id = rid
         response = await call_next(request)
         if "x-request-id" not in response.headers:
@@ -261,17 +268,27 @@ def create_app(settings: Optional[GateSettings] = None) -> FastAPI:
         if not request.headers.get("authorization"):
             raise unauthorized()
 
+    # 访问令牌形态（审计 H5）：business 签发的是 `at-<uuid>`，网关本地受控端点至少要能
+    # 把"任意字符串"挡在门外。完整会话有效性仍需 business 反查（见 W-3 待办），
+    # 这里先把最廉价的伪造面（`Authorization: Bearer 随便写`）收掉。
+    _ACCESS_TOKEN_RE = re.compile(r"^Bearer\s+at-[A-Za-z0-9-]{16,}$")
+
+    def _require_session_shape(request: Request) -> None:
+        auth = request.headers.get("authorization") or ""
+        if not _ACCESS_TOKEN_RE.match(auth.strip()):
+            raise unauthorized()
+
     @app.get("/api/gw/cast/devices")
     async def cast_device_list(request: Request):
         """设备发现轮询。桥接未接入 → 503（前端显空态，不伪造设备）。"""
-        _require_auth(request)
+        _require_session_shape(request)
         if not settings.cast_bridge_enabled:
             raise cast_bridge.bridge_unavailable()
         return ok_envelope(_rid(request), app.state.cast_bridge.discover())
 
     @app.post("/api/gw/cast/pair")
     async def cast_pair(request: Request):
-        _require_auth(request)
+        _require_session_shape(request)
         cast_bridge.require_idempotency_key(request)
         device_id = cast_bridge.parse_pair_body(await request.body())
         return ok_envelope(_rid(request), app.state.cast_bridge.pair(device_id))
@@ -279,7 +296,7 @@ def create_app(settings: Optional[GateSettings] = None) -> FastAPI:
     @app.post("/api/gw/cast/push")
     async def cast_push(request: Request):
         """推送受理（QUEUE/PATIENT/KB）。payload 与设备 IP 不落日志（契约红线）。"""
-        _require_auth(request)
+        _require_session_shape(request)
         cast_bridge.require_idempotency_key(request)
         raw = await request.body()
         if len(raw) > cast_bridge.MAX_PAYLOAD_BYTES:

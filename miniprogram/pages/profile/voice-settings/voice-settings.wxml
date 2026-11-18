@@ -7,7 +7,7 @@
   ③ 可选音色：卡外标题 + 白卡列表（图标 / 名称 / 描述 / 试听 / 设为默认 / 删除 / 选中态）
   ④ 语速调节（设计稿无，按需求增补）：慢 / 标准 / 快 三档滑块 + 保存按钮
 
-  ⚠️ 数据纯本地（services/voice.js 本地版）：目录取自设计稿四个音色，
+  ⚠️ 音色目录优先取服务端（services/voice.js），网络不可用时回落内置清单；
      选中音色 wb_voice / 语速 wb_voice_rate / 删除记录 wb_voice_hidden。
   ⚠️ 试听 = services/speech.js 的 TTS 合成固定示例句；语音服务不可用时如实提示。
 -->
@@ -92,8 +92,8 @@
       <view class="vs-speed-val">{{rateLabel}}</view>
     </view>
 
-    <view class="vs-speed-track" bindtouchstart="onSpeedTouch" bindtouchmove="onSpeedTouch"
-          catchtouchmove="noop" aria-role="slider" aria-label="语速调节">
+    <view class="vs-speed-track" bindtouchstart="onSpeedTouch" catchtouchmove="onSpeedTouch"
+          aria-role="slider" aria-label="语速调节">
       <view class="vs-speed-rail"></view>
       <view class="vs-speed-fill" style="width: {{ratePct}}%;"></view>
       <view class="vs-speed-thumb" style="left: {{ratePct}}%;"></view>

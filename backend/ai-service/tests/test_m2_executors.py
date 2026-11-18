@@ -55,6 +55,8 @@ def _settings(tmp_path, **overrides) -> Settings:
         queue_max=10,
         auth_mode="off",
         log_level="WARNING",
+        # 2026-11-18：语音用例需要 edge（外部供应商）；本地模式会一票否决，故显式开启全链路。
+        degrade_enabled=True,
     )
     base.update(overrides)
     return Settings(**base)

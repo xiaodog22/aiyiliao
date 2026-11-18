@@ -39,17 +39,31 @@ public class SmsChallengeService {
     private final int ttlSeconds;
     private final int cooldownSeconds;
     private final int maxAttempts;
+    /** 验证码哈希密钥（审计 H2）：非空时用 HMAC-SHA256，空则回落无盐 SHA-256（仅联调，启动告警）。 */
+    private final String codeHashSecret;
 
     public SmsChallengeService(JdbcTemplate jdbc, SmsSender smsSender, Clock clock,
                                @Value("${app.sms.ttl-seconds:300}") int ttlSeconds,
                                @Value("${app.sms.cooldown-seconds:60}") int cooldownSeconds,
-                               @Value("${app.sms.max-attempts:5}") int maxAttempts) {
+                               @Value("${app.sms.max-attempts:5}") int maxAttempts,
+                               @Value("${app.auth.code-hash-secret:}") String codeHashSecret) {
         this.jdbc = jdbc;
         this.smsSender = smsSender;
         this.clock = clock;
         this.ttlSeconds = Math.max(1, ttlSeconds);
         this.cooldownSeconds = Math.max(0, cooldownSeconds);
         this.maxAttempts = Math.max(1, maxAttempts);
+        this.codeHashSecret = codeHashSecret == null ? "" : codeHashSecret.trim();
+        if (this.codeHashSecret.isEmpty()) {
+            // 不 fail-fast（会打断既有联调档）；但必须显式告警：无密钥时 6 位码哈希可被毫秒级穷举。
+            org.slf4j.LoggerFactory.getLogger(SmsChallengeService.class).warn(
+                    "APP_CODE_HASH_SECRET 未配置：验证码使用无盐 SHA-256（仅限联调；生产必须注入 ≥32 字符随机值）");
+        }
+    }
+
+    /** 验证码摘要：有密钥走 HMAC-SHA256（抗彩虹表/穷举），无密钥回落历史 SHA-256。 */
+    private String codeDigest(String code) {
+        return codeHashSecret.isEmpty() ? Digests.sha256Hex(code) : Digests.hmacSha256Hex(codeHashSecret, code);
     }
 
     /** 校验通过的挑战（phoneHash 供登录侧比对"验证码手机号 == 账号绑定手机号"）。 */
@@ -86,7 +100,7 @@ public class SmsChallengeService {
         jdbc.update("INSERT INTO sms_challenges "
                         + "(id, phone_hash, scene, code_hash, challenge_id, expires_at, consumed_at, attempts, created_at) "
                         + "VALUES (?, ?, ?, ?, ?, ?, NULL, 0, ?)",
-                "sm-" + UUID.randomUUID(), phoneHash, scene, Digests.sha256Hex(code), challengeId,
+                "sm-" + UUID.randomUUID(), phoneHash, scene, codeDigest(code), challengeId,
                 Timestamp.from(now.plusSeconds(ttlSeconds)), Timestamp.from(now));
         smsSender.send(phone, code, scene);
         return new SmsChallengeData(challengeId, ttlSeconds);
@@ -99,6 +113,19 @@ public class SmsChallengeService {
      */
     @Transactional
     public VerifiedChallenge verify(String challengeId, String credential, String scene) {
+        Instant now = clock.instant();
+        // 原子占用一次尝试额度（审计 M9）：原实现是"先 SELECT 读 attempts、比对、再 +1"，
+        // 一批并发 verify 都会读到同一个旧值，实际可尝试次数被放大到 N 倍。
+        // 这里把"未消费 / 未过期 / 场景匹配 / 次数未超"全部下推到单条 UPDATE 的 WHERE，
+        // 由行锁串行化，返回 0 行即视为拒绝（一次尝试都不消耗）。
+        int slot = jdbc.update(
+                "UPDATE sms_challenges SET attempts = attempts + 1 "
+                        + "WHERE challenge_id = ? AND scene = ? AND consumed_at IS NULL "
+                        + "AND expires_at > ? AND attempts < ?",
+                challengeId, scene, Timestamp.from(now), maxAttempts);
+        if (slot == 0) {
+            throw rejected();
+        }
         List<ChallengeRow> rows = jdbc.query(
                 "SELECT phone_hash, code_hash, scene, expires_at, consumed_at, attempts "
                         + "FROM sms_challenges WHERE challenge_id = ?",
@@ -108,13 +135,12 @@ public class SmsChallengeService {
                         rs.getTimestamp("consumed_at") == null ? null : rs.getTimestamp("consumed_at").toInstant(),
                         rs.getInt("attempts")), challengeId);
         ChallengeRow row = rows.isEmpty() ? null : rows.get(0);
-        Instant now = clock.instant();
         if (row == null || row.consumedAt() != null || !row.expiresAt().isAfter(now)
-                || row.attempts() >= maxAttempts || !scene.equals(row.scene())) {
+                || !scene.equals(row.scene())) {
             throw rejected();
         }
-        if (!row.codeHash().equals(Digests.sha256Hex(credential))) {
-            jdbc.update("UPDATE sms_challenges SET attempts = attempts + 1 WHERE challenge_id = ?", challengeId);
+        // 恒定时间比对（审计 L2）：与同库 AuthSessionStore 的口径一致，消除逐位计时侧信道
+        if (!Digests.constantTimeEquals(row.codeHash(), codeDigest(credential))) {
             throw rejected();
         }
         return new VerifiedChallenge(challengeId, row.phoneHash());

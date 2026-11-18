@@ -95,6 +95,18 @@ async def forward(
             continue
         headers[lower] = value
     headers["accept-encoding"] = "identity"
+    # X-Forwarded-For 归一（审计 H6）：网关是唯一对外入口，必须由它决定"客户端真实地址"，
+    # 否则下游（business 限流按 IP、审计日志）拿到的是网关自身地址 —— 全体用户共享一个桶，
+    # 单个攻击者 30 次登录即可让全网 429；或反过来盲信客户端自带的 XFF（每换一个值开一个新桶）。
+    # 口径与网关自身限流一致：trust_forwarded_for=true 表示前置有可信反代（frp/Nginx 会覆盖 XFF），
+    # 此时透传首跳；否则一律覆盖为本次 TCP 对端地址。
+    _settings = getattr(request.app.state, "settings", None)
+    _trust_xff = bool(getattr(_settings, "rate_limit_trust_forwarded_for", False))
+    _peer = request.client.host if request.client else "unknown"
+    if _trust_xff and headers.get("x-forwarded-for"):
+        headers["x-forwarded-for"] = headers["x-forwarded-for"].split(",")[0].strip() or _peer
+    else:
+        headers["x-forwarded-for"] = _peer
     # 全链路 trace：客户端未带 X-Request-Id 时，把网关中间件生成的那个透传给上游，
     # 否则 Java / AI 会各自再生成一个 → 一次请求在三个服务日志里是三个不同 id（无法归因）。
     if "x-request-id" not in headers:

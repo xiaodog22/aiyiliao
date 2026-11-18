@@ -49,6 +49,7 @@ def _settings(tmp_path, *, stream: bool = True) -> Settings:
         queue_max=10,
         auth_mode="off",
         log_level="WARNING",
+        degrade_enabled=True,   # 2026-11-18：edge 属外部供应商，测试显式开启全链路
         tts_engine="edge",
         tts_output_dir=tmp_path / "tts",
         tts_url_ttl_seconds=600,
@@ -148,7 +149,7 @@ def test_stream_passes_connector_and_timeouts(tmp_path, monkeypatch):
     _run(voice.close_tts_connector())
 
     assert seen.get("connector") is not None, "应传入共享 TCPConnector"
-    assert seen.get("receive_timeout") == int(settings.tts_timeout_seconds), "AI_TTS_TIMEOUT_SECONDS 应生效到引擎层"
+    assert seen.get("receive_timeout") == int(settings.tts_edge_timeout_seconds), "AI_TTS_EDGE_TIMEOUT_SECONDS 应生效到引擎层"
     assert isinstance(seen.get("connect_timeout"), int)
 
 
@@ -274,7 +275,9 @@ def test_executor_cache_hit_skips_synthesis_and_keeps_contract(tmp_path, monkeyp
     assert calls["n"] == 1, "第二次必须命中产物缓存，不得再次合成"
     assert first["model"]["cached"] is False
     assert second["model"]["cached"] is True
-    assert set(second["result"].keys()) == {"audioUrl", "language"}, "返回契约不得改变"
+    assert set(second["result"].keys()) == {
+        "audioUrl", "language", "engine", "mime", "voiceId", "degraded"
+    }, "返回契约不得丢失引擎/降级标记"
     assert second["result"]["audioUrl"].startswith(settings.tts_public_base + "/internal/v1/tts/audio/")
     assert "token=" in second["result"]["audioUrl"]
     assert second["result"]["language"] == "zh-CN"

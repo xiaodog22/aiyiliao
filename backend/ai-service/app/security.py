@@ -28,10 +28,35 @@ from .envelope import error_payload, new_request_id
 
 logger = logging.getLogger("ai-service.security")
 
-_EXEMPT_PREFIXES = ("/internal/health/", "/internal/v1/tts/audio/")
+_EXEMPT_PREFIXES = ("/internal/v1/tts/audio/",)
+# 健康探针精确匹配（审计 L4）：原来用 startswith("/internal/health/") 做前缀判定，
+# `/internal/health/../v1/xx` 这类编码路径可能落进豁免分支。改为**精确白名单** +
+# 路径归一化（折叠重复斜杠、拒绝含 `..` 的路径），路由表怎么变都不会误放行。
+_EXEMPT_PATHS = frozenset({"/internal/health/live", "/internal/health/ready"})
 
 # 强 token 最小长度：HMAC 常量时间比较不防弱口令被猜中；64 hex（≥32 字节）以上才视为可用。
 _MIN_TOKEN_LENGTH = 32
+
+
+def _normalize_path(raw: str) -> str:
+    """路径归一化（审计 L4）：折叠空段/`.`，遇到 `..` 直接判为不可信（返回空串 → 不豁免）。"""
+    parts: list[str] = []
+    for seg in (raw or "").replace("\\", "/").split("/"):
+        if seg in ("", "."):
+            continue
+        if seg == "..":
+            return ""
+        parts.append(seg)
+    return "/" + "/".join(parts)
+
+
+def _is_exempt(raw_path: str) -> bool:
+    path = _normalize_path(raw_path)
+    if not path:
+        return False
+    if path in _EXEMPT_PATHS:
+        return True
+    return any(path.startswith(p) for p in _EXEMPT_PREFIXES)
 
 
 def install_auth(app: FastAPI, settings: Settings) -> None:
@@ -61,7 +86,7 @@ def install_auth(app: FastAPI, settings: Settings) -> None:
     @app.middleware("http")
     async def _auth_middleware(request: Request, call_next):
         path = request.url.path
-        if any(path.startswith(p) for p in _EXEMPT_PREFIXES):
+        if _is_exempt(path):
             return await call_next(request)
         provided = request.headers.get("authorization", "")
         if not hmac.compare_digest(provided, expected):

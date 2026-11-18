@@ -89,6 +89,8 @@ const ANONYMOUS = [
   { method: 'GET', pattern: '/api/v1/health-articles' },
   { method: 'GET', pattern: '/api/v1/health-articles/*' },
   { method: 'GET', pattern: '/api/v1/resources/manifest' },
+  // 降级开关快照（2026-11-18）：不含用户数据，冷启动/未登录也允许读取，供 WechatSI 兜底判定。
+  { method: 'GET', pattern: '/api/v1/voice/capabilities' },
   // 网关健康：服务端该路径未挂鉴权且限流豁免（编排器轮询用）——实测匿名 200。
   // 设置页「后端服务状态」面板在未登录时也要能看到真实状态（不得被本地守卫拦成"未连接"误报）。
   { method: 'GET', pattern: '/api/gw/health' },
@@ -476,7 +478,8 @@ function refreshAccessToken() {
         )
         // 刷新是裸 wx.request，不经 request() 的统一 fail 分支；这里补一次状态标记，
         // 否则"401 后刷新断网"会让全局状态误以为仍在线。
-        connectivity.markFail(e, 'request', false)
+        // silent=true：刷新失败由调用方按 401 处理并引导重新登录，不需要全局模态框（m-06）。
+        connectivity.markFail(e, 'request', true)
         reject(e)
       },
       complete: () => { refreshPromise = null }
@@ -623,11 +626,22 @@ function makeError(code, message, extra) {
   return err
 }
 
-function extractBizMsg(data) {
+/**
+ * 后端错误文案提取（审计 L7）。
+ *
+ * 原实现把 `msg/message/error/detail` 以及结构化 `details` 全部拼进用户可见文案：
+ * 上游一旦回显堆栈（FastAPI 的 detail 惯例），整段内部信息会直接渲染到患者屏幕。
+ * 现在分档：
+ *  - 5xx：一律不取原文（内部故障不该把实现细节给用户）；
+ *  - 4xx：取业务自写文案（msg/message/error），**不再**把 detail 当文案；
+ *    `details` 只在 VALIDATION_FAILED 这类字段级校验里拼接（那是给用户看的字段提示）。
+ */
+function extractBizMsg(data, status) {
   if (!data || typeof data !== 'object') return ''
-  const base = data.msg || data.message || (typeof data.error === 'string' ? data.error : '')
-    || (typeof data.detail === 'string' ? data.detail : '') || ''
-  const detail = extractBizDetails(data)
+  if (typeof status === 'number' && status >= 500) return ''
+  const base = data.msg || data.message || (typeof data.error === 'string' ? data.error : '') || ''
+  const code = typeof data.code === 'string' ? data.code.trim() : ''
+  const detail = code === 'VALIDATION_FAILED' ? extractBizDetails(data) : ''
   if (!detail) return base
   return base ? (base + '：' + detail) : detail
 }
@@ -653,11 +667,25 @@ function httpError(status, data) {
     ? data.code.trim()
     : ''
   const code = biz && biz !== 'OK' ? biz : 'HTTP_ERROR'
-  return makeError(code, extractBizMsg(data) || '服务暂时不可用，请稍后重试', {
+  const rawMsg = extractBizMsg(data, status)
+  if (!rawMsg && data && (data.detail || data.msg || data.message)) {
+    // 原文只进调试台，不上屏（审计 L7）
+    console.debug('[request] 上游错误详情（不展示给用户）', specSafe(data))
+  }
+  return makeError(code, rawMsg || '服务暂时不可用，请稍后重试', {
     httpCode: status,
     data,
     bizCode: biz
   })
+}
+
+/** 调试输出用：只保留可读摘要，避免整包打印敏感响应。 */
+function specSafe(data) {
+  try {
+    return String((data && (data.code || data.message || data.detail)) || '').slice(0, 200)
+  } catch (e) {
+    return ''
+  }
 }
 
 // ============ 基础请求 ============
@@ -744,14 +772,17 @@ function request(options) {
         }
       },
       fail: (err) => {
+        // m-06（2026-11-18）：只有**写操作**（预约/问诊/床位/资料修改等写闸门）失败才弹全局
+        // 模态框；读请求失败一律静默 —— 顶部 offline-bar 已经在提示，弱网下再每请求弹一次纯打扰。
+        const silent = method === 'GET'
         const msg = (err && err.errMsg) || ''
         if (/timeout/.test(msg)) {
           const e = makeError('TIMEOUT', '请求超时，请检查网络后重试。', { raw: err })
-          connectivity.markFail(e, 'request', false)
+          connectivity.markFail(e, 'request', silent)
           reject(e)
         } else {
           const e = makeError('NETWORK_ERROR', '网络连接失败，请检查网络后重试。', { raw: err })
-          connectivity.markFail(e, 'request', false)
+          connectivity.markFail(e, 'request', silent)
           reject(e)
         }
       }
@@ -834,14 +865,15 @@ function postForm(spec, fields, opts) {
           }
         },
         fail: (err) => {
+          // 次要请求（TTS 合成/试听）：失败交给页面与 offline-bar，不弹全局模态框（m-06）
           const msg = (err && err.errMsg) || ''
           if (/timeout/.test(msg)) {
             const e = makeError('TIMEOUT', '语音合成超时，请稍后重试。', { raw: err })
-            connectivity.markFail(e, 'request', false)
+            connectivity.markFail(e, 'request', true)
             reject(e)
           } else {
             const e = makeError('NETWORK_ERROR', '网络连接失败，请检查网络后重试。', { raw: err })
-            connectivity.markFail(e, 'request', false)
+            connectivity.markFail(e, 'request', true)
             reject(e)
           }
         }
@@ -881,11 +913,12 @@ function getBinary(spec, params, opts) {
         }
       },
       fail: (err) => {
+        // 音频下载属次要请求：静默标记，不弹模态框（m-06）
         const msg = (err && err.errMsg) || ''
         const e = /timeout/.test(msg)
           ? makeError('TIMEOUT', '音频下载超时。', { raw: err })
           : makeError('NETWORK_ERROR', '网络连接失败，请检查网络后重试。', { raw: err })
-        connectivity.markFail(e, 'request', false)
+        connectivity.markFail(e, 'request', true)
         reject(e)
       }
     })
@@ -960,7 +993,15 @@ function openStream(spec, handlers, opts) {
       }
     })
     if (!task || typeof task.onChunkReceived !== 'function') {
+      // 老基础库没有分块下发：先告知调用方降级，再**主动 abort**（m-03，2026-11-18）。
+      // 不 abort 的话这条连接会继续跑，随后 success/fail 又回调一次；调用方此时已切轮询，
+      // 会把正常收尾当成异常，出现双重降级/误报。
       emit('unsupported', {})
+      try {
+        if (task && typeof task.abort === 'function') task.abort()
+      } catch (e) {
+        // 连接尚未真正建立时 abort 会抛，属正常
+      }
       resolve({ abort() {}, supported: false })
       return
     }
@@ -1026,8 +1067,9 @@ module.exports = {
             }
           },
           fail: (err) => {
+            // 语音上传属次要请求：页面自带失败提示，静默标记即可（m-06）
             const e = makeError('NETWORK_ERROR', '上传失败', { raw: err })
-            connectivity.markFail(e, 'request', false)
+            connectivity.markFail(e, 'request', true)
             reject(e)
           }
         })

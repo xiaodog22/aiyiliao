@@ -50,14 +50,18 @@ def current_provider() -> str:
 
 
 def provider_order(settings: Settings) -> list[str]:
-    """解析 `AI_PROVIDER_ORDER`（默认 ollama,deepseek）；`rule` 由 business 侧承载，此处忽略。"""
+    """解析 `AI_PROVIDER_ORDER`（默认 ollama,deepseek）；`rule` 由 business 侧承载，此处忽略。
+
+    2026-11-18：按统一降级开关过滤。`AI_DEGRADE_ENABLED=false`（local 模式）时
+    DeepSeek 直接**不出现在链里**——不建连、不探测、不重试，而不是先尝试再报错。
+    """
     raw = str(settings.provider_order or "ollama,deepseek")
     names = [p.strip().lower() for p in raw.split(",") if p.strip()]
-    return [p for p in names if p in ("ollama", "deepseek")]
+    return [p for p in names if p in ("ollama", "deepseek") and settings.provider_allowed(p)]
 
 
 def has_fallback(settings: Settings) -> bool:
-    """是否存在可用的第二级（DeepSeek 已配置 key）。用于决定 Ollama 就位性检查是否必须硬失败。"""
+    """是否存在可用的第二级（DeepSeek 已配置 key 且未被开关否决）。"""
     return "deepseek" in provider_order(settings) and bool(settings.deepseek_api_key)
 
 
@@ -124,8 +128,17 @@ async def generate(
 
     last_failure: Optional[TaskFailure] = None
     attempted: list[str] = []
+    # 共享截止时间（2026-11-18）：各供应商预算不再串行叠加，而是从同一个 deadline 里扣。
+    # 例：TRIAGE 180s，DeepSeek 兜底 15s → Ollama 最多 165s、DeepSeek 最多剩余 15s，总时长 ≤180s。
+    deadline = time.monotonic() + max(float(timeout_s), 0.1)
 
-    for name in order:
+    for index, name in enumerate(order):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0.05:
+            metrics().record_provider_skip(name, "deadline")
+            logger.warning("降级链预算耗尽，跳过 | provider=%s | budget=%.1fs", name, timeout_s)
+            break
+
         if name == "deepseek" and not settings.deepseek_api_key:
             # fail-fast：未配置就跳过，不发请求、不空转（评审要求）
             continue
@@ -142,10 +155,17 @@ async def generate(
         try:
             fallback_reason = ""
             if name == "ollama":
+                # 首级必须给下一级留出兜底预算，否则"Ollama 用满 180s → DeepSeek 已超时"。
+                has_later = any(
+                    p == "deepseek" and settings.deepseek_api_key for p in order[index + 1:]
+                )
+                reserve = float(fallback_timeout_s or 0.0) if has_later else 0.0
+                budget = max(1.0, remaining - reserve) if reserve else remaining
+                budget = min(budget, remaining)
                 text, model, fallback_reason = await ollama_provider.generate(
                     settings, payload,
-                    timeout_s=timeout_s,
-                    first_token_timeout_s=first_token_timeout_s,
+                    timeout_s=budget,
+                    first_token_timeout_s=min(float(first_token_timeout_s), budget),
                     transport=transport,
                     on_token=on_token,
                 )
@@ -154,10 +174,11 @@ async def generate(
                 #  - 默认 ollama,deepseek → DeepSeek 是兜底，用较短的第二级预算（fast fail）；
                 #  - 若把 AI_PROVIDER_ORDER 改成 deepseek,... → DeepSeek 是首级，必须给满任务预算，
                 #    否则首级会被 15~45s 的兜底预算卡死（2026-11-15 修正）。
-                ds_budget = timeout_s if name == order[0] else (fallback_timeout_s or timeout_s)
+                ds_budget = (remaining if name == order[0]
+                             else min(float(fallback_timeout_s or remaining), remaining))
                 text, model = await deepseek_provider.generate(
                     settings, payload,
-                    timeout_s=ds_budget,
+                    timeout_s=max(1.0, ds_budget),
                     transport=transport,
                 )
         except deepseek_provider.NotConfigured:
@@ -195,6 +216,7 @@ async def generate(
         raise last_failure
 
     raise TaskFailure(
-        "CAPABILITY_UNAVAILABLE", "没有可用的模型提供方（未配置 DeepSeek key）",
-        dependency=None, retryable=True,
+        "CAPABILITY_UNAVAILABLE",
+        "没有可用的模型提供方（本地不可用，云端未配置或已被降级开关否决）",
+        dependency=current_provider() if attempted else None, retryable=True,
     )

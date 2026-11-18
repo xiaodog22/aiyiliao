@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import org.springframework.http.HttpStatus;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,10 +38,12 @@ public class AuthService {
     private final UserService userService;
     private final AuthSessionStore authSessionStore;
     private final Clock clock;
+    /** 运行档位（审计 H9 ③：prod 档拒绝 dev 派生 code）。 */
+    private final Environment environment;
 
     public AuthService(WechatSessionProvider wechatSessionProvider, UserRepository userRepository,
                        ProfileRepository profileRepository, PhoneCrypto phoneCrypto, UserService userService,
-                       AuthSessionStore authSessionStore, Clock clock) {
+                       AuthSessionStore authSessionStore, Clock clock, Environment environment) {
         this.wechatSessionProvider = wechatSessionProvider;
         this.userRepository = userRepository;
         this.profileRepository = profileRepository;
@@ -48,6 +51,7 @@ public class AuthService {
         this.userService = userService;
         this.authSessionStore = authSessionStore;
         this.clock = clock;
+        this.environment = environment;
     }
 
     /** 微信登录：换 code → upsert 用户/空档案 → 签发会话（契约 OkSession）。 */
@@ -57,12 +61,33 @@ public class AuthService {
     }
 
     /**
+     * prod 档拒绝 dev 派生 code（审计 H9 ③ · 防御纵深）。
+     *
+     * <p>dev provider 本身是 {@code @Profile("dev")}，prod 档不会装配；但"档位恰好没配错"
+     * 不能当作唯一防线：客户端档位（BUILD_ENV）由前端文件决定，可被改包/旧包绕过。
+     * 这里在服务端再加一道：prod 档收到 {@code dev-user-*} 形态的 code 一律 403，
+     * 且不进入 jscode2session（避免把伪造值当真实 code 打上游）。</p>
+     */
+    private void rejectDevCodeInProd(String code) {
+        if (code == null || !code.startsWith("dev-user-")) {
+            return;
+        }
+        for (String profile : environment.getActiveProfiles()) {
+            if ("prod".equalsIgnoreCase(profile)) {
+                throw new ApiException("DEV_LOGIN_FORBIDDEN", HttpStatus.FORBIDDEN,
+                        "当前环境不支持该登录方式，请使用微信一键登录。");
+            }
+        }
+    }
+
+    /**
      * 登录前半段（医生端登录共用）：换 code → upsert 用户 + 空档案 + 手机号绑定 → 返回内部用户 ID。
      * 契约 doctorLogin 要求"角色只能由服务端根据数据库中的任职关系判定"，必须先拿到身份再判角色，
      * 因此与签发会话拆开（不改变患者登录的对外行为）。
      */
     @Transactional
     public String loginIdentity(WechatLoginRequest request) {
+        rejectDevCodeInProd(request.code());
         WechatSessionInfo session = wechatSessionProvider.getSessionByCode(request.code());
         if (session == null || session.openid() == null || session.openid().isBlank()) {
             throw new ApiException("WECHAT_CODE_INVALID", HttpStatus.UNPROCESSABLE_ENTITY,

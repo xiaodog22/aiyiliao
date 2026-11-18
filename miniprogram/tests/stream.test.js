@@ -142,6 +142,46 @@ test('基础库无 onChunkReceived：走 onUnsupported 降级，不算错误', a
   assert.strictEqual(errored, 0, '降级不是错误，不能弹错误提示')
 })
 
+test('基础库无 onChunkReceived：abort 连接且只回调一次终态（m-03）', async () => {
+  const { stub, stream } = load()
+  let aborted = 0
+  let options = null
+  // 模拟低版本基础库：返回的 task 没有 onChunkReceived，但连接本身仍会跑
+  stub.wx.request = (o) => {
+    options = o
+    return { abort() { aborted++ } }
+  }
+
+  let unsupported = 0
+  let errored = 0
+  stream.open('t-1', { onUnsupported: () => { unsupported++ }, onError: () => { errored++ } })
+  await tick()
+
+  assert.strictEqual(unsupported, 1)
+  assert.strictEqual(aborted, 1, '必须主动中止这条不会分块下发的连接')
+  // 被丢下的连接随后仍可能 success/fail：调用方已切轮询，不得再收到第二个终态
+  options.success({ statusCode: 200 })
+  options.fail({ errMsg: 'request:fail abort' })
+
+  assert.strictEqual(errored, 0, '降级后不得再报错')
+  assert.strictEqual(unsupported, 1, 'onUnsupported 只回调一次')
+})
+
+test('delta replace=true：透出替换语义而不是追加（M-01 终态整段替换）', async () => {
+  const { stub, stream } = load()
+  const calls = []
+  stream.open('t-1', { onDelta: (t, replace) => calls.push([t, !!replace]) })
+  await tick()
+
+  const rec = stub.httpRequests[0]
+  rec.emitChunk(bytesOf('event: delta\nid: 1\ndata: {"text":"，在的"}\n\n'))
+  rec.emitChunk(bytesOf('event: delta\nid: 2\ndata: {"text":"你好，在的","replace":true}\n\n'))
+  rec.emitChunk(bytesOf('event: completed\nid: 3\ndata: {"taskId":"t-1","status":"SUCCEEDED"}\n\n'))
+
+  assert.deepStrictEqual(calls[0], ['，在的', false])
+  assert.deepStrictEqual(calls[1], ['你好，在的', true], '整段替换必须带 replace 标记')
+})
+
 test('abort 后不再回调，也不残留增量', async () => {
   const { stub, stream } = load()
   const deltas = []

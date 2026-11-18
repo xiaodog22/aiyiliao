@@ -40,6 +40,7 @@ def _settings(tmp_path) -> Settings:
         queue_max=10,
         auth_mode="off",
         log_level="WARNING",
+        degrade_enabled=True,   # 2026-11-18：edge 属外部供应商，测试显式开启全链路
         tts_engine="edge",
         tts_output_dir=tmp_path / "tts",
         tts_url_ttl_seconds=600,
@@ -75,8 +76,9 @@ def _wait_terminal(client, task_id, timeout=10.0) -> dict:
 
 
 def _artifact_path(settings: Settings, text: str, voice_id: str = "qwen3-female-1") -> Path:
-    engine_voice = voice.resolve_voice(settings, voice_id)
-    digest = hashlib.sha256(f"{text}|{engine_voice}|zh-CN".encode("utf-8")).hexdigest()[:16]
+    engine_voice = voice.resolve_voice(settings, voice_id, engine="edge", locale="zh-CN")
+    # 2026-11-18：缓存键含引擎名，产物后缀按引擎隔离
+    digest = hashlib.sha256(f"edge|{text}|{engine_voice}|zh-CN".encode("utf-8")).hexdigest()[:16]
     return Path(settings.tts_output_dir) / f"{digest}.mp3"
 
 

@@ -4,16 +4,20 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
+import java.util.Map;
 
 /**
  * ai-openapi.yaml 的 ReadinessResult 镜像（就绪探针）。
  * status: ok/degraded/down（degraded 不重启；down 才是核心依赖不可用）。
  * models[].status: loaded/loading/not_loaded/unavailable（权重缺失 = unavailable，如实反映）。
+ * degradeMode/switches: 2026-11-18 降级总开关快照；业务侧原样透传给前端做端侧兜底判定。
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record UpstreamReadiness(
         @JsonProperty("status") String status,
+        @JsonProperty("degradeMode") String degradeMode,
+        @JsonProperty("switches") Map<String, Boolean> switches,
         @JsonProperty("dependencies") List<Dependency> dependencies,
         @JsonProperty("models") List<Model> models) {
 

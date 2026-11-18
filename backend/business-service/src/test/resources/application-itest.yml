@@ -3,9 +3,17 @@
 # 而多数契约测试（MessageCenterContractTest / M1~M5 等）并不显式传该属性；
 # 本文件作为 itest profile 的默认值兜底（profile 配置与主 application.yml 分层合并）。
 # 显式传入的用例（如 AttachmentSignatureTest 的 @SpringBootTest properties）优先级更高，不受影响。
+#
+# 2026-11-18（审计 H1/H2）：本档补齐两项显式配置 ——
+#   · app.sms.provider=dev：主配置缺省已反转为 prod，单测/联调依赖 DevSmsSender.lastCode() 读验证码；
+#   · app.auth.code-hash-secret：验证码改 HMAC-SHA256 后需密钥（无密钥会回落无盐摘要并告警）。
 app:
   attachment:
     sign-secret: test-sign-secret-0123456789abcdef
+  sms:
+    provider: dev
+  auth:
+    code-hash-secret: test-code-hash-secret-0123456789abcdef
 
 # 2026-11-05（V27）：H2 单测档的 Flyway 迁移停在 V26。
 # 原因：V27__health_report_structure.sql 含 MySQL 专有 DDL
@@ -25,3 +33,9 @@ spring:
   flyway:
     locations: classpath:db/migration,classpath:db/migration-h2
     target: 26.1
+
+# 2026-11-18（审计 C3）：单测不连真实 ai-service，显式关闭服务间令牌启动自检；
+# 生产/联调档仍为 true（缺 AI_SERVICE_TOKEN 即拒绝启动）。
+ai:
+  client:
+    require-token: false

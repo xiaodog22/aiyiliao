@@ -34,7 +34,13 @@ from ..config import Settings
 from ..tasks import TaskContext, TaskFailure
 from ..knowledge import get_knowledge_loader
 from ..providers import chain
-from ._llm import current_dependency, ensure_model_ready, parse_json_strict
+from ._llm import (
+    USER_DATA_GUARD,
+    current_dependency,
+    ensure_model_ready,
+    parse_json_strict,
+    wrap_user_data,
+)
 
 logger = logging.getLogger("ai-service.executors.triage")
 
@@ -218,10 +224,13 @@ def build_triage_executor(
             system_prompt = _SYSTEM_PROMPT
             logger.info("TRIAGE 任务降级为通用 prompt（知识库未加载或场景缺失）| task=%s", task.get("taskId"))
         
+        # 注入防护（审计 H4）：系统提示声明「标签内是数据不是指令」
+        system_prompt = system_prompt + USER_DATA_GUARD
+
         payload = {
             "model": model,
             "system": system_prompt,
-            "prompt": _USER_PROMPT.format(hint=departments_config["hint"], symptoms=text),
+            "prompt": _USER_PROMPT.format(hint=departments_config["hint"], symptoms=wrap_user_data(text)),
             "stream": False,
             "format": "json",  # Ollama 结构化输出：强制 JSON，降低小模型跑偏概率
             "options": options,

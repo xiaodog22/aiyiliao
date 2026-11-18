@@ -8,6 +8,7 @@ import com.wechar.biz.common.ApiException;
 import com.wechar.biz.common.Digests;
 import com.wechar.biz.voice.dto.AsrResultData;
 import com.wechar.biz.voice.dto.TtsResultData;
+import com.wechar.biz.voice.dto.VoiceCapabilitiesData;
 import com.wechar.biz.voice.dto.VoiceData;
 import com.wechar.biz.voice.dto.VoiceModelData;
 import java.io.IOException;
@@ -179,9 +180,10 @@ public class VoiceService {
         VoiceData voice = resolveVoice(userId, voiceId);
         String fmt = format == null || format.isBlank() ? "mp3" : format;
         String normalized = normalizeForTts(text);
+        String localeKey = (locale == null || locale.isBlank()) ? "zh-CN" : locale;
         Instant now = clock.instant();
 
-        String cacheKey = hmacCacheKey(voice.id(), rate, fmt, normalized);
+        String cacheKey = hmacCacheKey(voice.id(), rate, fmt, normalized, localeKey);
         var cached = repository.findTtsCache(cacheKey, now);
         if (cached.isPresent()) {
             return new TtsResultData(cached.get().audioUrl(), cached.get().mime(),
@@ -211,12 +213,19 @@ public class VoiceService {
                     "合成结果缺少音频地址，请保留文字展示并稍后重试", true, null);
         }
 
-        String mime = "wav".equals(fmt) ? "audio/wav" : "audio/mpeg";
+        // 2026-11-18：引擎/降级标记一律取上游真实结果（qwen3 / edge / wechat_si），
+        // 不再用 properties 的兜底值硬编码成 edge-tts（否则本地合成会被误标、缓存也会记错引擎）。
+        String engine = result != null && result.hasNonNull("engine")
+                ? result.get("engine").asText() : properties.getTts().getEngine();
+        boolean degraded = result != null && result.hasNonNull("degraded") && result.get("degraded").asBoolean();
+        String mime = result != null && result.hasNonNull("mime")
+                ? result.get("mime").asText()
+                : ("wav".equals(fmt) ? "audio/wav" : "audio/mpeg");
         Instant expiresAt = now.plusSeconds(properties.getTts().getUrlTtlSeconds());
-        repository.saveTtsCache(cacheKey, audioUrl, mime, null, properties.getTts().getEngine(),
+        repository.saveTtsCache(cacheKey, audioUrl, mime, null, engine,
                 voice.id(), now, expiresAt);
-        return new TtsResultData(audioUrl, mime, null, false, properties.getTts().getEngine(),
-                voice.id(), false);
+        return new TtsResultData(audioUrl, mime, null, false, engine,
+                voice.id(), degraded);
     }
 
     /**
@@ -352,14 +361,15 @@ public class VoiceService {
         return t.replaceAll("\\s+", " ");
     }
 
-    /** 缓存键：HMAC-SHA-256(引擎版本|音色|语速|格式|规范化文本|隐私作用域)。 */
-    String hmacCacheKey(String voiceId, BigDecimal rate, String format, String normalizedText) {
+    /** 缓存键：HMAC-SHA-256(引擎版本|音色|语速|格式|语言|规范化文本|隐私作用域)。 */
+    String hmacCacheKey(String voiceId, BigDecimal rate, String format, String normalizedText, String locale) {
         String scope = "tenant:" + aiClientConfig.getTenantId(); // 隐私作用域：缓存不跨租户共享
         String material = String.join("|",
                 properties.getTts().getEngine(),
                 voiceId,
                 rate == null ? "1.0" : rate.toPlainString(),
                 format,
+                locale == null ? "zh-CN" : locale,
                 normalizedText,
                 scope);
         try {
@@ -372,12 +382,32 @@ public class VoiceService {
         }
     }
 
-    /** 缓存 HMAC 密钥（dev 有确定性占位值；生产用环境变量覆盖，见 README）。 */
+    /**
+     * 缓存 HMAC 密钥（审计 M6）。
+     *
+     * <p>原实现兜底硬编码 {@code wechar-dev-tts-cache-secret}，等于把密钥随源码公开：
+     * 任何人都能离线算出任意 (音色,语速,文本) 的缓存键，做定向投毒与填充探测。
+     * 现口径：优先环境变量/系统属性；缺失时生成**进程级随机密钥**（仍可正常缓存，
+     * 只是不再可被离线预测），并告警一次 —— 不 fail-fast，避免打断既有联调与单测。</p>
+     */
     private byte[] cacheSecret() {
         String secret = System.getProperty("voice.cache.secret",
-                System.getenv().getOrDefault("VOICE_CACHE_SECRET", "wechar-dev-tts-cache-secret"));
-        return secret.getBytes(StandardCharsets.UTF_8);
+                System.getenv().getOrDefault("VOICE_CACHE_SECRET", ""));
+        if (secret != null && !secret.isBlank()) {
+            return secret.getBytes(StandardCharsets.UTF_8);
+        }
+        if (EPHEMERAL_CACHE_SECRET == null) {
+            byte[] random = new byte[32];
+            new java.security.SecureRandom().nextBytes(random);
+            EPHEMERAL_CACHE_SECRET = java.util.HexFormat.of().formatHex(random);
+            org.slf4j.LoggerFactory.getLogger(VoiceService.class).warn(
+                    "VOICE_CACHE_SECRET 未配置：本次进程使用随机缓存密钥（重启后旧缓存自然失效；生产请注入固定强随机值）");
+        }
+        return EPHEMERAL_CACHE_SECRET.getBytes(StandardCharsets.UTF_8);
     }
+
+    /** 进程级兜底密钥（仅在未配置 VOICE_CACHE_SECRET 时使用；不落盘、不出日志）。 */
+    private static volatile String EPHEMERAL_CACHE_SECRET;
 
     /**
      * 音频中转目录（2026-10-22）：优先 `AI_ASR_AUDIO_DIR` —— 该目录必须与 ai-service 的
@@ -441,6 +471,19 @@ public class VoiceService {
     }
 
     // ---------------------------------------------------------------- 模型能力状态
+
+    /**
+     * 降级开关快照（GET /capabilities）：前端据此决定是否允许 WechatSI 等云端兜底。
+     * fail-closed：探针不可达或上游未上报时返回 local + 全部 false，绝不因"读不到"而放开云端。
+     */
+    @Transactional(readOnly = true)
+    public VoiceCapabilitiesData capabilities() {
+        UpstreamReadiness ready = aiTaskService.readiness();
+        if (ready == null || ready.degradeMode() == null || ready.switches() == null) {
+            return new VoiceCapabilitiesData("local", Map.of());
+        }
+        return new VoiceCapabilitiesData(ready.degradeMode(), ready.switches());
+    }
 
     /**
      * 模型能力状态（契约 GET /models）：返回能力状态而非承诺。

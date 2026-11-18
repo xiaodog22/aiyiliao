@@ -8,13 +8,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Callable, Optional
 
 import httpx
 
 from .config import Settings
-from .voice import asr_status, tts_status
+from .voice import asr_status, tts_engine_states, tts_status
 
 _PROBE_TTL_SECONDS = 5.0
 
@@ -113,7 +114,12 @@ class CapabilityProbe:
             embedding_model_id = None
 
         if s.rag_enabled and rag_store == "redis":
-            redis_ok, redis_err = probe_redis(s.redis_url, s.redis_key_prefix, s.probe_timeout_seconds)
+            # 审计 H11：probe_redis 是同步客户端（redis-py），直接在事件循环里调会在
+            # Redis 半开/慢响应时阻塞整个 loop（默认 socket_timeout 秒级），
+            # 连带卡死已鉴权的任务处理与 SSE。改为线程池执行，loop 不再被同步 IO 占住。
+            redis_ok, redis_err = await asyncio.to_thread(
+                probe_redis, s.redis_url, s.redis_key_prefix, s.probe_timeout_seconds
+            )
             if redis_ok:
                 redis_status, redis_detail = "available", redis_err or "已连通"
                 vector_status, vector_detail = "available", "Redis 演示向量存储已连通"
@@ -176,4 +182,20 @@ class CapabilityProbe:
         else:
             overall = "degraded"
 
-        return {"status": overall, "dependencies": dependencies, "models": models}
+        return {
+            "status": overall,
+            "degradeMode": s.degrade_mode(),
+            "switches": {
+                "llm": s.capability_enabled("llm"),
+                "asr": s.capability_enabled("asr"),
+                "tts": s.capability_enabled("tts"),
+                "rag": s.capability_enabled("rag"),
+                "deepseek": s.provider_allowed("deepseek"),
+                "edge": s.provider_allowed("edge"),
+                "wechatSi": s.provider_allowed("wechat_si"),
+                "asrCloud": s.provider_allowed("asr_cloud"),
+            },
+            "dependencies": dependencies,
+            "models": models,
+            "ttsEngines": tts_engine_states(s),
+        }

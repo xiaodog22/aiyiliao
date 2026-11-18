@@ -113,7 +113,22 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         return id != null ? id : clientIp(request); // 匿名受保护路径极少见（auth 先 401），兜底按 IP
     }
 
+    /**
+     * 客户端地址（审计 H6）。
+     *
+     * <p>业务服务只经网关暴露，网关已在转发前把 {@code X-Forwarded-For} 归一
+     * （可信反代场景透传首跳，否则覆盖为 TCP 对端地址）。因此这里优先取 XFF 首跳：
+     * 原实现只用 {@code getRemoteAddr()}，经网关后全体用户都是同一个网关 IP，
+     * 单桶 30 次/分 → 一个攻击者就能让所有人登录 429（登录 DoS）。</p>
+     */
     private String clientIp(HttpServletRequest request) {
+        String xff = request.getHeader("X-Forwarded-For");
+        if (xff != null && !xff.isBlank()) {
+            String first = xff.split(",")[0].trim();
+            if (!first.isEmpty()) {
+                return first;
+            }
+        }
         String ip = request.getRemoteAddr();
         return ip == null || ip.isBlank() ? "unknown" : ip;
     }

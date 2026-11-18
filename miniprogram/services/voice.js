@@ -301,6 +301,8 @@ function preview(id, opts) {
   if (!id) return Promise.resolve(false)
   return post(withPath(API.VOICE_PREVIEW, { voiceId: id }), {}, { idempotencyKey: newIdempotencyKey() })
     .then((data) => {
+      // 页面已离场 / 已切换试听对象：迟到的响应直接丢弃，不能补播
+      if (typeof o.active === 'function' && !o.active()) return false
       const url = (data && (data.audioUrl || data.audio_url)) || ''
       if (!url) throw Object.assign(new Error('试听未返回音频地址'), { code: 'EMPTY_AUDIO' })
       const meta = { engine: (data && data.engine) || '', degraded: !!(data && data.degraded) }

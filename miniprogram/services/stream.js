@@ -40,7 +40,9 @@ function normaliseError(payload) {
  * @param {string} taskId
  * @param {Object} handlers
  *   onStatus(data)       accepted / status 事件
- *   onDelta(text)        增量正文（已从 JSON 里抽好，可直接追加显示）
+ *   onDelta(text, replace) 增量正文（已从 JSON 里抽好）。`replace === true` 表示**替换**语义：
+ *                       服务端终态校验发现实时增量与权威全文不一致（丢块/缺前缀），
+ *                       页面必须先清空已收正文，再用本段重放，否则会得到「残文 + 全文」。
  *   onDone(data)         正常收尾（completed / cancelled）
  *   onError(err)         {code,message,retryable}——含义是「去轮询」，不是「任务失败」
  *   onUnsupported()      环境不支持分块下发：直接走轮询
@@ -79,8 +81,10 @@ function open(taskId, handlers, opts) {
       if (state.aborted) return
       const type = evt.event
       if (type === 'delta') {
-        const text = evt.data && typeof evt.data === 'object' ? evt.data.text : ''
-        if (text) call('onDelta', text)
+        const d = evt.data && typeof evt.data === 'object' ? evt.data : {}
+        const text = d.text || ''
+        // replace：终态校验不一致时的整段替换（服务端已按权威全文补齐），不是追加
+        if (text) call('onDelta', text, !!d.replace)
         return
       }
       if (type === 'completed' || type === 'cancelled') {
@@ -125,7 +129,14 @@ function open(taskId, handlers, opts) {
     fail: () => {
       call('onError', { code: 'NETWORK_ERROR', message: '网络异常，实时通道中断', retryable: true })
     },
-    unsupported: () => call('onUnsupported')
+    unsupported: () => {
+      // m-03（2026-11-18）：老基础库先回这里就必须**同步 settle**。被丢下的那条连接
+      // 随后仍可能 success/fail（request.js 会 abort，但时序不可控），若不落终态，
+      // 调用方降级轮询后会再收到一次 onError，表现为双重降级/误报。
+      call('onUnsupported')
+      state.settled = true
+      state.aborted = true
+    }
   }, { timeout: typeof o.timeout === 'number' ? o.timeout : DEFAULT_TIMEOUT })
     .then((handle) => {
       state.handle = handle

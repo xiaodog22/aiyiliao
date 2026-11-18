@@ -36,7 +36,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# 租户头（2026-11-18 审计 C3）：ai-service 对任务读取/取消/订阅强制校验 X-Tenant-Id，
+# 脚本必须与载荷 tenantId 同值，否则一律 400/404。
 TASKS = "/internal/v1/tasks"
+TENANT = "t-staging"
 TERMINAL = {"SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"}
 
 TRIAGE_TEXT = "最近两天胃疼，吃完饭有点反酸，想看看挂什么科。"
@@ -100,20 +103,20 @@ def _expect_status(base: str, method: str, path: str, *, body: dict | None = Non
 def _submit(base: str, task_type: str, *, key: str, input_inline: str | None = None,
             input_ref: str | None = None) -> dict:
     body = {
-        "tenantId": "t-staging", "userId": "u-staging", "taskType": task_type,
+        "tenantId": TENANT, "userId": "u-staging", "taskType": task_type,
         "policyVersion": "policy-staging", "traceId": f"trace-{key}",
     }
     if input_inline is not None:
         body["inputInline"] = input_inline
     if input_ref is not None:
         body["inputRef"] = input_ref
-    return _request(base, "POST", TASKS, body, {"Idempotency-Key": key})["data"]
+    return _request(base, "POST", TASKS, body, {"Idempotency-Key": key, "X-Tenant-Id": TENANT})["data"]
 
 
 def _wait(base: str, task_id: str, timeout: float = 180.0) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        data = _request(base, "GET", f"{TASKS}/{task_id}")["data"]
+        data = _request(base, "GET", f"{TASKS}/{task_id}", headers={"X-Tenant-Id": TENANT})["data"]
         if data["status"] in TERMINAL:
             return data
         time.sleep(0.05)
@@ -231,7 +234,8 @@ def cmd_deepseek(args) -> int:
           _expect_status(args.base, "POST", TASKS,
                          body={**body, "taskType": "NOT_A_TYPE"}, headers=idem) == 422)
     check("任务不存在 → 404",
-          _expect_status(args.base, "GET", f"{TASKS}/t_does_not_exist_0000001") == 404)
+          _expect_status(args.base, "GET", f"{TASKS}/t_does_not_exist_0000001",
+                          headers={"X-Tenant-Id": TENANT}) == 404)
 
     # 正常路径：输入带唯一编号，避开内容寻址缓存，确保真的打到模型
     unique_text = f"饭后胃胀，想了解该注意什么（联调编号 {int(time.time() * 1000)}）"

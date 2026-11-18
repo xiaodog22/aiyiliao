@@ -33,32 +33,61 @@ function main() {
   }
   const src = fs.readFileSync(ENV_PATH, 'utf8')
 
-  const m = /const BUILD_ENV\s*=\s*'([^']*)'/.exec(src)
+  // 2026-11-18（审计 C1/H8/H9）：档位不再写死，改由未入库的 env.local.js 注入。
+  // 门禁因此从"读字面量"变成"读默认值表达式 + 反查源码里有没有真实地址/密钥"。
+  const m = /const BUILD_ENV\s*=\s*String\(LOCAL_OVERRIDES\.buildEnv\s*\|\|\s*'([^']*)'\)/.exec(src)
   if (!m) {
-    console.error("✗ env.js 中未找到 `const BUILD_ENV = '...'`，无法判定档位")
+    console.error('✗ env.js 的 BUILD_ENV 必须为 `String(LOCAL_OVERRIDES.buildEnv || \'production\')`（H9）')
     process.exitCode = 1
     return
   }
-  const buildEnv = m[1]
+  const defaultEnv = m[1]
 
-  // production 块内的 gateway（注意：不能取 development 的隧道地址）
+  // 构建期实际档位：有 env.local.js 时以它为准（发布流水线生成），否则就是默认值
+  let effectiveEnv = defaultEnv
+  const localPath = path.join(path.dirname(ENV_PATH), 'env.local.js')
+  if (fs.existsSync(localPath)) {
+    try {
+      // eslint-disable-next-line global-require, import/no-dynamic-require
+      const ov = require(localPath) || {}
+      if (ov.buildEnv) effectiveEnv = String(ov.buildEnv).trim()
+    } catch (e) {
+      console.error('✗ env.local.js 存在但无法解析：' + e.message)
+      process.exitCode = 1
+      return
+    }
+  }
+
   const prodBlock = /production:\s*\{([\s\S]*?)\}/.exec(src)
-  const gwMatch = prodBlock ? /gateway:\s*'([^']*)'/.exec(prodBlock[1]) : null
+  const gwMatch = prodBlock ? /gateway:\s*String\(LOCAL_OVERRIDES\.productionGateway\s*\|\|\s*'([^']*)'\)/.exec(prodBlock[1]) : null
   const gateway = (gwMatch ? gwMatch[1] : '').trim()
 
-  console.log('· BUILD_ENV = ' + buildEnv)
-  console.log('· production.gateway = ' + (gateway || '(空)'))
+  console.log('· BUILD_ENV 默认 = ' + defaultEnv + '（本次生效：' + effectiveEnv + '）')
+  console.log('· production.gateway 内置值 = ' + (gateway || '(空，由 env.local.js 注入)'))
 
   // devOnly=true：只影响「能否发正式包」，--allow-dev 下降级为提示（联调包用隧道网关）；
   // devOnly=false：安全默认项，任何模式都不降级（后端档位/闸门/生产不携带联调头）。
   const problems = []
-  if (buildEnv !== 'production') problems.push({ devOnly: true, msg: 'BUILD_ENV 不是 production（当前：' + buildEnv + '）' })
-  if (!/^https:\/\//i.test(gateway)) problems.push({ devOnly: true, msg: 'production.gateway 必须是 https 地址' })
-  else if (TEMPORARY_HOST.test(gateway)) problems.push({ devOnly: true, msg: 'production.gateway 仍是临时调试域名：' + gateway })
+  if (defaultEnv !== 'production') problems.push({ devOnly: true, msg: 'BUILD_ENV 默认值不是 production（当前：' + defaultEnv + '）' })
+  // 默认值必须为空：真实正式域名只允许由 env.local.js / 流水线注入
+  if (gateway) problems.push({ devOnly: true, msg: 'env.js 内置了 production.gateway（正式域名不得入库）' })
 
   // ③ 前端侧：production 档不得下发联调登录头（devLoginKey 必须被强制为空）
   if (!/devLoginKey:\s*DEV_ONLY\s*\?\s*DEV_LOGIN_KEY\s*:\s*''/.test(src)) {
     problems.push({ devOnly: false, msg: 'env.js 的 devLoginKey 未按 `DEV_ONLY ? DEV_LOGIN_KEY : ""` 强制生产为空' })
+  }
+
+  // ③b 源码里不得出现真实隧道域名 / dev 登录密钥形态（审计 C1/H8）
+  // 只认「真实地址形态」（带协议前缀或裸内网 IP）；校验规则里的字面量
+  // （如 TEMPORARY_HOST 的 vicp[.]fun）不算泄露，否则门禁自己会自命中。
+  if (/(?:https?:\/\/|\/\/)[^\s'"]*(?:vicp[.]fun|ngrok|natapp)|172[.]29[.]188[.]115/i.test(src)) {
+    problems.push({ devOnly: false, msg: 'env.js 含真实隧道域名/内网地址（应移到 env.local.js）' })
+  }
+  if (/wb-devlogin-[0-9a-f]{16,}/i.test(src)) {
+    problems.push({ devOnly: false, msg: 'env.js 含 dev 登录密钥（应移到 env.local.js）' })
+  }
+  if (effectiveEnv !== 'production') {
+    problems.push({ devOnly: true, msg: '本次构建档位是 ' + effectiveEnv + '（发版必须是 production）' })
   }
 
   // ④ 后端侧：spring.profiles.default 必须不是 dev（2026-10-29 起为 prod），

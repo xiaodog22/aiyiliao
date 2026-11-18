@@ -39,6 +39,8 @@ def _settings(**overrides) -> Settings:
         deepseek_api_key=FAKE_KEY,
         deepseek_model="deepseek-flash",
         provider_order="ollama,deepseek",
+        # 2026-11-18：DeepSeek 属外部供应商，默认 local 模式会否决；链路用例显式开启全链路
+        degrade_enabled=True,
         probe_timeout_seconds=0.2,
         llm_http_client_reuse=False,
         breaker_failures=0,  # 关熔断，避免用例间串扰
@@ -242,6 +244,23 @@ def test_chain_skips_deepseek_without_key():
             transport=httpx.MockTransport(handler),
         ))
     assert ei.value.code == "MODEL_UNAVAILABLE"   # 本地真实失败如实上报，不伪装成成功
+
+
+def test_local_mode_denies_deepseek_without_any_request():
+    """总开关关闭 = 仅本地：即使配了 key，也不得建连 DeepSeek（不探测、不重试）。"""
+    chain.reset_breakers()
+
+    def handler(req):
+        assert req.url.host == "ollama.test", "local 模式不得请求 DeepSeek"
+        return httpx.Response(500, json={"error": "local model down"})
+
+    with pytest.raises(TaskFailure) as ei:
+        _run(chain.generate(
+            _settings(degrade_enabled=False), _payload(),
+            timeout_s=5, first_token_timeout_s=1, fallback_timeout_s=3,
+            transport=httpx.MockTransport(handler),
+        ))
+    assert ei.value.code == "MODEL_UNAVAILABLE"
 
 
 @pytest.mark.parametrize("order,expected_budget", [

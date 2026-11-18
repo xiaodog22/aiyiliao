@@ -23,7 +23,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.config import GateSettings  # noqa: E402
 from app.main import create_app  # noqa: E402
 
-AUTH = {"Authorization": "Bearer test-token"}
+# 2026-11-18（审计 H5）：网关本地受控端点改为校验令牌**形态**（at-<uuid>），
+# 不再接受任意字符串；夹具随之使用符合 business 签发格式的占位令牌。
+AUTH = {"Authorization": "Bearer at-0000aaaa-1111-2222-3333-444455556666"}
 IDEM = {"Idempotency-Key": "cast-key-12345678"}
 
 DEVICES = [

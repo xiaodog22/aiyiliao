@@ -137,6 +137,8 @@ const VOICE_TTS           = { base: 'python', path: '/api/v1/voice/tts' }       
 const TTS_BACKEND         = { base: 'python', path: '/api/v1/voice/tts' }         // 兼容旧引用
 const TTS_EDGE            = { base: 'python', path: '/api/v1/voice/tts/edge' }    // 【兼容别名】内部同样走 Qwen3-TTS，返回已由 mp3 变 wav
 const VOICE_MODELS        = { base: 'python', path: '/api/v1/voice/models' }
+// 降级开关快照（2026-11-18）：degradeMode=full/local + 各供应商最终生效值
+const VOICE_CAPABILITIES  = { base: 'python', path: '/api/v1/voice/capabilities' }
 
 // 音色管理（说明 §6.3）——**四条路径 2026-10-29 按真实契约校对**：
 //   · 设默认 = PUT /voices/default（VoiceController.setDefaultVoice；POST 会 405）
@@ -177,7 +179,7 @@ module.exports = {
   HEALTH_CHECK, TRIAGE_RECOMMEND, TRIAGE_EMERGENCY,
   CONSULTATION_START, CONSULTATION_CONT, CONSULTATION_CONF, CONSULTATION_STAT,
   CARE_PLAN, CARE_PLAN_CREATE,
-  VOICE_ASR, VOICE_TTS, TTS_BACKEND, TTS_EDGE, VOICE_MODELS,
+  VOICE_ASR, VOICE_TTS, TTS_BACKEND, TTS_EDGE, VOICE_MODELS, VOICE_CAPABILITIES,
   VOICE_LIST, VOICE_DEFAULT, VOICE_SAVE, VOICE_DELETE, VOICE_PREVIEW,
   GW_VOICES, GW_HEALTH, GW_ROUTES
 }

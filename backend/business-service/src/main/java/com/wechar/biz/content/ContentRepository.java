@@ -62,9 +62,11 @@ public class ContentRepository {
             args.add(category);
         }
         if (keyword != null && !keyword.isBlank()) {
-            sql.append(" AND (title LIKE ? OR summary LIKE ?)");
-            args.add("%" + keyword + "%");
-            args.add("%" + keyword + "%");
+            // 审计 L11：通配符转义（参数化只防注入，不防 %/_ 的通配语义）
+            sql.append(" AND (title LIKE ?" + com.wechar.biz.common.SqlLike.ESCAPE_CLAUSE
+                    + " OR summary LIKE ?" + com.wechar.biz.common.SqlLike.ESCAPE_CLAUSE + ")");
+            args.add(com.wechar.biz.common.SqlLike.contains(keyword));
+            args.add(com.wechar.biz.common.SqlLike.contains(keyword));
         }
         sql.append(" ORDER BY published_at DESC, id DESC LIMIT ?");
         args.add(limit);

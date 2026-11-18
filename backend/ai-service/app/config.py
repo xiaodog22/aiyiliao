@@ -29,6 +29,14 @@ def _env_float_or_none(name: str) -> "float | None":
         return None
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    """布尔环境变量：1/true/yes/on 为真，其余显式值一律为假。"""
+    value = os.environ.get(name)
+    if value in (None, ""):
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
 @dataclass
 class Settings:
     host: str = field(default_factory=lambda: _env("AI_HOST", "127.0.0.1"))
@@ -43,6 +51,33 @@ class Settings:
     ollama_url: str = field(default_factory=lambda: _env("AI_OLLAMA_URL", "http://127.0.0.1:11434"))
     small_model: str = field(default_factory=lambda: _env("AI_SMALL_MODEL", "qwen2.5:0.5b"))
     large_model: str = field(default_factory=lambda: _env("AI_LARGE_MODEL", "qwen2.5:7b"))
+
+    # ---- 统一降级开关（2026-11-18，AI能力降级与容灾方案 §2.5）----
+    # 总开关 false=仅本地（默认，合规优先、零外部请求）；true=允许按能力链使用云端/外部供应商。
+    # 生效公式：master && capability && provider。本地能力（Ollama/FunASR/Qwen3-TTS/规则/模板/预生成）
+    # 不受 master 否决；DeepSeek / edge-tts / WechatSI / 任何云端 ASR 在 local 模式一律硬否决，
+    # 被否决的供应商不建连、不重试、不探测。
+    degrade_enabled: bool = field(default_factory=lambda: _env_bool("AI_DEGRADE_ENABLED", False))
+    degrade_llm_enabled: bool = field(default_factory=lambda: _env_bool("AI_DEGRADE_LLM_ENABLED", True))
+    degrade_asr_enabled: bool = field(default_factory=lambda: _env_bool("AI_DEGRADE_ASR_ENABLED", True))
+    degrade_tts_enabled: bool = field(default_factory=lambda: _env_bool("AI_DEGRADE_TTS_ENABLED", True))
+    degrade_rag_enabled: bool = field(default_factory=lambda: _env_bool("AI_DEGRADE_RAG_ENABLED", True))
+    # 供应商级开关（默认全开，但只有 master=true 时才可能生效）
+    deepseek_enabled: bool = field(default_factory=lambda: _env_bool("AI_PROVIDER_DEEPSEEK_ENABLED", True))
+    tts_qwen3_enabled: bool = field(default_factory=lambda: _env_bool("AI_TTS_QWEN3_ENABLED", True))
+    tts_edge_enabled: bool = field(default_factory=lambda: _env_bool("AI_TTS_EDGE_ENABLED", True))
+    wechat_si_enabled: bool = field(default_factory=lambda: _env_bool("AI_WECHAT_SI_ENABLED", True))
+    asr_cloud_enabled: bool = field(default_factory=lambda: _env_bool("AI_ASR_CLOUD_ENABLED", False))
+    # 检索关键词兜底：向量检索不可用时退化为关键词检索（纯本地，常开可配）
+    rag_keyword_fallback: bool = field(default_factory=lambda: _env_bool("AI_RAG_KEYWORD_FALLBACK", True))
+
+    # ---- 出境策略（2026-11-18 · 审计 H10）----
+    # allow    ：按上面的降级开关决定是否允许第三方 provider（默认，行为不变）
+    # domestic ：PHI 不出境 —— 所有境外供应商（DeepSeek / 微软 edge-tts）一律硬否决，
+    #            即使 master=true 也不建连；链路自然回落到本地 Ollama / 预生成音频。
+    # 为什么不止靠"注释约定"：熔断触发境外兜底是**自动**的，值守人员不一定在场，
+    # 策略必须是机器可执行的开关，而不是文档里的一句话。
+    egress_policy: str = field(default_factory=lambda: _env("AI_EGRESS_POLICY", "allow").strip().lower())
 
     # ---- B2 三步走 provider 链（2026-11-04）----
     # 顺序：ollama（本地内网穿透）→ deepseek（OpenAI 兼容 API）→ 兜底。
@@ -172,10 +207,29 @@ class Settings:
     interpret_timeout_seconds: float = field(default_factory=lambda: float(_env("AI_INTERPRET_TIMEOUT_SECONDS", "45")))
 
     # ---- M2：语音适配（O-10 已定稿 2026-10-15：生产默认 edge-tts；引擎仍如实返回）----
-    # TTS 引擎：none=未配置（→ TTS_UNAVAILABLE） / edge=edge-tts（需本地可导入 edge_tts）
-    # 定稿口径：生产默认 edge（轻量、外部依赖少、首包快）；对音色自然度/情感要求极高时才换 Qwen3-TTS。
+    # 兼容字段：单引擎选择（none / qwen3 / edge）。新部署优先用 AI_TTS_ENGINES 配链。
     tts_engine: str = field(default_factory=lambda: _env("AI_TTS_ENGINE", "none").lower())
-    tts_timeout_seconds: float = field(default_factory=lambda: float(_env("AI_TTS_TIMEOUT_SECONDS", "30")))
+    # 多引擎降级链：qwen3（本地 sidecar）→ edge（微软 Edge 在线朗读）→ 端侧 WechatSI（不在本服务合成）。
+    # 未配置时回落到 AI_TTS_ENGINE 单引擎，保持旧行为。
+    tts_engines: str = field(
+        default_factory=lambda: _env("AI_TTS_ENGINES", _env("AI_TTS_ENGINE", "none")).lower()
+    )
+    # 业务 TTS 总预算（秒）：qwen3 35 + edge 12 + 余量，必须小于 business task-budget(60)。
+    tts_timeout_seconds: float = field(default_factory=lambda: float(_env("AI_TTS_TIMEOUT_SECONDS", "55")))
+    tts_qwen3_timeout_seconds: float = field(
+        default_factory=lambda: float(_env("AI_TTS_QWEN3_TIMEOUT_SECONDS", "35"))
+    )
+    tts_edge_timeout_seconds: float = field(
+        default_factory=lambda: float(_env("AI_TTS_EDGE_TIMEOUT_SECONDS", "12"))
+    )
+    # 本地 Qwen3-TTS sidecar 地址（空=未接入）。HTTP 契约见 voice.py 顶部说明。
+    tts_qwen3_endpoint: str = field(default_factory=lambda: _env("AI_TTS_QWEN3_ENDPOINT", ""))
+    tts_qwen3_default_voice: str = field(
+        default_factory=lambda: _env("AI_TTS_QWEN3_DEFAULT_VOICE", "female-1")
+    )
+    tts_qwen3_health_path: str = field(
+        default_factory=lambda: _env("AI_TTS_QWEN3_HEALTH_PATH", "/health")
+    )
     # 流式合成（2026-10-22 性能优化）：true=共享 TCP 连接池 + edge-tts stream() 增量落盘（首字节可观测）；
     # false=回滚到旧实现（每次新建 Communicate + save() 整段落盘）。**回滚开关**：TTS_STREAM=false 亦生效。
     # 契约不变：两种模式都返回「完整产物 + 签名 URL」，流式失败自动降级非流式。
@@ -199,10 +253,11 @@ class Settings:
     # 短期签名 URL 的密钥；空则进程启动时随机生成（重启后旧 URL 失效，符合"短期"语义）
     tts_url_secret: str = field(default_factory=lambda: _env("AI_TTS_URL_SECRET", ""))
 
-    # ---- TTS 固定句式预生成（2026-10-22）----
+    # ---- TTS 固定句式预生成（2026-10-22，2026-11-17 默认开启）----
     # 启动时后台遍历清单预合成，命中缓存后首字节=文件读取（ms 级），不调 edge-tts。
+    # 默认开启：高频问候/提示先落盘，患者端首播不再等实时合成；TTS 不可用时自检后跳过。
     tts_pregen_enabled: bool = field(
-        default_factory=lambda: _env("AI_TTS_PREGEN_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+        default_factory=lambda: _env("AI_TTS_PREGEN_ENABLED", "true").lower() in ("1", "true", "yes", "on")
     )
     tts_pregen_phrases_path: Path = field(
         default_factory=lambda: Path(_env("AI_TTS_PREGEN_PHRASES_PATH", str(_SERVICE_DIR / "config" / "tts-pregen-phrases.json")))
@@ -223,7 +278,7 @@ class Settings:
     # ASR 引擎：none=未配置（→ CAPABILITY_UNAVAILABLE） / funasr=本地 FunASR 权重
     asr_engine: str = field(default_factory=lambda: _env("AI_ASR_ENGINE", "none").lower())
     asr_model_path: str = field(default_factory=lambda: _env("AI_ASR_MODEL_PATH", ""))
-    asr_timeout_seconds: float = field(default_factory=lambda: float(_env("AI_ASR_TIMEOUT_SECONDS", "60")))
+    asr_timeout_seconds: float = field(default_factory=lambda: float(_env("AI_ASR_TIMEOUT_SECONDS", "25")))
     # 音频取用通道：inputRef（asr:{id}）→ 该目录下的 {id}.<ext>。未配置 → 能力如实不可用。
     asr_audio_dir: str = field(default_factory=lambda: _env("AI_ASR_AUDIO_DIR", ""))
     # ASR 模型预热：true=启动时后台预热（不阻塞）；false=首次请求懒加载（默认，向后兼容）
@@ -279,6 +334,68 @@ class Settings:
         value = getattr(self, f"{task}_deepseek_timeout", None)
         return min(float(value), float(task_timeout)) if value else float(task_timeout)
 
+    # ---- 统一降级开关取值辅助（2026-11-18）----
+    def degrade_mode(self) -> str:
+        """full=允许全链路；local=仅本地（外部供应商一律否决）。"""
+        return "full" if self.degrade_enabled else "local"
+
+    def capability_enabled(self, capability: str) -> bool:
+        """能力级开关（llm/asr/tts/rag）：总开关关闭时外部降级能力一律关闭。"""
+        if not self.degrade_enabled:
+            return False
+        return bool(getattr(self, f"degrade_{capability.lower()}_enabled", False))
+
+    def provider_allowed(self, provider: str) -> bool:
+        """供应商是否被允许（master && capability && provider）。
+
+        本地供应商（ollama/funasr/qwen3/规则/缓存）恒允许，不受总开关影响；
+        外部供应商在 local 模式下一票否决，调用方必须**直接跳过**，不得建连/重试/探测。
+        """
+        name = str(provider or "").strip().lower()
+        if name in ("ollama", "funasr", "qwen3", "qwen3-tts", "local", "rule", "rules"):
+            if name in ("qwen3", "qwen3-tts"):
+                return bool(self.tts_qwen3_enabled)
+            return True
+        # 出境策略 domestic：境外供应商一票否决（审计 H10），与降级总开关正交：
+        # 总开关打开表示"允许降级"，出境策略表示"降级也不能出医疗数据"。
+        if (self.egress_policy or "allow") == "domestic":
+            return False
+        if not self.degrade_enabled:
+            return False
+        if name == "deepseek":
+            return bool(self.degrade_llm_enabled and self.deepseek_enabled)
+        if name in ("edge", "edge-tts"):
+            return bool(self.degrade_tts_enabled and self.tts_edge_enabled)
+        if name in ("wechat_si", "wechatsi", "wechat-si"):
+            return bool((self.degrade_asr_enabled or self.degrade_tts_enabled) and self.wechat_si_enabled)
+        if name in ("asr_cloud", "cloud_asr", "tencent_asr", "xfyun"):
+            return bool(self.degrade_asr_enabled and self.asr_cloud_enabled)
+        # 未登记的外部供应商（含 Azure/境内厂商）一律否决：宁可不可用，也不偷偷外联。
+        return False
+
+    def tts_engine_candidates(self) -> list[str]:
+        """TTS 服务端候选引擎（按配置顺序）；wechat_si 由端侧兜底，不在本服务合成。"""
+        alias = {"qwen3-tts": "qwen3", "edge-tts": "edge", "wechatsi": "wechat_si"}
+        raw = str(self.tts_engines or "").strip()
+        # 兼容：构造时只传了旧字段 tts_engine、或新字段显式 none → 回落到旧字段
+        if not raw or raw.lower() == "none":
+            raw = str(self.tts_engine or "none")
+        result: list[str] = []
+        for item in raw.split(","):
+            name = alias.get(item.strip().lower(), item.strip().lower())
+            if name in ("none", ""):
+                continue
+            if name not in result:
+                result.append(name)
+        return result
+
+    def asr_locale_supported(self, locale: "str | None") -> bool:
+        """本地 FunASR 只覆盖普通话；粤语/潮汕等必须由端侧或文字通道承接。"""
+        value = str(locale or "").strip().lower().replace("_", "-")
+        if not value:
+            return True
+        return value in ("zh", "zh-cn", "zh-hans", "cmn", "mandarin")
+
 
 def config_summary(settings: Settings, knowledge_version: str = "unknown") -> dict:
     """启动配置摘要（可审计；**不含**任何地址、文件路径、密钥值）。
@@ -303,8 +420,17 @@ def config_summary(settings: Settings, knowledge_version: str = "unknown") -> di
         "knowledgeVersion": knowledge_version,
         "asrEngine": (settings.asr_engine or "none").lower(),
         "asrPreload": "on" if settings.asr_preload else "off",
-        "ttsEngine": (settings.tts_engine or "none").lower(),
+        "ttsEngine": ",".join(settings.tts_engine_candidates()) or "none",
         "ttsStream": "on" if settings.tts_stream else "off",
+        # 统一降级开关：只报模式与生效的供应商，便于运维一眼确认「是不是只跑本地」
+        "degradeMode": settings.degrade_mode(),
+        "degradeCapabilities": ",".join(
+            name for name in ("llm", "asr", "tts", "rag") if settings.capability_enabled(name)
+        ) or "none",
+        "degradeProviders": ",".join(
+            name for name in ("deepseek", "edge", "wechat_si", "asr_cloud")
+            if settings.provider_allowed(name)
+        ) or "none",
         # LLM 并发 / 流式 / 连接复用（2026-10-22）
         "llmConcurrency": int(settings.llm_worker_pool_size),
         "llmStream": "on" if settings.llm_stream else "off",
@@ -321,9 +447,11 @@ def config_summary(settings: Settings, knowledge_version: str = "unknown") -> di
         "providerOrder": ",".join(
             p.strip().lower() for p in str(settings.provider_order or "").split(",") if p.strip()
         ),
-        "deepseek": "configured" if settings.deepseek_api_key else "missing-key",
-        "deepseekModel": settings.deepseek_model if settings.deepseek_api_key else "n/a",
-        "fallback": "on" if ("deepseek" in str(settings.provider_order) and settings.deepseek_api_key) else "off",
+        "deepseek": ("configured" if settings.provider_allowed("deepseek")
+                     and settings.deepseek_api_key else "denied_by_switch"),
+        "deepseekModel": settings.deepseek_model
+                          if settings.provider_allowed("deepseek") and settings.deepseek_api_key else "n/a",
+        "fallback": "on" if (settings.provider_allowed("deepseek") and settings.deepseek_api_key) else "off",
         "firstTokenTimeout": float(settings.ollama_first_token_timeout),
         "breaker": f"{int(settings.breaker_failures)}/{float(settings.breaker_cooldown_seconds):.0f}s",
     }

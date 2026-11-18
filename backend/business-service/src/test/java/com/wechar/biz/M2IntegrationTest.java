@@ -570,7 +570,7 @@ class M2IntegrationTest {
 
         // 就绪：asr loaded + tts available → 对应能力 available（如实映射）
         Mockito.when(aiClient.readiness()).thenReturn(
-                new com.wechar.biz.ai.dto.UpstreamReadiness("ok",
+                new com.wechar.biz.ai.dto.UpstreamReadiness("ok", "full", java.util.Map.of(),
                         java.util.List.of(
                                 new com.wechar.biz.ai.dto.UpstreamReadiness.Dependency(
                                         "asr_model", "available", "本地 ASR 权重已就绪", 12),

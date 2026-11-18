@@ -1,9 +1,12 @@
 {
   "version": "tts-pregen-v1",
-  "updatedAt": "2026-10-22",
-  "description": "TTS 预生成固定句式清单（不含患者个人信息，均为通用提示语）。未命中仍走实时合成。",
+  "updatedAt": "2026-11-17",
+  "description": "TTS 预生成固定句式清单（不含患者个人信息，均为通用提示语）。未命中仍走实时合成。只放可完整命中的纯固定句，不要放带占位符的模板。",
   "phrases": [
-    { "id": "triage-result", "text": "建议您挂{科室}，位置在{位置}。" },
+    { "id": "consult-greeting", "text": "您好，我是小安，AI 导诊助手。请先说说哪里不舒服、多久了，我会再问几个关键问题，信息够了给您推荐就诊科室。" },
+    { "id": "triage-greeting", "text": "您好！我是AI健康助手。请简单描述您哪里不舒服，我来帮您初步判断就医方向。" },
+    { "id": "health-greeting", "text": "您好，我是小安，AI 养生助手。为了给您定制合适的调理方案，我先了解一下您的情况。" },
+    { "id": "voice-sample", "text": "你好，我是小安。有哪里不舒服，可以直接告诉我。" },
     { "id": "triage-normal", "text": "根据您的描述，建议您到相应科室就诊。" },
     { "id": "triage-emergency", "text": "您的症状需要尽快就医，请到急诊。" },
     { "id": "triage-appointment", "text": "已为您预约，请注意就诊时间。" },

@@ -7,6 +7,7 @@ import com.wechar.biz.common.IdempotencyKeys;
 import com.wechar.biz.common.RequestIds;
 import com.wechar.biz.voice.dto.AsrResultData;
 import com.wechar.biz.voice.dto.TtsResultData;
+import com.wechar.biz.voice.dto.VoiceCapabilitiesData;
 import com.wechar.biz.voice.dto.VoiceData;
 import com.wechar.biz.voice.dto.VoiceModelData;
 import jakarta.validation.Valid;
@@ -144,6 +145,15 @@ public class VoiceController {
     public ResponseEntity<Envelope<TtsResultData>> preview(@PathVariable String voiceId) {
         String userId = authService.ensureUser(currentUserContext.currentUserId());
         return ResponseEntity.ok(Envelope.ok(RequestIds.current(), voiceService.preview(userId, voiceId)));
+    }
+
+    /**
+     * 降级开关快照（2026-11-18）：前端启动时读取，决定是否允许 WechatSI 等云端兜底。
+     * 不含用户数据，不需要登录；上游不可达时 fail-closed（local + 全部 false）。
+     */
+    @GetMapping("/capabilities")
+    public ResponseEntity<Envelope<VoiceCapabilitiesData>> capabilities() {
+        return ResponseEntity.ok(Envelope.ok(RequestIds.current(), voiceService.capabilities()));
     }
 
     /** 语音模型能力状态（available/degraded/unavailable；如实反映权重缺失）。 */

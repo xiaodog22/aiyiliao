@@ -1,9 +1,17 @@
 {
-  "desc": "关于本文件的更多信息，请参考微信官方文档 sitemap 配置",
+  "desc": "微信搜索索引策略：只放行对外可公开的入口页；登录/医生端/个人中心一律不收录（审计 L10）。",
   "rules": [
     {
-      "action": "allow",
+      "action": "disallow",
       "page": "*"
+    },
+    {
+      "action": "allow",
+      "page": "pages/home/home"
+    },
+    {
+      "action": "allow",
+      "page": "pages/triage/triage"
     }
   ]
 }

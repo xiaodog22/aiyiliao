@@ -18,16 +18,20 @@ services:
   mysql:
     image: mysql:8.0
     environment:
-      # 默认值只服务本地演示；生产必须由环境注入（PRODUCTION_GATE 检查项）
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-local_root}
+      # 2026-11-18（审计 H7）：去掉可用的默认口令 —— 用 ${VAR:?} 缺失即让 compose 直接报错退出，
+      # 而不是"悄悄用 local_root 起来"。宿主机不再发布 3306（见下方 ports 说明）。
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?必须注入 MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: wechar
+      # 审计 H7：业务使用专用账号（镜像会把 MYSQL_DATABASE 的权限授给它），root 只用于初始化
+      MYSQL_USER: ${MYSQL_DB_USER:-wechar_app}
+      MYSQL_PASSWORD: ${MYSQL_DB_PASSWORD:?必须注入 MYSQL_DB_PASSWORD}
       TZ: Asia/Shanghai
     command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
-    ports: ["13306:3306"]
+    # 审计 H7：不发布数据库端口。需要本地用客户端连库时临时加回 "13306:3306" 并自担风险。
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h127.0.0.1 -uroot -p${MYSQL_ROOT_PASSWORD:-local_root} --silent"]
+      test: ["CMD-SHELL", "mysqladmin ping -h127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -39,21 +43,23 @@ services:
     environment:
       # ⚠️ 变量名是 MYSQL_*（application.yml 的占位符），不是 SPRING_DATASOURCE_*
       MYSQL_URL: jdbc:mysql://mysql:3306/wechar?useUnicode=true&characterEncoding=UTF-8&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
-      MYSQL_USER: root
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-local_root}
-      # 本地验证用 dev 档（云上必须 prod，见部署文档）
-      SPRING_PROFILES_ACTIVE: dev
-      # 生产档启动即校验的两把密钥；本地只放测试值，**严禁复制到云上**。
-      # 用 ${VAR:-默认} 是为了让生产/CI 能注入而不改文件；默认值不是生产凭据。
-      PHONE_KEY_BASE64: ${PHONE_KEY_BASE64:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
-      APP_ATTACHMENT_SIGN_SECRET: ${APP_ATTACHMENT_SIGN_SECRET:-local-only-sign-secret-please-change}
+      MYSQL_USER: ${MYSQL_DB_USER:-wechar_app}
+      MYSQL_PASSWORD: ${MYSQL_DB_PASSWORD:?必须注入 MYSQL_DB_PASSWORD}
+      # 2026-11-18（审计 C1/H7）：不再默认 dev 档 —— 档位必须显式注入，
+      # 避免"整段复制到真实部署"时把 dev provider（含 dev 登录闸门）一起带上生产。
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:?必须显式注入 SPRING_PROFILES_ACTIVE（本地 dev / 生产 prod）}
+      # 启动即校验的三把密钥：缺失直接拒绝启动（不再有"可用默认值"）。
+      PHONE_KEY_BASE64: ${PHONE_KEY_BASE64:?必须注入 PHONE_KEY_BASE64（32 字节 base64）}
+      APP_ATTACHMENT_SIGN_SECRET: ${APP_ATTACHMENT_SIGN_SECRET:?必须注入 APP_ATTACHMENT_SIGN_SECRET}
+      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?必须注入 AI_SERVICE_TOKEN（与 ai 侧同名同值）}
       APP_RESOURCES_DIR: /app/resources
       APP_UPLOAD_DIR: /app/run/uploads
       AI_SERVICE_URL: http://ai:8001
     depends_on:
       mysql:
         condition: service_healthy
-    ports: ["18088:8088"]
+    # 审计 H7：不发布业务端口（18088 会绕过网关的限流与 XFF 归一，直达 business）。
+    # 本地排障需要临时暴露时再加回 "18088:8088"。
 
   ai:
     build:
@@ -66,9 +72,12 @@ services:
       AI_DEEPSEEK_BASE_URL: ${AI_DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       AI_DEEPSEEK_MODEL: ${AI_DEEPSEEK_MODEL:-deepseek-flash}
       AI_STORE_PATH: /app/runtime/tasks.json
+      # ai 侧令牌必须与 business 侧同值，否则 business 全部调用 401（fail-fast 更好过静默零凭证）
+      AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?必须注入 AI_SERVICE_TOKEN}
+      AI_AUTH_MODE: static
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ports: ["18001:8001"]
+    # 审计 C3/H7：不发布 ai 端口（18001 直达 = 绕过网关读全租户任务）。
 
   gateway:
     build:
@@ -82,7 +91,8 @@ services:
       GW_RATE_LIMIT_ENABLED: "true"
       GW_LOG_LEVEL: INFO
     depends_on: [business, ai]
-    ports: ["18080:8080"]
+    # 审计 H7：只绑 127.0.0.1，交给 frp/反代从回环转发，避免"本机 8080 直接对局域网开放"
+    ports: ["127.0.0.1:18080:8080"]
 
 volumes:
   mysql-data:

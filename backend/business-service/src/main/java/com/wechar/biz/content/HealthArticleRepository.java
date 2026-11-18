@@ -60,9 +60,11 @@ public class HealthArticleRepository {
             args.add(type);
         }
         if (kw != null && !kw.isBlank()) {
-            sql.append(" AND (title LIKE ? OR summary LIKE ?)");
-            args.add("%" + kw + "%");
-            args.add("%" + kw + "%");
+            // 审计 L11：原注释声称"service 已转义"，但实现不存在；真正转义放在这里（单一收口点）
+            sql.append(" AND (title LIKE ?" + com.wechar.biz.common.SqlLike.ESCAPE_CLAUSE
+                    + " OR summary LIKE ?" + com.wechar.biz.common.SqlLike.ESCAPE_CLAUSE + ")");
+            args.add(com.wechar.biz.common.SqlLike.contains(kw));
+            args.add(com.wechar.biz.common.SqlLike.contains(kw));
         }
         if (cursorTime != null) {
             sql.append(" AND (published_at < ? OR (published_at = ? AND id < ?))");

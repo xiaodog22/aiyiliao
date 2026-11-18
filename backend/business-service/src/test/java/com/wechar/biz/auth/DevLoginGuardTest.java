@@ -3,6 +3,7 @@ package com.wechar.biz.auth;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.wechar.biz.common.ApiException;
 import org.junit.jupiter.api.AfterEach;
@@ -40,7 +41,7 @@ class DevLoginGuardTest {
 
     @Test
     void 未开启时一律拒绝_不签发会话() {
-        DevLoginGuard guard = new DevLoginGuard(false, KEY);
+        DevLoginGuard guard = new DevLoginGuard(false, KEY, "");
         bindHeader(KEY);
         ApiException e = assertThrows(ApiException.class, () -> guard.assertAllowed("login"));
         assertEquals("DEV_LOGIN_FORBIDDEN", e.getCode());
@@ -49,7 +50,7 @@ class DevLoginGuardTest {
 
     @Test
     void 开启但密钥为空_拒绝而不是放行() {
-        DevLoginGuard guard = new DevLoginGuard(true, "  ");
+        DevLoginGuard guard = new DevLoginGuard(true, "  ", "");
         bindHeader("");
         ApiException e = assertThrows(ApiException.class, () -> guard.assertAllowed("login"));
         assertEquals("DEV_LOGIN_FORBIDDEN", e.getCode());
@@ -57,7 +58,7 @@ class DevLoginGuardTest {
 
     @Test
     void 开启且配密钥_缺头或错头_拒绝() {
-        DevLoginGuard guard = new DevLoginGuard(true, KEY);
+        DevLoginGuard guard = new DevLoginGuard(true, KEY, "");
 
         bindHeader(null);
         assertThrows(ApiException.class, () -> guard.assertAllowed("login"));
@@ -68,14 +69,31 @@ class DevLoginGuardTest {
 
     @Test
     void 开启且配密钥_头匹配_放行() {
-        DevLoginGuard guard = new DevLoginGuard(true, KEY);
+        DevLoginGuard guard = new DevLoginGuard(true, KEY, "");
         bindHeader(KEY);
         assertDoesNotThrow(() -> guard.assertAllowed("login"));
     }
 
     @Test
     void 无请求上下文_按拒绝处理_不静默放行() {
-        DevLoginGuard guard = new DevLoginGuard(true, KEY);
+        DevLoginGuard guard = new DevLoginGuard(true, KEY, "");
         assertThrows(ApiException.class, () -> guard.assertAllowed("login"));
+    }
+
+    @Test
+    void 配置成已泄露的旧密钥_启动即失败() {
+        // 审计 C1：轮换不等于撤销 —— 把旧值当新值继续用必须直接拒绝启动
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> new DevLoginGuard(true, "wb-devlogin-281819dbbf8ade34e27ac5fb04ce48a6",
+                        DevLoginGuard.DEFAULT_REVOKED_KEYS));
+        assertTrue(e.getMessage().contains("已泄露"));
+    }
+
+    @Test
+    void 请求头命中已撤销的黑名单_拒绝() {
+        DevLoginGuard guard = new DevLoginGuard(true, KEY, DevLoginGuard.DEFAULT_REVOKED_KEYS);
+        bindHeader("wb-devlogin-21cbddfc3b21990d6df374f6fa3f92cc");
+        ApiException e = assertThrows(ApiException.class, () -> guard.assertAllowed("login"));
+        assertEquals("DEV_LOGIN_FORBIDDEN", e.getCode());
     }
 }

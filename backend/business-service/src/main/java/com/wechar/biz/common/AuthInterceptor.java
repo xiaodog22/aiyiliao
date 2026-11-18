@@ -69,29 +69,55 @@ public class AuthInterceptor implements HandlerInterceptor {
             // 且清单与图片均为公开只读元数据/素材（只返回 status=1）。单段 * 同时覆盖
             // /manifest 与 /{key}，故删除原先单独的 manifest 条目（Map key 唯一，不能并存）。
             Map.entry("/api/v1/resources/*", "GET"),
+            // 降级开关快照（2026-11-18）：不含用户数据，冷启动/未登录可读；供 WechatSI 兜底判定
+            Map.entry("/api/v1/voice/capabilities", "GET"),
             // N17（2026-10-19）：院内导航楼层与路径规划，匿名只读（契约未声明 401）
             Map.entry("/api/v1/indoor-map/floors", "GET"),
             Map.entry("/api/v1/indoor-map/route", "GET"),
             // 头像公开读取（V8）：<image> 组件直连无法携带 Authorization；文件名服务端生成
             Map.entry("/api/v1/avatars/*", "GET"),
             // 附件公开读取（V9）：同上，且 URL 带 HMAC 短期签名（expires+sig），无签名 403
-            Map.entry("/api/v1/attachments/*", "GET"),
-            // dev 档演示管理（2026-10-24）：号源一键重置；仅 dev profile 注册 Controller，
-            // 生产环境无此端点，白名单条目安全（生产路径 404）
+            Map.entry("/api/v1/attachments/*", "GET"));
+
+    /**
+     * dev 档演示管理端点（审计 M8）：**只在 dev profile 下并入白名单**。
+     *
+     * <p>原实现把 7 条 {@code /api/v1/dev/**} 固化在通用白名单里，理由是"生产不装配这些
+     * Controller，路径 404 所以安全"。问题是白名单与 {@code @Profile} Bean 不在同一处收口 ——
+     * 任何人将来在 prod 新增一个 {@code /api/v1/dev/**} 映射，它就自动免鉴权（写操作也不例外）。
+     * 改为按 profile 装配后，这条隐性耦合消失。</p>
+     */
+    private static final Map<String, String> DEV_ANONYMOUS = Map.ofEntries(
             Map.entry("/api/v1/dev/slots/status", "GET"),
             Map.entry("/api/v1/dev/slots/reset", "POST"),
-            // dev 档床位申请审批（2026-11-15）：申请制下医生不能自审，演示由该端点代护士站执行
             Map.entry("/api/v1/dev/bed-applications", "GET"),
             Map.entry("/api/v1/dev/bed-applications/*/review", "POST"),
             Map.entry("/api/v1/dev/admin", "GET"));
 
     private final AuthSessionStore authSessionStore;
     private final Mode mode;
+    /** 实际生效的匿名白名单（base + dev 档增量）。 */
+    private final Map<String, String> anonymous;
 
     public AuthInterceptor(AuthSessionStore authSessionStore,
-                           @Value("${app.auth.mode:strict}") String mode) {
+                           @Value("${app.auth.mode:strict}") String mode,
+                           org.springframework.core.env.Environment environment) {
         this.authSessionStore = authSessionStore;
         this.mode = parse(mode);
+        boolean devProfile = false;
+        for (String active : environment.getActiveProfiles()) {
+            if ("dev".equalsIgnoreCase(active)) {
+                devProfile = true;
+                break;
+            }
+        }
+        if (devProfile) {
+            Map<String, String> merged = new java.util.HashMap<>(ANONYMOUS);
+            merged.putAll(DEV_ANONYMOUS);
+            this.anonymous = Map.copyOf(merged);
+        } else {
+            this.anonymous = ANONYMOUS;
+        }
     }
 
     static Mode parse(String raw) {
@@ -147,7 +173,7 @@ public class AuthInterceptor implements HandlerInterceptor {
         // 否则 curl -I / 缓存/探活探测会被打成 401（V14 资源端点验收实测踩到）。
         // 注意只做 HEAD→GET 单向映射：GET 条目不会因此放行任何写方法。
         String method = "HEAD".equals(request.getMethod()) ? "GET" : request.getMethod();
-        return ANONYMOUS.entrySet().stream()
+        return anonymous.entrySet().stream()
                 .anyMatch(e -> e.getValue().equals(method) && match(e.getKey(), path));
     }
 

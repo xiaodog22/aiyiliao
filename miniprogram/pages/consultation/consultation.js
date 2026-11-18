@@ -174,6 +174,7 @@ Page({
   },
 
   onShow() {
+    this._pageVisible = true
     // 主题跟随：TabBar 页 onLoad 只走一次，设置页切换字号档后需在 onShow 同步刷新，
     // 否则 theme 类残留旧值（页面停留在旧的大字/标准态）
     const theme = app.globalData.theme || 'standard'
@@ -187,6 +188,11 @@ Page({
     if (auto !== this.data.autoSpeak) this.setData({ autoSpeak: auto })
     this._initWide()   // 旋转屏幕 / 从平板切到小窗后重新判定
     this._loadProgress()
+    // 高频首句预取：只做一次，命中内存缓存后首播不必再等网关往返
+    if (!this._prefetched) {
+      this._prefetched = true
+      speechService.prefetch(['您好，我是小安，AI 导诊助手。请先说说哪里不舒服、多久了，我会再问几个关键问题，信息够了给您推荐就诊科室。'])
+    }
     // 线上问诊「待接单 → 已接单」不是本页事件：页面可见时每 10s 轻量刷新一次进度卡
     this._startProgressPoll()
   },
@@ -195,6 +201,7 @@ Page({
     // ⚠️ 必须清打字机：句柄不清，页面销毁后仍每 30ms setData 一次（"setData on unloaded page"）。
     //    这里只清句柄、不碰界面 —— 页面已卸载，再写数据既无意义也会告警。
     this._gone = true
+    this._pageVisible = false
     this._clearTypeTimer()
     this._stopProgressPoll()
     this._persistSession()
@@ -203,6 +210,7 @@ Page({
   },
 
   onHide() {
+    this._pageVisible = false
     // 切 Tab / 进后台：停表 + 把这句补全 + 状态复位。
     // 只清表不清状态的话，回来时 status 仍是 TYPING → 输入框 disabled、发送按钮置灰，用户无法再说话。
     this._stopTyping()
@@ -982,6 +990,8 @@ Page({
   // ============ TTS ============
   _speak(text) {
     if (!text) return
+    // 页面已切走：AI 迟到响应拿到文本时不得再开新播报（stopSpeak 也拦不住新调用）
+    if (this._pageVisible === false) return
     // 朗读是锦上添花，失败绝不能打断问诊流程。
     // speak() 已保证不 reject，这里再兜一层 catch 与日志，便于定位后端是否缺接口。
     const self = this

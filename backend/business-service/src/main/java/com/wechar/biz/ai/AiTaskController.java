@@ -137,7 +137,9 @@ public class AiTaskController {
      * <p>delta 现在有两个来源，客户端统一「收到就追加」，两种都正确：
      * <ul>
      *   <li><b>实时</b>：任务运行中，逐块转发 ai-service 的增量；</li>
-     *   <li><b>兜底</b>：缓存命中 / 非 CHAT / 上游流不可用 / 断线重连 → 终态发一整段。</li>
+     *   <li><b>兜底/替换</b>：缓存命中 / 非 CHAT / 上游流不可用 / 断线重连 → 终态发一整段；
+     *       若已发过增量但与权威全文不一致（丢块、缺前缀），该整段带 {@code replace=true}，
+     *       客户端替换而不是追加。</li>
      * </ul>
      * 终态权威始终是本服务轮询 `GET /{taskId}` 的结果，上游的 done/error 一律不转发
      * （否则客户端会收到两个终态事件）。
@@ -212,19 +214,27 @@ public class AiTaskController {
     /**
      * 终态收口：SUCCEEDED → [delta] + citation + safety + [tts] + completed；CANCELLED → cancelled；其余 → error。
      *
-     * <p>delta 只在**本次没有任何实时增量**时补发整段（`deltaCount()==0`）：缓存命中、
-     * 非 CHAT 类型、上游流不可用、带 Last-Event-ID 重连都走这条路。已有实时增量还补整段的话，
-     * 客户端「收到就追加」会看到重复文本。
+     * <p>delta 的收口规则（2026-11-18 收紧，修复 M-01）：
+     * 终态一定以 `GET /{taskId}` 的**权威全文**校验一次本连接实际转发出去的增量拼接结果。
+     * 两条路径都走这条校验：
+     * <ul>
+     *   <li>零增量（缓存命中 / 非 CHAT / 上游流不可用 / 带 Last-Event-ID 重连）→ 直接整段下发；</li>
+     *   <li>有增量但与权威全文<b>不一致</b>（上游队列满丢块、任务运行中途才接入缺前缀）→
+     *       下发 {@code replace=true} 的整段，客户端据此清空已收正文重放。</li>
+     * </ul>
+     * 只有「增量拼接 === 权威全文」时才不再补发 —— 否则客户端会看到缺中段/缺前缀的残文，
+     * 而 seq 连续、completed 正常，没有任何完整性信号。
      */
     private void emitTerminal(SseSink sink, AiTaskService.AiTaskData task) throws IOException {
         String taskId = sink.taskId();
         switch (task.status()) {
             case "SUCCEEDED" -> {
                 var result = task.result();
-                if (sink.deltaCount() == 0 && result != null && result.hasNonNull("text")) {
-                    sink.send("delta", Map.of(
-                            "taskId", taskId, "text", result.get("text").asText(),
-                            "occurredAt", Instant.now().toString()));
+                String full = result != null && result.hasNonNull("text")
+                        ? result.get("text").asText() : null;
+                if (full != null && !full.isEmpty()
+                        && (sink.deltaCount() == 0 || !full.equals(sink.forwardedText()))) {
+                    sink.sendReplacingDelta(full);
                 }
                 if (result != null && result.has("citations") && result.get("citations").isArray()) {
                     for (var citation : result.get("citations")) {
@@ -294,8 +304,10 @@ public class AiTaskController {
         private final String taskId;
         private final EventSeq seq;
         private final ObjectMapper mapper;
-        private int deltas;
-        private boolean broken;
+        /** 已转发增量条数与拼接结果：与 deltaCount() 同一把锁维护，终态拿它跟权威全文比对。 */
+        private final StringBuilder forwarded = new StringBuilder();
+        private int sent;
+        private volatile boolean broken;
 
         private SseSink(SseEmitter emitter, String taskId, EventSeq seq, ObjectMapper mapper) {
             this.emitter = emitter;
@@ -309,7 +321,12 @@ public class AiTaskController {
         }
 
         private synchronized int deltaCount() {
-            return deltas;
+            return sent;
+        }
+
+        /** 本连接已转发出去的增量拼接（终态校验用；按发生顺序）。 */
+        private synchronized String forwardedText() {
+            return forwarded.toString();
         }
 
         /** 增量推送：失败即视为客户端已断开，只停推送，不影响任务本身。 */
@@ -318,13 +335,47 @@ public class AiTaskController {
                 return;
             }
             try {
-                send("delta", Map.of(
-                        "taskId", taskId, "text", text,
-                        "occurredAt", Instant.now().toString()));
-                deltas++;
+                // 自增与 append 必须和 deltaCount()/forwardedText() 同锁：
+                // 轮询线程在终态判定时可能读到旧值，误判「无增量」而重复补发整段。
+                synchronized (this) {
+                    if (broken) {
+                        return;
+                    }
+                    send("delta", deltaPayload(text, false));
+                    sent++;
+                    forwarded.append(text);
+                }
             } catch (IOException e) {
                 broken = true;
             }
+        }
+
+        /**
+         * 整段替换：`replace=true` 让客户端清空已收正文后重放本段（终态校验不一致时使用）。
+         *
+         * <p>不能只发 `text`：客户端「收到就追加」会把残文和新全文拼在一起。
+         */
+        private void sendReplacingDelta(String text) throws IOException {
+            if (broken) {
+                throw new IOException("SSE 连接已断开");
+            }
+            synchronized (this) {
+                send("delta", deltaPayload(text, true));
+                sent++;
+                forwarded.setLength(0);
+                forwarded.append(text);
+            }
+        }
+
+        private Map<String, Object> deltaPayload(String text, boolean replace) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("taskId", taskId);
+            payload.put("text", text);
+            if (replace) {
+                payload.put("replace", true);
+            }
+            payload.put("occurredAt", Instant.now().toString());
+            return payload;
         }
 
         /** 发送一帧 SSE（id/event/data）。 */
@@ -339,6 +390,7 @@ public class AiTaskController {
             clean.put("seq", next);
             clean.put("type", type);
             copyIfPresent(event, clean, "text");
+            copyIfPresent(event, clean, "replace");
             copyIfPresent(event, clean, "citation");
             copyIfPresent(event, clean, "safety");
             copyIfPresent(event, clean, "status");

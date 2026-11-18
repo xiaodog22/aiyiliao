@@ -246,6 +246,9 @@ function Invoke-GuardRound([hashtable]$GuardCfg, [hashtable]$FailCounts, [hashta
                     $report = @{
                         DetectTime   = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
                         Host         = $env:COMPUTERNAME
+                        # 仍 DOWN 的服务名单单独给一份：邮件主题只能渲染它。
+                        # 曾把全量 $after 拼进主题，单服务故障时收件人看到「gateway/ai/business 重启失败」。
+                        DownServices = @($stillDown | ForEach-Object { $_.Name })
                         Services     = @($after | ForEach-Object {
                             @{ Name = $_.Name; Port = [string]$_.Port; State = $_.State; Health = $_.Health; Reason = $_.Reason }
                         })
