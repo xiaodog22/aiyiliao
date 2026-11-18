@@ -2,6 +2,7 @@ package com.wechar.biz.patient;
 
 import com.wechar.biz.common.ApiException;
 import com.wechar.biz.common.Digests;
+import com.wechar.biz.common.PhoneHashing;
 import com.wechar.biz.patient.dto.AttachmentData;
 import com.wechar.biz.patient.dto.FamilyInvitationData;
 import com.wechar.biz.patient.dto.FamilyInvitationSummaryData;
@@ -43,6 +44,7 @@ public class PatientService {
     private final com.wechar.biz.consent.ConsentRepository consentRepository;
     private final com.wechar.biz.ai.AiTaskService aiTaskService;
     private final FamilyProxyGuard proxyGuard;
+    private final PhoneHashing phoneHashing;
     private final Duration interpretBudget;
     private final Clock clock;
 
@@ -51,6 +53,7 @@ public class PatientService {
                           com.wechar.biz.consent.ConsentRepository consentRepository,
                           com.wechar.biz.ai.AiTaskService aiTaskService,
                           FamilyProxyGuard proxyGuard,
+                          PhoneHashing phoneHashing,
                           Clock clock,
                           @org.springframework.beans.factory.annotation.Value(
                                   "${wechar.interpret.await-seconds:60}") long interpretAwaitSeconds) {
@@ -61,6 +64,7 @@ public class PatientService {
         this.consentRepository = consentRepository;
         this.aiTaskService = aiTaskService;
         this.proxyGuard = proxyGuard;
+        this.phoneHashing = phoneHashing;
         this.clock = clock;
         this.interpretBudget = Duration.ofSeconds(Math.max(5, interpretAwaitSeconds));
     }
@@ -543,8 +547,8 @@ public class PatientService {
         }
     }
 
-    private static String phoneHashOf(String phone) {
-        return phone == null || phone.isBlank() ? null : Digests.sha256Hex(phone);
+    private String phoneHashOf(String phone) {
+        return phone == null || phone.isBlank() ? null : phoneHashing.hash(phone);
     }
 
     /**

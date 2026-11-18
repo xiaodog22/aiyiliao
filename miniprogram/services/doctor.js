@@ -19,6 +19,7 @@
 const req = require('./request.js')
 const { post, get, put, withPath, API } = req
 const session = require('./session.js')
+const consent = require('./consent.js')
 const ENV = req.ENV
 
 // 模块级登录态（患者端 / 医生端共用一份 role/user/app.globalData）
@@ -63,7 +64,11 @@ function applySession(data) {
 
 /** 组装契约 WechatLoginRequest（严格按契约字段；不得夹带 username/role 等契约外字段） */
 function loginBody(code, phoneCode) {
-  const body = { code: String(code || ''), consentVersion: ENV.consentVersion }
+  const version = consent.versionForLogin()
+  if (!version) {
+    throw Object.assign(new Error('请先阅读并同意当前隐私政策'), { code: 'CONSENT_REQUIRED' })
+  }
+  const body = { code: String(code || ''), consentVersion: version }
   if (phoneCode) body.phoneCode = String(phoneCode)
   return body
 }
@@ -79,7 +84,9 @@ function loginBody(code, phoneCode) {
  *    配置 WECHAT_MINIPROGRAM_APP_ID / WECHAT_MINIPROGRAM_APP_SECRET 后即走真实微信登录。
  */
 function loginByWxCode(code, phoneCode) {
-  return post(API.DOCTOR_LOGIN, loginBody(code, phoneCode)).then(applySession)
+  return Promise.resolve()
+    .then(() => post(API.DOCTOR_LOGIN, loginBody(code, phoneCode)))
+    .then(applySession)
 }
 
 /**
@@ -102,7 +109,9 @@ function login(account, password) {
   }
   const a = String(account || '').trim()
   const phoneCode = /^1\d{10}$/.test(a) ? 'dev-phone-' + a : ''
-  return post(API.DOCTOR_LOGIN, loginBody('dev-user-2-manual-' + a, phoneCode)).then(applySession)
+  return Promise.resolve()
+    .then(() => post(API.DOCTOR_LOGIN, loginBody('dev-user-2-manual-' + a, phoneCode)))
+    .then(applySession)
 }
 
 // 全部医生

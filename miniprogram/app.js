@@ -10,9 +10,72 @@ const { ensureAccessToken, revokeSession, clearGetCache } = require('./services/
 const resource = require('./services/resource.js')
 const connectivity = require('./services/connectivity.js')
 const capabilities = require('./services/capabilities.js')
+const consent = require('./services/consent.js')
 
 // 登录会话有效期：72 小时（毫秒）。超过则需重新登录。
 const SESSION_TTL_MS = 72 * 60 * 60 * 1000
+
+/**
+ * 审计 M13：医生分包 8 个页面的服务端角色门禁。
+ *
+ * 只在 `pages/doctor/**` 上包一层：onLoad/onShow 先等 /auth/whoami 返回，
+ * 非 DOCTOR 直接 reLaunch 登录页，原页面生命周期不执行（不加载医生业务数据）。
+ * 这样不依赖每个页面手写守卫，也不会把本地 wb_role 当权限依据。
+ * 本地角色仍保留为路由提示，但通过服务端返回的 roles 覆盖。
+ */
+if (typeof Page === 'function') {
+  const nativePage = Page
+  // eslint-disable-next-line no-global-assign
+  Page = function (options) {
+    const originalOnLoad = options && options.onLoad
+    const originalOnShow = options && options.onShow
+    options = options || {}
+
+    const ensureDoctor = (page) => {
+      if (page._doctorGate) return page._doctorGate
+      page._doctorGate = getApp().verifyDoctorRole().then((ok) => {
+        if (!ok) {
+          wx.reLaunch({ url: '/pages/auth/login/login' })
+          return false
+        }
+        return true
+      }).catch(() => {
+        wx.reLaunch({ url: '/pages/auth/login/login' })
+        return false
+      })
+      return page._doctorGate
+    }
+
+    const isDoctorPage = (page) => {
+      const route = (page && page.route) || ''
+      return route.indexOf('pages/doctor/') === 0
+    }
+
+    options.onLoad = function (query) {
+      if (!isDoctorPage(this)) {
+        if (originalOnLoad) return originalOnLoad.call(this, query)
+        return
+      }
+      const page = this
+      ensureDoctor(page).then((ok) => {
+        if (ok && originalOnLoad) originalOnLoad.call(page, query)
+      })
+    }
+
+    options.onShow = function () {
+      if (!isDoctorPage(this)) {
+        if (originalOnShow) return originalOnShow.call(this)
+        return
+      }
+      const page = this
+      ensureDoctor(page).then((ok) => {
+        if (ok && originalOnShow) originalOnShow.call(page)
+      })
+    }
+
+    return nativePage(options)
+  }
+}
 
 App({
   globalData: {
@@ -23,8 +86,9 @@ App({
   },
 
   onLaunch() {
-    // 恢复登录态与主题设置
-    const role = wx.getStorageSync('wb_role') || ''
+    // 恢复登录态与主题设置；角色仅作为路由提示，真正的医生准入由 verifyDoctorRole() 向服务端复核
+    const role = session.getRoleHint() || wx.getStorageSync('wb_role') || ''
+    try { wx.removeStorageSync('wb_role') } catch (e) {}
     const user = wx.getStorageSync('wb_user') || null
     const loginAt = wx.getStorageSync('wb_login_at') || 0
     // 会话超过有效期则清除登录态，强制重新登录。
@@ -56,6 +120,8 @@ App({
     // 降级开关快照（2026-11-18）：从后端读取 degradeMode/switches，供 WechatSI 等云端兜底判定；
     // 失败保持本地旧快照/构建档位兜底，不阻断启动，也不因读不到而放开云端。
     capabilities.refresh().catch(() => {})
+    // M11：拉取服务端当前隐私政策版本；失败不阻断启动，但登录时 isAccepted 会失败关闭。
+    consent.refreshPolicy().catch(() => {})
   },
 
   // 判断登录会话是否已过期（loginAt 为登录时间戳；0/空视为未登录，不判过期）
@@ -76,47 +142,49 @@ App({
     return true
   },
 
-  // 登录成功：写入角色与用户信息（纯前端演示，接入后端后替换为 Token 鉴权）
+  // 登录成功：角色只作路由提示（服务端权威角色由 whoami 复核）；不落 wb_role 作为权限依据
   setLogin(role, user) {
     this.globalData.role = role
     this.globalData.user = user
-    wx.setStorageSync('wb_role', role)
+    session.setRoleHint(role)
+    try { wx.removeStorageSync('wb_role') } catch (e) {}
     wx.setStorageSync('wb_user', user)
     wx.setStorageSync('wb_login_at', Date.now())
   },
 
   /**
-   * 退出登录：先撤后端会话，再清本地登录态、会话令牌与上一用户的资料缓存。
-   * ⚠️ 顺序不能反：POST /api/v1/auth/logout 需要当前 access token 作 Bearer，
-   *    先 session.clear() 会让撤销请求变成匿名请求（后端如实返回 revoked=false，
-   *    于是 refresh 链在服务端还能用满 7 天 —— 审查 P1-02）。
-   * ⚠️ 撤销是"尽力而为"：断网/超时不得把用户卡在退出流程里，本地照常清干净。
-   * ⚠️ access 只驻留内存：2h 过期/进程重启后 getAccessToken() 为空，而 refresh 还在本地。
-   *    revokeSession() 内部会先用该 refresh 静默换一次 access 再撤销（审查 D-A-P1-01），
-   *    因此这里**不等待**撤销结果——本地清理同步执行，退出 UI 不被网络 RTT 拖住。
+   * 退出登录（审计 M14 收紧）：必须先收到服务端 2xx 撤销确认，再清本地令牌。
+   * ⚠️ 原实现“撤销尽力而为、本地立即清”会让服务端 refresh 链在断网/401 时继续存活 24h；
+   *    现在失败保留本地会话并返回 false，由调用方提示重试，用户可再次退出。
+   * ⚠️ 本地已无任何令牌（重复点击/已退出）视为成功，不阻塞导航。
+   * @returns {Promise<boolean>} true=服务端已撤销（或本来就没有会话），可以离开；false=保留会话待重试
    */
   logout() {
-    let revoking = null
+    const clearLocal = () => {
+      this.globalData.role = ''
+      this.globalData.user = null
+      try { wx.removeStorageSync('wb_role') } catch (e) {}
+      wx.removeStorageSync('wb_user')
+      wx.removeStorageSync('wb_login_at')
+      session.clear()
+      try { clearGetCache() } catch (e) {}
+      try { require('./services/user.js').logout() } catch (e) {}
+      try { require('./services/doctor.js').logout() } catch (e) {}
+      return true
+    }
+
+    if (!session.hasSession()) {
+      return Promise.resolve(clearLocal())
+    }
+    let revoking
     try {
       revoking = revokeSession()
     } catch (e) {
-      revoking = null
+      revoking = Promise.resolve(false)
     }
-    this.globalData.role = ''
-    this.globalData.user = null
-    wx.removeStorageSync('wb_role')
-    wx.removeStorageSync('wb_user')
-    wx.removeStorageSync('wb_login_at')
-    // ⚠️ 必须同步清会话（access 内存 + refresh 本地）：否则退出后 refresh token 仍留在 storage，
-    //    ensureAccessToken() 还能换回可用 access —— 用户以为已退出，其实会话仍在。
-    session.clear()
-    // 上一用户的资料缓存不属于"登录态"，但留着会被下一个登录者读到（审查 AUTH-23）。
-    // 所有退出入口（我的 / 设置 / 医生个人 / 账号安全）都走这里，集中清理避免漏项。
-    // GET 短缓存同理必须清（否则下个账号 15s 内会读到上个账号的 /me、列表数据）。
-    try { clearGetCache() } catch (e) {}
-    try { require('./services/user.js').logout() } catch (e) {}
-    try { require('./services/doctor.js').logout() } catch (e) {}
-    return revoking || Promise.resolve(false)
+    return Promise.resolve(revoking)
+      .then((ok) => (ok ? clearLocal() : false))
+      .catch(() => false)
   },
 
   // 切换主题档位
@@ -144,6 +212,26 @@ App({
     return this.globalData.role === 'doctor'
       ? '/pages/doctor/workbench/workbench'
       : '/pages/home/home'
+  },
+
+  /**
+   * 审计 M13：医生端准入必须向服务端复核角色。
+   * 本地 wb_role / globalData.role 可被改 storage 伪造；本方法用 /auth/whoami 的
+   * 服务端签发角色覆盖本地值，并返回是否真的具备 DOCTOR 角色。
+   * 调用方必须在 onLoad/onShow 里 await 后再加载医生业务数据；失败关闭（false）。
+   */
+  verifyDoctorRole() {
+    if (!this.isLoggedIn()) return Promise.resolve(false)
+    return require('./services/user.js').whoami()
+      .then((data) => {
+        const roles = data && Array.isArray(data.roles) ? data.roles : []
+        const role = data && data.role === 'doctor' && roles.indexOf('DOCTOR') >= 0 ? 'doctor' : 'patient'
+        this.globalData.role = role
+        session.setRoleHint(role)
+        this.globalData.roleVerifiedAt = Date.now()
+        return role === 'doctor'
+      })
+      .catch(() => false)
   },
 
   // 全局未捕获异常兜底：框架层异常会回调此处（errMsg 为字符串）。

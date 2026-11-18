@@ -27,6 +27,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  security:
+    name: 安全门禁（H8/H9：密钥 / 演示账号 / 危险默认配置）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # 阻断模式：命中 P0/P1 即非零退出。规则见 tools/security-gate.js
+      - name: 全仓敏感信息与危险默认配置
+        run: node tools/security-gate.js
+      # 额外守卫：禁止把 env.local / 生产 .env 提交进仓库（允许 example/template）
+      - name: 禁止提交本地环境覆盖文件
+        run: |
+          if git ls-files | grep -E '(^|/)(env\.local\.js|\.env\.local|\.env\.production)$'; then
+            echo '::error::本地/生产环境覆盖文件不得入库（H9）'
+            exit 1
+          fi
+
   frontend:
     name: 前端静态检查 + 逻辑测试
     runs-on: ubuntu-latest

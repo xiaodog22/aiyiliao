@@ -1,10 +1,13 @@
 package com.wechar.biz.user;
 
 import com.wechar.biz.common.ApiException;
+import com.wechar.biz.common.Digests;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Optional;
@@ -18,7 +21,7 @@ import org.springframework.web.multipart.MultipartFile;
 /**
  * 头像文件存取（本地磁盘，V1 无 CDN）：
  *  - 写：POST /api/v1/me/avatar（multipart "file"），存 {app.upload.dir}/avatars/<32位hex>.<ext>；
- *  - 读：GET /api/v1/avatars/{name}（匿名，供 image 组件直连，无法带 Authorization）。
+ *  - 读：GET /api/v1/avatars/{name}?expires=&sig=（审计 M5：匿名端点必须短签，不能裸文件名公开）。
  * 文件名恒由服务端生成（随机 hex + 扩展名白名单），客户端输入不参与路径 → 无路径穿越面。
  */
 @Component
@@ -27,16 +30,23 @@ public class AvatarStorage {
     private static final long MAX_BYTES = 2 * 1024 * 1024; // 2MB：头像足够，避免主包/带宽滥用
     private static final Set<String> ALLOWED_EXT = Set.of("jpg", "jpeg", "png", "webp");
     private static final Pattern SAFE_NAME = Pattern.compile("^[0-9a-f]{32}\\.(jpg|jpeg|png|webp)$");
+    /** 头像 URL 短期有效：够页面/消息列表加载，又不会让被转发的 URL 长期可用。 */
+    public static final long SIGNED_URL_TTL_SECONDS = 900;
 
     private final Path avatarsDir;
+    private final String signSecret;
+    private final Clock clock;
 
-    public AvatarStorage(@Value("${app.upload.dir:./run/uploads}") String uploadDir) {
+    public AvatarStorage(@Value("${app.upload.dir:./run/uploads}") String uploadDir,
+                         @Value("${app.avatar.sign-secret:}") String signSecret,
+                         Clock clock) {
         this.avatarsDir = Paths.get(uploadDir, "avatars").toAbsolutePath().normalize();
+        this.signSecret = signSecret == null ? "" : signSecret.trim();
+        this.clock = clock;
     }
 
     /** 保存头像，返回对外相对路径（/api/v1/avatars/<name>；客户端拼网关前缀）。 */
-    public String save(MultipartFile file) {
-        if (file == null || file.isEmpty()) {
+    public String save(MultipartFile file) {        if (file == null || file.isEmpty()) {
             throw new ApiException("AVATAR_EMPTY", HttpStatus.BAD_REQUEST, "请选择头像图片");
         }
         if (file.getSize() > MAX_BYTES) {
@@ -69,8 +79,57 @@ public class AvatarStorage {
         }
     }
 
+    /**
+     * 为已落库的头像相对路径生成短期签名 URL（审计 M5）。
+     * 非头像路径（外链 http(s) / 其它相对路径）原样返回，不为第三方域伪造签名。
+     */
+    public String signedPath(String avatarKey) {
+        if (avatarKey == null || avatarKey.isBlank()) {
+            return avatarKey;
+        }
+        String prefix = "/api/v1/avatars/";
+        if (!avatarKey.startsWith(prefix)) {
+            return avatarKey;
+        }
+        String name = avatarKey.substring(prefix.length());
+        if (!SAFE_NAME.matcher(name).matches() || signSecret.isEmpty()) {
+            return avatarKey;
+        }
+        long expires = clock.instant().plusSeconds(SIGNED_URL_TTL_SECONDS).getEpochSecond();
+        String sig = sign(name, expires);
+        return prefix + name + "?expires=" + expires + "&sig=" + sig;
+    }
+
+    /** 校验签名：过期、签名缺失、名字非法一律 false（不区分原因，避免探测）。 */
+    public boolean verify(String name, String expiresRaw, String sig) {
+        if (signSecret.isEmpty()) {
+            // 仅 dev/itest：没有签名密钥时保持旧行为；生产启动自检强制 APP_AVATAR_SIGN_SECRET。
+            return true;
+        }
+        if (name == null || !SAFE_NAME.matcher(name).matches() || expiresRaw == null || sig == null) {
+            return false;
+        }
+        long expires;
+        try {
+            expires = Long.parseLong(expiresRaw);
+        } catch (NumberFormatException e) {
+            return false;
+        }
+        if (expires < clock.instant().getEpochSecond()) {
+            return false;
+        }
+        return Digests.constantTimeEquals(sig, sign(name, expires));
+    }
+
+    private String sign(String name, long expires) {
+        return Digests.hmacSha256Hex(signSecret, name + "\n" + expires);
+    }
+
     /** 按名读取头像；文件名不匹配白名单或缺文件一律 empty（不泄露文件系统信息）。 */
-    public Optional<LoadedAvatar> read(String name) {
+    public Optional<LoadedAvatar> read(String name, String expires, String sig) {
+        if (!verify(name, expires, sig)) {
+            return Optional.empty();
+        }
         if (name == null || !SAFE_NAME.matcher(name).matches()) {
             return Optional.empty();
         }

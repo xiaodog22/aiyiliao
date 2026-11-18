@@ -145,6 +145,12 @@ function loadPage(rel) {
 
 function reset() {
   Object.keys(storage).forEach((k) => delete storage[k])
+  // 审计 M11：登录必须携带服务端当前政策版本且用户已独立同意。
+  // 测试夹具模拟“已完成同意页点击”，再验证登录契约；未同意分支由 B-12/C-22 单测覆盖。
+  storage.wb_policy_version = 'v1.0'
+  storage.wb_policy_updated_at = '2026-11-18'
+  storage.wb_consent_version = 'v1.0'
+  storage.wb_consent_at = Date.now()
   reqCalls = []
   toastCalls = []
   modalCalls = []
@@ -162,7 +168,8 @@ const lastToast = () => toastCalls[toastCalls.length - 1] || {}
 // ==================== A. env.js 门禁事实（当前仓库档位） ====================
 check('A-01 当前构建档位：isProduction=false（BUILD_ENV=' + ENV.name + '）', ENV.isProduction === false)
 check('A-02 当前档位手输登录开放：legacyManualLoginEnabled=true（体验版=本档）', ENV.legacyManualLoginEnabled === true)
-check('A-03 当前档位 mockReadFallback=true（开发降级开着）', ENV.MOCK_FALLBACK === true)
+check('A-03 当前档位 mockReadFallback 仅 local 开启（development/production 失败关闭）',
+  ENV.MOCK_FALLBACK === (ENV.name === 'local'))
 
 // 源码级生产隔离守卫：规则必须存在，防误删
 const envSrc = fs.readFileSync(path.join(ROOT, 'config', 'env.js'), 'utf8')
@@ -287,9 +294,9 @@ async function groupC() {
   await sleep(30)
   check('C-04 manual-login：合法输入即发网（当前档）', reqCalls.length === 1 && reqCalls[0].url.indexOf('/auth/wechat/login') >= 0)
   await sleep(500) // 等成功后 setTimeout 400ms 的导航
-  check('C-05 登录成功落 wb_role=patient / wb_login_at 已写',
-    storage.wb_role === 'patient' && !!storage.wb_login_at,
-    'wb_role=' + storage.wb_role)
+  check('C-05 登录成功落 wb_login_at；角色只写内存不落可伪造的 wb_role',
+    storage.wb_role === undefined && !!storage.wb_login_at && appInstance.globalData.role === 'patient',
+    'wb_role=' + storage.wb_role + ' role=' + appInstance.globalData.role)
   check('C-06 成功后切首页 switchTab',
     navCalls.some((n) => n.to === 'switchTab' && n.url === '/pages/home/home'))
 
@@ -380,7 +387,8 @@ async function groupC() {
     wxLoginCall && wxLoginCall.data.code)
   await sleep(500)
   check('C-18 一键登录成功 → setLogin + switchTab 首页',
-    storage.wb_role === 'patient' && navCalls.some((n) => n.to === 'switchTab'))
+    appInstance.globalData.role === 'patient' && storage.wb_role === undefined &&
+    navCalls.some((n) => n.to === 'switchTab'))
   // C-19：连点保护 —— _busy 在途时忽略第二次
   reset()
   const lg2 = loadPage('pages/auth/login/login.js')
@@ -441,14 +449,15 @@ async function groupD() {
   check('D-07 isLoggedIn：超期返回 false 且清登录键',
     appInstance.isLoggedIn() === false && storage.wb_role === undefined)
 
-  // D-08：setLogin 写三件套（无角色白名单：任何字符串都接受）
+  // D-08：setLogin 只写内存角色 + 登录时间/用户快照，不再写可伪造的 wb_role
   appInstance.setLogin('doctor', { name: 't' })
-  check('D-08 setLogin 写 wb_role/wb_user/wb_login_at',
-    storage.wb_role === 'doctor' && !!storage.wb_login_at && storage.wb_user !== undefined)
+  check('D-08 setLogin 写 globalData.role/wb_user/wb_login_at（不写 wb_role）',
+    appInstance.globalData.role === 'doctor' && storage.wb_role === undefined &&
+    !!storage.wb_login_at && storage.wb_user !== undefined)
 
-  // D-09：logout 清理范围 = 三件套 + session refresh
+  // D-09：logout 清理范围 = 用户快照 + 登录时间 + session refresh（且必须等服务端 2xx）
   session.setTokens({ accessToken: 'at-x', refreshToken: 'rt-x', expiresIn: 7200 })
-  appInstance.logout()
+  await appInstance.logout()
   check('D-09 logout：清 wb_role/wb_user/wb_login_at + refresh token 一并清',
     storage.wb_role === undefined && storage.wb_login_at === undefined &&
     session.getRefreshToken() === '' && session.getAccessToken() === '')

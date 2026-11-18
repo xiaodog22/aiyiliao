@@ -31,6 +31,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // ==================== 打桩环境 ====================
 const storage = {}
+// 审计 M11：登录链路强制带服务端当前政策版本；测试夹具模拟已完成独立同意页。
+storage.wb_policy_version = 'v1.0'
+storage.wb_policy_updated_at = '2026-11-18'
+storage.wb_consent_version = 'v1.0'
+storage.wb_consent_at = Date.now()
 let reqCalls = []
 let navCalls = []
 let toastCalls = []

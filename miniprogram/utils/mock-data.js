@@ -203,8 +203,8 @@ const DOCTOR = {
   timeline: [
     { time: '09:00', no: '001 号', name: '张演示', gender: '男', age: 65, chief: '咳嗽两周、带痰（演示）', status: '就诊中', hasReport: true },
     { time: '09:30', no: '002 号', name: '李示例', gender: '女', age: 58, chief: '胸闷 1 天（演示）', status: '待就诊', hasReport: true },
-    { time: '10:00', no: '003 号', name: '王强', gender: '男', age: 42, chief: '过敏性鼻炎复发', status: '待就诊', hasReport: false },
-    { time: '10:30', no: '004 号', name: '陈芳', gender: '女', age: 70, chief: '慢阻肺随访', status: '待就诊', hasReport: true }
+    { time: '10:00', no: '003 号', name: '王演示B', gender: '男', age: 42, chief: '过敏性鼻炎复发', status: '待就诊', hasReport: false },
+    { time: '10:30', no: '004 号', name: '陈演示B', gender: '女', age: 70, chief: '慢阻肺随访', status: '待就诊', hasReport: true }
   ]
 }
 

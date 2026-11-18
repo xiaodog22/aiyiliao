@@ -110,6 +110,8 @@
   margin-bottom: 16rpx;
   position: relative;
 }
+/* 未读态：左侧主色描边，不改变文字对比度 */
+.pm-item-unread { box-shadow: inset 4rpx 0 0 var(--primary); }
 .pm-type {
   width: 72rpx;
   height: 72rpx;

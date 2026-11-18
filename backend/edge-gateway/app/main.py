@@ -24,10 +24,13 @@ from .config import APP_VERSION, GateSettings
 from .envelope import (
     ApiError,
     error_payload,
+    forbidden,
     new_request_id,
     not_found,
     ok_envelope,
     unauthorized,
+    upstream_error,
+    upstream_unavailable,
 )
 from .proxy import forward
 
@@ -268,27 +271,60 @@ def create_app(settings: Optional[GateSettings] = None) -> FastAPI:
         if not request.headers.get("authorization"):
             raise unauthorized()
 
-    # 访问令牌形态（审计 H5）：business 签发的是 `at-<uuid>`，网关本地受控端点至少要能
-    # 把"任意字符串"挡在门外。完整会话有效性仍需 business 反查（见 W-3 待办），
-    # 这里先把最廉价的伪造面（`Authorization: Bearer 随便写`）收掉。
+    # 访问令牌形态（审计 H5）：business 签发的是 `at-<uuid>`；形态检查只作为廉价前置，
+    # 真正的会话有效性必须由 _require_doctor_session 向 business 反查，不能只靠正则放行。
     _ACCESS_TOKEN_RE = re.compile(r"^Bearer\s+at-[A-Za-z0-9-]{16,}$")
 
-    def _require_session_shape(request: Request) -> None:
-        auth = request.headers.get("authorization") or ""
-        if not _ACCESS_TOKEN_RE.match(auth.strip()):
+    async def _require_doctor_session(request: Request, *, verify_role: bool = True) -> None:
+        """审计 H5：投屏桥接不能只校验 token 形态，必须向 business 反查会话并校验 DOCTOR 角色。
+
+        患者/任意伪造的 `at-xxxx` 一律 403；business 不可达时 503（fail-closed，不降级放行）。
+        只取 whoami 的 roles，不缓存（会话撤销/角色变更立即生效）。
+        `verify_role=False` 仅用于桥接未接入时：仍先校验 Bearer 形态（不泄露桥接状态），
+        但不访问 business —— 随后由端点返回 CAST_BRIDGE_UNAVAILABLE。
+        """
+        auth = (request.headers.get("authorization") or "").strip()
+        if not _ACCESS_TOKEN_RE.match(auth):
             raise unauthorized()
+        if not verify_role:
+            return
+        try:
+            resp = await app.state.http.get(
+                settings.business_url.rstrip("/") + "/api/v1/auth/whoami",
+                headers={"Authorization": auth, "X-Request-Id": _rid(request)},
+                timeout=5.0,
+            )
+        except httpx.TimeoutException as exc:
+            raise upstream_unavailable("会话校验超时，请稍后重试") from exc
+        except httpx.HTTPError as exc:
+            raise upstream_unavailable("会话校验服务暂不可达，请稍后重试") from exc
+        if resp.status_code in (401, 403):
+            raise unauthorized()
+        if resp.status_code >= 500:
+            raise upstream_unavailable("会话校验服务异常，请稍后重试")
+        if resp.status_code != 200:
+            raise unauthorized()
+        try:
+            data = (resp.json() or {}).get("data") or {}
+        except ValueError as exc:
+            raise upstream_error("会话校验响应格式异常") from exc
+        roles = data.get("roles") if isinstance(data, dict) else None
+        if not isinstance(roles, list) or "DOCTOR" not in roles:
+            raise forbidden("仅医生账号可访问投屏设备")
 
     @app.get("/api/gw/cast/devices")
     async def cast_device_list(request: Request):
         """设备发现轮询。桥接未接入 → 503（前端显空态，不伪造设备）。"""
-        _require_session_shape(request)
+        await _require_doctor_session(request, verify_role=settings.cast_bridge_enabled)
         if not settings.cast_bridge_enabled:
             raise cast_bridge.bridge_unavailable()
         return ok_envelope(_rid(request), app.state.cast_bridge.discover())
 
     @app.post("/api/gw/cast/pair")
     async def cast_pair(request: Request):
-        _require_session_shape(request)
+        await _require_doctor_session(request, verify_role=settings.cast_bridge_enabled)
+        if not settings.cast_bridge_enabled:
+            raise cast_bridge.bridge_unavailable()
         cast_bridge.require_idempotency_key(request)
         device_id = cast_bridge.parse_pair_body(await request.body())
         return ok_envelope(_rid(request), app.state.cast_bridge.pair(device_id))
@@ -296,7 +332,9 @@ def create_app(settings: Optional[GateSettings] = None) -> FastAPI:
     @app.post("/api/gw/cast/push")
     async def cast_push(request: Request):
         """推送受理（QUEUE/PATIENT/KB）。payload 与设备 IP 不落日志（契约红线）。"""
-        _require_session_shape(request)
+        await _require_doctor_session(request, verify_role=settings.cast_bridge_enabled)
+        if not settings.cast_bridge_enabled:
+            raise cast_bridge.bridge_unavailable()
         cast_bridge.require_idempotency_key(request)
         raw = await request.body()
         if len(raw) > cast_bridge.MAX_PAYLOAD_BYTES:

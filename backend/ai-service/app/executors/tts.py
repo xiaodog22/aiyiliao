@@ -52,6 +52,14 @@ PROMPT_TEMPLATE_VERSION = None  # TTS 无提示词模板（如实为 None，不�
 Synthesizer = Callable[..., Awaitable[object]]
 
 
+def _tts_dir_bytes(directory: Path) -> int:
+    """产物目录当前占用（审计 M4）；文件很多时只扫一层（本执行器只写一层 digest 文件）。"""
+    try:
+        return sum(p.stat().st_size for p in directory.iterdir() if p.is_file())
+    except OSError:
+        return 0
+
+
 def build_tts_executor(
     settings: Settings,
     probe,
@@ -78,6 +86,20 @@ def build_tts_executor(
     async def executor(task: dict, ctx: TaskContext) -> dict:
         request_start = time.perf_counter()   # 首次字节/总耗时观测起点（缓存命中也要报数）
         text = require_input_text(task)
+        # 审计 M4：单条 TTS 文本长度上限（防止长文本合成放大 CPU/磁盘/带宽成本）
+        if len(text) > int(settings.tts_max_chars):
+            raise TaskFailure(
+                "TTS_TEXT_TOO_LONG", f"待合成文本超过 {settings.tts_max_chars} 字，请分段后再试",
+                dependency="tts_provider", retryable=False,
+            )
+        # 审计 M4：产物目录容量上限；超限拒绝新合成（由 sweep 按 TTL 回收后再试）
+        max_disk_bytes = int(settings.tts_max_disk_mb) * 1024 * 1024
+        out_dir = Path(settings.tts_output_dir)
+        if max_disk_bytes > 0 and _tts_dir_bytes(out_dir) >= max_disk_bytes:
+            raise TaskFailure(
+                "TTS_STORAGE_FULL", "语音产物存储已达上限，请稍后重试",
+                dependency="tts_provider", retryable=True,
+            )
         locale = str(task.get("locale") or "zh-CN")
         engines = tts_engines_for_locale(settings, locale)
         if not engines:

@@ -124,11 +124,10 @@ if (BUILD_ENV === 'production' && DEV_LOGIN_KEY) {
   throw new Error('生产构建禁止携带 DEV_LOGIN_KEY（审计 C1）。')
 }
 
-// 契约 WechatLoginRequest.consentVersion（必填，1~20）：用户确认过的隐私政策版本。
-// ⚠️ 现有登录页只有"登录即代表同意"的文案，尚无独立的同意界面 —— 此处复用仓库内
-//    既有联调登记版本 'v1.0'（M3IntegrationTest / fault_drill / 调试台同值）。
-//    该合规交互（独立同意界面 + 版本号由运营登记）列为剩余风险，不在本次伪造"已同意"。
-const CONSENT_VERSION = 'v1.0'
+// 契约 WechatLoginRequest.consentVersion（必填，1~20）：该值**不再由前端配置写死**（审计 M11）。
+// 登录前必须由 services/consent.js 从 GET /api/v1/consent/latest 取服务端当前版本，
+// 用户在独立同意页看到全文并点击后才能登录；版本不一致由服务端 409 拒绝。
+
 
 // legacy 手输登录（POST /api/user/login，网关 dev 替身）与 dev 派生 code **仅限白名单档位**：
 // 生产只用契约登录 /api/v1/auth/wechat/login 与 /api/v1/doctor/login（真实 code/phoneCode）。
@@ -154,7 +153,6 @@ module.exports = {
   // 契约请求头定值 + 手输登录可用性
   platform: PLATFORM,
   clientVersion: CLIENT_VERSION,
-  consentVersion: CONSENT_VERSION,
   legacyManualLoginEnabled: LEGACY_MANUAL_LOGIN_ENABLED,
   // 联调登录密钥：仅 local/development 下发；production 恒空（不发 X-Dev-Login-Key）
   devLoginKey: DEV_ONLY ? DEV_LOGIN_KEY : ''

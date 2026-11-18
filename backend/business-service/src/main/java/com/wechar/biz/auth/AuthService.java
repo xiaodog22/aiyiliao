@@ -8,6 +8,8 @@ import com.wechar.biz.common.ApiException;
 import com.wechar.biz.common.AuthSessionStore;
 import com.wechar.biz.common.CurrentUserContext;
 import com.wechar.biz.common.Digests;
+import com.wechar.biz.common.PhoneHashing;
+import com.wechar.biz.consent.ConsentPolicy;
 import com.wechar.biz.common.RequestIds;
 import com.wechar.biz.crypto.PhoneCrypto;
 import com.wechar.biz.user.ProfileRepository;
@@ -37,19 +39,24 @@ public class AuthService {
     private final PhoneCrypto phoneCrypto;
     private final UserService userService;
     private final AuthSessionStore authSessionStore;
+    private final PhoneHashing phoneHashing;
+    private final ConsentPolicy consentPolicy;
     private final Clock clock;
     /** 运行档位（审计 H9 ③：prod 档拒绝 dev 派生 code）。 */
     private final Environment environment;
 
     public AuthService(WechatSessionProvider wechatSessionProvider, UserRepository userRepository,
                        ProfileRepository profileRepository, PhoneCrypto phoneCrypto, UserService userService,
-                       AuthSessionStore authSessionStore, Clock clock, Environment environment) {
+                       AuthSessionStore authSessionStore, PhoneHashing phoneHashing,
+                       ConsentPolicy consentPolicy, Clock clock, Environment environment) {
         this.wechatSessionProvider = wechatSessionProvider;
         this.userRepository = userRepository;
         this.profileRepository = profileRepository;
         this.phoneCrypto = phoneCrypto;
         this.userService = userService;
         this.authSessionStore = authSessionStore;
+        this.phoneHashing = phoneHashing;
+        this.consentPolicy = consentPolicy;
         this.clock = clock;
         this.environment = environment;
     }
@@ -87,6 +94,8 @@ public class AuthService {
      */
     @Transactional
     public String loginIdentity(WechatLoginRequest request) {
+        // 审计 M11：登录必须先确认用户看到的是“服务端当前版本”，旧版本/空白一律 409。
+        consentPolicy.requireCurrent(request.consentVersion());
         rejectDevCodeInProd(request.code());
         WechatSessionInfo session = wechatSessionProvider.getSessionByCode(request.code());
         if (session == null || session.openid() == null || session.openid().isBlank()) {
@@ -125,8 +134,45 @@ public class AuthService {
         return issueSession(userId);
     }
 
+    /**
+     * GET /auth/whoami（审计 M13）：角色只从服务端权威数据下发。
+     * 客户端本地 wb_role 仅作路由提示，医生端进入前必须用本接口结果裁决。
+     */
+    @Transactional(readOnly = true)
+    public java.util.Map<String, Object> whoami(String userId) {
+        var user = userService.contractUser(userId);
+        java.util.List<String> roles = user.roles() == null ? java.util.List.of() : user.roles();
+        String role = roles.contains("DOCTOR") ? "doctor" : "patient";
+        return java.util.Map.of("userId", userId, "roles", roles, "role", role);
+    }
+
+    /**
+     * GET /auth/session 的会话派生（审计 M12）。
+     *
+     * <p>原实现凭一个 access token 就能无限签发全新会话链，攻击者可在 refresh 轮换之外
+     * 持续扩张会话、绕过“一次一换”。现在：父会话写入拓扑，同一账号存活会话上限 3；
+     * 超限返回 409，要求用户重新认证/清理设备，而不是静默签发第 N 条链。</p>
+     */
+    @Transactional
+    public SessionData issueDerivedSession(String userId, String accessToken) {
+        int active = authSessionStore.activeSessionCount(userId);
+        if (active >= AuthSessionStore.MAX_ACTIVE_SESSIONS) {
+            throw new ApiException("SESSION_LIMIT", HttpStatus.CONFLICT,
+                    "当前账号会话数已达上限，请先在其它设备退出登录后重试", false,
+                    java.util.List.of(new com.wechar.biz.common.GlobalExceptionHandler.ErrorDetail(
+                            "sessions", "存活会话上限 " + AuthSessionStore.MAX_ACTIVE_SESSIONS,
+                            "SESSION_LIMIT")));
+        }
+        String parent = authSessionStore.sessionIdByAccessToken(accessToken).orElse(null);
+        return issueSession(userId, parent);
+    }
+
     /** 签发契约 Session（登录与 GET /auth/session 共用）。 */
     private SessionData issueSession(String userId) {
+        return issueSession(userId, null);
+    }
+
+    private SessionData issueSession(String userId, String parentSessionId) {
         // N10（2026-10-19）：注销冷静期内的账号不可再次登录（wechat/doctor 登录与 /auth/session 共用本收口）。
         var user = userRepository.findById(userId)
                 .orElseThrow(() -> new ApiException("USER_NOT_FOUND", HttpStatus.NOT_FOUND, "用户不存在"));
@@ -134,7 +180,12 @@ public class AuthService {
             throw new ApiException("ACCOUNT_DELETION_PENDING", HttpStatus.FORBIDDEN,
                     "账号已注销，处于 30 天冷静期；如需恢复请联系客服");
         }
-        var issued = authSessionStore.issue(userId);
+        // 审计 X-03：会话签发唯一收口。微信登录/工号登录在调用本方法前已把本次确认的版本
+        // 写入 users.login_consent_version；而没有新同意证明的路径（GET /auth/session 派生）
+        // 只能靠已落库的版本放行 —— 未确认过、或政策已升级到新版本 → 409，回到独立同意页。
+        // 放在这里而不是逐个端点，是为了让"新增一条签发路径"不会重新长出绕过口。
+        consentPolicy.requireCurrent(userRepository.loginConsentVersion(userId).orElse(null));
+        var issued = authSessionStore.issue(userId, parentSessionId);
         return new SessionData(issued.accessToken(), issued.refreshToken(),
                 AuthSessionStore.ACCESS_TTL_SECONDS, "Bearer", userService.contractUser(userId));
     }
@@ -216,7 +267,7 @@ public class AuthService {
         }
         String cipher = phoneCrypto.encrypt(plain);
         userRepository.bindPhone(userId, cipher.getBytes(StandardCharsets.UTF_8),
-                Digests.sha256Hex(plain), now);
+                phoneHashing.hash(plain), now);
     }
 
     private String last4(String cipher) {

@@ -77,9 +77,27 @@ public class AuthController {
     }
 
     @GetMapping("/session")
-    public ResponseEntity<Envelope<SessionData>> session() {
+    public ResponseEntity<Envelope<SessionData>> session(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
         String userId = authService.ensureUser(currentUserContext.currentUserId());
-        return ResponseEntity.ok(Envelope.ok(RequestIds.current(), authService.issueFreshSession(userId)));
+        String accessToken = bearerToken(authorization);
+        return ResponseEntity.ok(Envelope.ok(RequestIds.current(),
+                authService.issueDerivedSession(userId, accessToken)));
+    }
+
+    /** 审计 M13：服务端权威角色，供医生端 onLoad 决定是否允许进入。 */
+    @GetMapping("/whoami")
+    public ResponseEntity<Envelope<Map<String, Object>>> whoami() {
+        String userId = authService.ensureUser(currentUserContext.currentUserId());
+        return ResponseEntity.ok(Envelope.ok(RequestIds.current(), authService.whoami(userId)));
+    }
+
+    private static String bearerToken(String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            return null;
+        }
+        String token = authorization.substring("Bearer ".length()).trim();
+        return token.isEmpty() ? null : token;
     }
 
     /** 契约 sendSmsChallenge（N9）：匿名端点，Idempotency-Key 必填（契约参数 required）。 */

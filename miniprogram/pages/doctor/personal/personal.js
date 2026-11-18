@@ -109,9 +109,13 @@ Page({
       content: '确定退出当前医生账号吗？',
       success: (res) => {
         if (res.confirm) {
-          app.logout()
-          doctorService.logout()
-          wx.reLaunch({ url: '/pages/auth/login/login' })
+          app.logout().then((ok) => {
+            if (!ok) {
+              wx.showToast({ title: '退出未完成，请联网后重试', icon: 'none' })
+              return
+            }
+            wx.reLaunch({ url: '/pages/auth/login/login' })
+          })
         }
       }
     })

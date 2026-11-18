@@ -200,7 +200,10 @@ def _legacy_login_to_wechat(body: bytes) -> tuple[bytes, Optional[str]]:
     new_payload = {
         "code": "legacy-compat-" + phone,
         "phoneCode": "dev-phone-" + phone,
-        "consentVersion": "legacy-compat-dev",
+        # 审计 X-04：M11 之后服务端按「当前发布版本」严格比对，写死的占位值必然 409 ——
+        # 演示/手输登录会整条死掉。这里取与 business 同名的环境变量（默认值与
+        # application.yml 的 app.consent.current-version 默认值一致），保证两侧同版本。
+        "consentVersion": os.environ.get("APP_CONSENT_VERSION", "v1.0").strip() or "v1.0",
     }
     return json.dumps(new_payload, ensure_ascii=False).encode("utf-8"), "application/json"
 

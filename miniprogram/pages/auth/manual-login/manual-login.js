@@ -68,6 +68,10 @@ Page({
       .catch((err) => {
         wx.hideLoading()
         this.setData({ submitting: false })
+        if (err && err.code === 'CONSENT_REQUIRED') {
+          wx.navigateTo({ url: '/pages/auth/consent/consent' })
+          return
+        }
         const msg = errText(err, '登录失败，请重试')
         wx.showToast({ title: msg, icon: 'none' })
       })

@@ -58,6 +58,10 @@ Page({
         wx.hideLoading()
         this.setData({ submitting: false })
         const code = err && err.code
+        if (code === 'CONSENT_REQUIRED') {
+          wx.navigateTo({ url: '/pages/auth/consent/consent' })
+          return
+        }
         if (code === 'FORBIDDEN') {
           wx.showToast({ title: '该账号未登记医生身份，请联系院方', icon: 'none', duration: 2500 })
           return

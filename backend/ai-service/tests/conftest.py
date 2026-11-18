@@ -17,6 +17,9 @@ if str(SERVICE_DIR) not in sys.path:
 # AI_AUTH_MODE 缺省已是 static（2026-10-23 安全收口），导入前必须先注入测试令牌，
 # 否则 import app.main 即触发 fail-fast。各测试显式传 auth_mode="off" 的 Settings 不受影响。
 os.environ.setdefault("AI_SERVICE_TOKEN", "test-token-0123456789abcdef0123456789abcdef")
+# 审计 H10：生产默认 AI_EGRESS_POLICY=domestic，会硬否决 DeepSeek/edge-tts 等外部 provider。
+# 本套件专门验证云端降级链，测试进程统一显式 allow；生产默认值仍由 config.py 保持 domestic。
+os.environ.setdefault("AI_EGRESS_POLICY", "allow")
 
 from app.config import Settings  # noqa: E402
 from app.main import create_app  # noqa: E402

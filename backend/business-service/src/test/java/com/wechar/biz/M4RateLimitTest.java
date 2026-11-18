@@ -49,7 +49,7 @@ class M4RateLimitTest {
     private MockMvc mockMvc;
 
     private static final String LOGIN_BODY =
-            "{\"code\":\"dev-code-rl\",\"consentVersion\":\"v1\"}";
+            "{\"code\":\"dev-code-rl\",\"consentVersion\":\"v1.0\"}";
 
     /** 登录请求：以指定 remoteAddr 触发（登录类限流键 = IP）。 */
     private MockHttpServletRequestBuilder loginFrom(String ip) {

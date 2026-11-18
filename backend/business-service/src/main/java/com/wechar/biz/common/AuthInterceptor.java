@@ -45,6 +45,8 @@ public class AuthInterceptor implements HandlerInterceptor {
     private static final Map<String, String> ANONYMOUS = Map.ofEntries(
             Map.entry("/api/v1/auth/wechat/login", "POST"),
             Map.entry("/api/v1/auth/refresh", "POST"),
+            // M11：登录前必须能读取服务端当前政策版本（匿名只读元数据，不含用户数据）
+            Map.entry("/api/v1/consent/latest", "GET"),
             // N9（2026-10-19）：短信验证码下发在登录之前，必须匿名可访问（限流见 RateLimitInterceptor）
             Map.entry("/api/v1/auth/sms/send", "POST"),
             Map.entry("/api/v1/doctor/login", "POST"),

@@ -3,20 +3,24 @@
  *
  * access token 只驻留内存；本地仅保存可轮换的 refresh token、到期时间和非权威角色提示。
  * 用户资料、健康信息、预约、聊天等权威数据不得写入 storage。
+ *
+ * 审计 M14：refresh token 不再以明文写 storage —— 统一经 utils/secret-store.js 混淆后落盘。
+ * ⚠️ 该模块是**混淆**不是加密（小程序无 Keychain；密钥与密文同处 storage，整盘 dump 仍可还原）。
+ *    它挡住的是"按 key 名直读 / 日志外泄 / 备份截图"这三类现实路径；真正的边界是
+ *    24h TTL + 一次一换 + 服务端撤销整链。详见 secret-store.js 头部说明。
  */
+const secretStore = require('../utils/secret-store.js')
 const REFRESH_KEY = 'wb_refresh_token'
 const REFRESH_EXPIRES_KEY = 'wb_refresh_expires_at'
 const ROLE_HINT_KEY = 'wb_role_hint'
 
 /**
- * refresh 令牌有效期：**镜像服务端**规则（business-service …/common/AuthSessionStore.REFRESH_TTL = 7 天）。
- * ⚠️ 客户端不得延长本地有效期：
- *   - 契约 Session 只返回 `expiresIn`，它**仅代表本次 access token** 的有效期，禁止据此推断 refresh 过期；
- *   - 服务端才是权威判定；本地过期只用于提前拦掉注定无效的请求，避免无谓的 401。
- *   - 若本地与服务端 TTL 漂移，最坏结果是多一次无效刷新请求（随后被服务端 401 清理并要求重登），
- *     不会因本地更长而让失效令牌通过服务端校验。
+ * refresh 令牌有效期：**镜像服务端**规则（business-service …/AuthSessionStore.REFRESH_TTL = 24h，审计 M14）。
+ * 客户端不得延长本地有效期：
+ *   - 契约 Session 只返回 `expiresIn`，仅代表本次 access token；禁止据此推断 refresh；
+ *   - 本地过期只用于提前拦掉注定无效的请求，服务端始终是权威判定。
  */
-const REFRESH_TTL_SECONDS = 7 * 24 * 60 * 60
+const REFRESH_TTL_SECONDS = 24 * 60 * 60
 
 let accessToken = ''
 let accessExpiresAt = 0
@@ -41,7 +45,7 @@ function getRefreshToken() {
       clear()
       return ''
     }
-    return wx.getStorageSync(REFRESH_KEY) || ''
+    return secretStore.get(REFRESH_KEY)
   } catch (e) {
     return ''
   }
@@ -56,10 +60,10 @@ function setTokens(tokens) {
 
   const refresh = t.refreshToken || t.refresh_token
   if (refresh) {
-    // 服务端不返回 refresh 过期时间 → 一律按 7 天规则重设（每次刷新轮换后同样重设，
+    // 服务端不返回 refresh 过期时间 → 一律按 24h 规则重设（每次刷新轮换后同样重设，
     // 与"服务端新签发会话行"的 TTL 保持一致）。不接受任何客户端/响应体传入的延长期。
     try {
-      wx.setStorageSync(REFRESH_KEY, refresh)
+      secretStore.put(REFRESH_KEY, refresh)
       wx.setStorageSync(REFRESH_EXPIRES_KEY, nowSeconds() + REFRESH_TTL_SECONDS)
     } catch (e) {}
   }
@@ -86,8 +90,8 @@ function clear() {
   accessToken = ''
   accessExpiresAt = 0
   try {
-    wx.removeStorageSync(REFRESH_KEY)
-    wx.removeStorageSync(REFRESH_EXPIRES_KEY)
+    secretStore.remove(REFRESH_KEY)
+    secretStore.remove(REFRESH_EXPIRES_KEY)
     wx.removeStorageSync(ROLE_HINT_KEY)
   } catch (e) {}
 }
@@ -100,7 +104,7 @@ function clear() {
 function snapshot() {
   try {
     return {
-      refresh: wx.getStorageSync(REFRESH_KEY) || '',
+      refresh: secretStore.get(REFRESH_KEY),
       expiresAt: Number(wx.getStorageSync(REFRESH_EXPIRES_KEY) || 0)
     }
   } catch (e) {
@@ -111,7 +115,7 @@ function snapshot() {
 function restore(snap) {
   if (!snap || !snap.refresh) return false
   try {
-    wx.setStorageSync(REFRESH_KEY, snap.refresh)
+    secretStore.put(REFRESH_KEY, snap.refresh)
     if (snap.expiresAt) wx.setStorageSync(REFRESH_EXPIRES_KEY, snap.expiresAt)
     return true
   } catch (e) {

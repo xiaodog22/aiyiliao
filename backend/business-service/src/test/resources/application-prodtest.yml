@@ -16,7 +16,7 @@ app:
 spring:
   flyway:
     locations: classpath:db/migration,classpath:db/migration-h2
-    target: 26.1
+    target: 26.2
 
 # 2026-11-18（审计 C3）：单测不连真实 ai-service，显式关闭服务间令牌启动自检；
 # 生产/联调档仍为 true（缺 AI_SERVICE_TOKEN 即拒绝启动）。

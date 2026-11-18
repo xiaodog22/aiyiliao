@@ -141,7 +141,7 @@ const NO_MANIFEST_COVER = ''
   check('拼出的地址是绝对 http(s)', /^https?:\/\//i.test(rel), '实得 ' + rel)
 
   const abs = 'https://cdn.example.com/a.mp4'
-  check('绝对 URL → 原样', userService.resolveAttachmentUrl(abs) === abs)
+  check('非网关域绝对 URL → 拒绝（防空 redirect/追踪）', userService.resolveAttachmentUrl(abs) === '')
 })()
 
 // ==================== ② onLoad：远端优先 / 404 回退 ====================

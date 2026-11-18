@@ -58,7 +58,7 @@
     >医护登录</button>
 
     <!-- 协议行（设计稿逐字）：说明文字 + 两个蓝色可点链接，跳真实协议页 -->
-    <view class="lg-agree">登录即代表您已阅读并同意<text class="lg-link" bindtap="onOpenAgreement">用户协议</text><text class="lg-link" bindtap="onOpenPrivacy">隐私政策</text></view>
+    <view class="lg-agree">登录前须阅读并同意<text class="lg-link" bindtap="onOpenAgreement">用户协议</text>和<text class="lg-link" bindtap="onOpenPrivacy">隐私政策</text>（点击登录将先进入独立同意页）</view>
   </view>
 
 </view>

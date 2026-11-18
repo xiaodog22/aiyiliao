@@ -406,7 +406,35 @@ def test_tts_success_cache_and_signed_audio_route(tmp_path, monkeypatch):
             client, "TTS", key="tts-key-0003", input_inline="请按时服药", voice_id="qwen3-female-1")["taskId"])
         assert second["status"] == "SUCCEEDED"
         assert second["cached"] is True
-        assert second["result"]["audioUrl"] == audio_url
+        # 命中缓存复用同一音频文件；签名 URL 每次响应按当前时间重签，token 不要求逐字相同。
+        second_parts = urlsplit(second["result"]["audioUrl"])
+        assert second_parts.path == parts.path
+        assert client.get(second_parts.path + "?" + second_parts.query).status_code == 200
+
+
+def test_tts_tenant_quota_blocks_second_submit(tmp_path, monkeypatch):
+    """审计 M4：同一租户超过每分钟配额时返回 429 TTS_QUOTA_EXCEEDED，不落任务。"""
+    _enable_edge_engine(monkeypatch)
+    settings = _settings(tmp_path, tts_engine="edge", tts_output_dir=tmp_path / "tts",
+                         tts_tenant_per_minute=1, tts_tenant_per_day=1)
+    probe = CapabilityProbe(settings, ollama_probe=fake_ollama_probe)
+
+    async def fake_synth(settings_arg, text, engine_voice, out_path: Path):
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(b"ID3fake-mp3-bytes")
+
+    executor = build_tts_executor(settings, probe, synthesizer=fake_synth)
+    body = {
+        "tenantId": "t1", "userId": "u1", "taskType": "TTS",
+        "policyVersion": "policy-1", "traceId": "trace-quota",
+        "inputInline": "请按时服药", "voice": "qwen3-female-1",
+    }
+    with _client(settings, {TaskType.TTS: executor}) as client:
+        first = client.post(BASE, json=body, headers={"Idempotency-Key": "quota-key-1"})
+        assert first.status_code == 200
+        second = client.post(BASE, json=body, headers={"Idempotency-Key": "quota-key-2"})
+        assert second.status_code == 429
+        assert second.json()["code"] == "TTS_QUOTA_EXCEEDED"
 
 
 def test_tts_audio_url_honours_public_base_and_path(tmp_path, monkeypatch):
@@ -618,3 +646,4 @@ def test_interpret_fast_fail_when_model_unreachable(tmp_path):
     assert task["status"] == "FAILED"
     assert task["error"]["code"] == "CAPABILITY_UNAVAILABLE"
     assert task["error"]["dependency"] == "ollama"
+

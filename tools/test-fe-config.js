@@ -50,8 +50,8 @@ test('CF-02 核心：历史别名 fastapi/springboot 与 gateway 同址（唯一
 test('CF-03 核心：契约请求头定值 —— X-Platform 逐字等于 const，版本号 ≤20', () => {
   assert.strictEqual(ENV.platform, 'wechat-miniprogram')
   assert.ok(ENV.clientVersion.length >= 1 && ENV.clientVersion.length <= 20)
-  assert.strictEqual(ENV.consentVersion, ENV.consentVersion.trim())
-  assert.ok(ENV.consentVersion.length >= 1 && ENV.consentVersion.length <= 20)
+  // 审计 M11：consentVersion 不再由 env.js 硬编码，改由 /consent/latest 下发
+  assert.strictEqual(ENV.consentVersion, undefined)
 })
 
 test('CF-04 核心：超时预算分级 ai < tts < carePlan', () => {
@@ -59,8 +59,8 @@ test('CF-04 核心：超时预算分级 ai < tts < carePlan', () => {
   assert.ok(ENV.ttsTimeout < ENV.carePlanTimeout, 'ttsTimeout 应小于 carePlanTimeout')
 })
 
-test('CF-05 边界：local/development 档允许 mock 只读降级；legacy 手输登录仅非生产', () => {
-  assert.strictEqual(ENV.MOCK_READ_FALLBACK, true)
+test('CF-05 边界：local 档允许 mock 只读降级；development/production 必须暴露真实错误', () => {
+  assert.strictEqual(ENV.MOCK_READ_FALLBACK, ENV.name === 'local')
   assert.strictEqual(ENV.legacyManualLoginEnabled, true) // 当前非生产档
 })
 

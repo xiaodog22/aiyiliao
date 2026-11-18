@@ -43,6 +43,7 @@ global.wx = {
 }
 
 const ROOT = path.join(__dirname, '..', 'miniprogram')
+const ENV = require(path.join(ROOT, 'config', 'env.js'))
 const API = require(path.join(ROOT, 'config', 'api.js'))
 const session = require(path.join(ROOT, 'services', 'session.js'))
 const req = require(path.join(ROOT, 'services', 'request.js'))
@@ -151,21 +152,22 @@ test('RQ-09 异常：缺接口规格 → BAD_SPEC；未知 base → NO_BASE_URL�
 
 // ==================== ③ 幂等键与请求头 ====================
 
-test('RQ-10 核心：写操作带 Idempotency-Key（8~128，ik- 前缀，两次不同）', async () => {
+test('RQ-10 核心：写操作带 Idempotency-Key（显式传入时原样使用）', async () => {
   session.setTokens({ accessToken: 'at-1', refreshToken: 'rt-1', expiresIn: 7200 })
   queue.push(okEnv({ id: 'ap-1' }))
   await req.post(API.APPOINT_SUBMIT, { slotId: 's1' }, { idempotencyKey: 'ik-fixed-0001' })
-  const h = calls[0].req.header
+  const c = calls.find((x) => x.req && x.req.method === 'POST' && x.req.header)
+  assert.ok(c, '未找到 POST 请求')
+  const h = c.req.header
   assert.strictEqual(h['Idempotency-Key'], 'ik-fixed-0001')
-  assert.strictEqual(calls[0].req.method, 'POST')
+  assert.strictEqual(c.req.method, 'POST')
 })
 
-test('RQ-11 核心：newIdempotencyKey 契约形状（ik- 前缀，长度 8~128，唯一）', () => {
+test('RQ-11 核心：newIdempotencyKey 契约形状（32 位小写 hex，唯一）', () => {
   const a = req.newIdempotencyKey()
   const b = req.newIdempotencyKey()
   for (const k of [a, b]) {
-    assert.ok(k.startsWith('ik-'), k)
-    assert.ok(k.length >= 8 && k.length <= 128, k)
+    assert.ok(/^[0-9a-f]{32}$/.test(k), k)
   }
   assert.notStrictEqual(a, b)
 })
@@ -368,10 +370,15 @@ test('RQ-25 边界：uploadFile 401 自动刷新重发一次', async () => {
   assert.strictEqual(calls[2].req.header['Idempotency-Key'], 'ik-asr-1')
 })
 
-test('RQ-26 边界：withFallback —— 开发档失败降级 mock；mock 为 null 原样抛错', async () => {
+test('RQ-26 边界：withFallback —— local 档失败降级 mock；非 local 档透传 HTTP 错误', async () => {
   queue.push({ statusCode: 500, data: null }, { statusCode: 500, data: null })
-  const out = await req.withFallback(req.get(API.DEPARTMENT_LIST), () => [{ id: 'mock' }])
-  assert.deepStrictEqual(out, [{ id: 'mock' }])
+  if (ENV.MOCK_READ_FALLBACK) {
+    const out = await req.withFallback(req.get(API.DEPARTMENT_LIST), () => [{ id: 'mock' }])
+    assert.deepStrictEqual(out, [{ id: 'mock' }])
+  } else {
+    await assert.rejects(req.withFallback(req.get(API.DEPARTMENT_LIST), () => [{ id: 'mock' }]),
+      (e) => e.code === 'HTTP_ERROR')
+  }
   await assert.rejects(
     req.withFallback(req.get(API.DEPARTMENT_LIST), () => null),
     (e) => e.code === 'HTTP_ERROR'

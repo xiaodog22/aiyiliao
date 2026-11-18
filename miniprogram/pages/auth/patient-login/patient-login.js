@@ -82,6 +82,10 @@ Page({
         wx.hideLoading()
         this.setData({ submitting: false })
         const code = err && err.code
+        if (code === 'CONSENT_REQUIRED') {
+          wx.navigateTo({ url: '/pages/auth/consent/consent' })
+          return
+        }
         const msg = errText(err, '登录失败，请重试')
         if (code === 'NO_BASE_URL' || code === 'NETWORK_ERROR' || code === 'TIMEOUT') {
           wx.showToast({ title: '网络连接失败，请检查后重试', icon: 'none', duration: 2500 })

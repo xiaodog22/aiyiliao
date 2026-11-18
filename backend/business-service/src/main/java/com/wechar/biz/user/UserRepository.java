@@ -63,6 +63,25 @@ public class UserRepository {
                 UserRepository::map, phoneHash).stream().findFirst();
     }
 
+    /**
+     * 审计 H2 双读：旧行是 SHA-256、新行是 HMAC，查询键同时携带两个候选摘要。
+     * 用 IN 合并为一次查询，避免两次全表扫描；按参数顺序优先返回第一个命中。
+     */
+    public Optional<UserRow> findByPhoneHashes(java.util.List<String> phoneHashes) {
+        if (phoneHashes == null || phoneHashes.isEmpty()) {
+            return Optional.empty();
+        }
+        String placeholders = String.join(",", java.util.Collections.nCopies(phoneHashes.size(), "?"));
+        return jdbc.query("SELECT " + COLS + " FROM users WHERE phone_hash IN (" + placeholders + ")",
+                UserRepository::map, phoneHashes.toArray()).stream().findFirst();
+    }
+
+    /** H2 迁移：旧 SHA-256 行在验证码校验成功后原地升级为 HMAC（不重绑手机号）。 */
+    public void updatePhoneHash(String id, String phoneHash, Instant now) {
+        jdbc.update("UPDATE users SET phone_hash = ?, version = version + 1, updated_at = ? WHERE id = ?",
+                phoneHash, Timestamp.from(now), id);
+    }
+
     /** 登录自动创建：display_name 取微信昵称占位；未绑定时 phone_cipher 为 null。 */
     public void insert(String id, String openid, String displayName, Instant now) {
         jdbc.update("INSERT INTO users (id, wechat_openid, phone_cipher, phone_hash, phone_bound, display_name, status, version, created_at) "
@@ -103,5 +122,16 @@ public class UserRepository {
     public void recordLoginConsentVersion(String id, String consentVersion, Instant now) {
         jdbc.update("UPDATE users SET login_consent_version = ?, updated_at = ? WHERE id = ?",
                 consentVersion, Timestamp.from(now), id);
+    }
+
+    /**
+     * 该用户最近一次登录确认的政策版本（未确认过 = empty）。
+     * 审计 X-03：供会话签发收口判定 —— 没有新同意证明的路径（/auth/session 派生）
+     * 只能依赖这里已落库的版本，不允许无版本直接签发。
+     */
+    public Optional<String> loginConsentVersion(String id) {
+        var rows = jdbc.query("SELECT login_consent_version FROM users WHERE id = ?",
+                (rs, i) -> rs.getString(1), id);
+        return rows.stream().filter(v -> v != null && !v.isBlank()).findFirst();
     }
 }

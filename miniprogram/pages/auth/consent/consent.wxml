@@ -1,0 +1,14 @@
+<view class="consent-page theme-{{theme}}">
+  <!-- 复用隐私政策全文，保证“同意的文本”与“阅读的文本”是同一份，不复制两份漂移 -->
+  <include src="../../profile/privacy/privacy.wxml" />
+
+  <view class="consent-bar">
+    <view class="consent-version">当前版本：{{version}}<text wx:if="{{updatedAt}}"> · 生效 {{updatedAt}}</text></view>
+    <view class="consent-check" bindtap="onToggle" aria-role="checkbox" aria-checked="{{checked}}">
+      <view class="consent-box {{checked ? 'consent-box-on' : ''}}">{{checked ? '✓' : ''}}</view>
+      <view class="consent-label">我已完整阅读并同意《{{title}}》（版本 {{version}}）</view>
+    </view>
+    <button class="btn btn-primary consent-btn" disabled="{{!checked || loading || !version}}" bindtap="onAgree">同意并继续</button>
+    <view wx:if="{{error}}" class="consent-error">{{error}}</view>
+  </view>
+</view>

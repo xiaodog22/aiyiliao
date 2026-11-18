@@ -5,7 +5,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.wechar.biz.auth.DevSmsSender;
+import com.wechar.biz.support.RecordingSmsCodeSink;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -25,7 +25,7 @@ import org.springframework.test.web.servlet.MvcResult;
  *  - N8：手机号账号 200 · 工号账号 200（V11 employee_no）· 错码/未知/复用 401 · 非医生 403 ·
  *        参数缺失 400 · 缺 X-Client-Version 400 · X-Platform 非 const 422。
  * 本上下文 app.sms.cooldown-seconds=0（每方法可自由下发）；60s 冷却语义由 SmsCooldownContractTest 覆盖。
- * 验证码经 dev 档 DevSmsSender.lastCode 读取（生产档无此入口）。
+ * 验证码经测试专用的 RecordingSmsCodeSink 读取（审计 H1：运行时不保留验证码副本）。
  */
 @SpringBootTest(properties = {
         "spring.profiles.active=itest",
@@ -38,6 +38,7 @@ import org.springframework.test.web.servlet.MvcResult;
         "spring.sql.init.encoding=UTF-8",
         "spring.sql.init.data-locations=classpath:db/test-m3-seed.sql"
 })
+@org.springframework.context.annotation.Import(RecordingSmsCodeSink.class)
 @AutoConfigureMockMvc
 class SmsLoginContractTest {
 
@@ -48,13 +49,15 @@ class SmsLoginContractTest {
     private static final String EMPLOYEE_NO = "D-0001";
     private static final String PLATFORM = "wechat-miniprogram";
     private static final String CLIENT_VERSION = "1.0.0";
+    /** 与 application.yml 的 app.consent.current-version 默认值一致（审计 X-03）。 */
+    private static final String CONSENT_VERSION = "v1.0";
 
     @Autowired
     private MockMvc mockMvc;
     @Autowired
     private JdbcTemplate jdbc;
     @Autowired
-    private DevSmsSender smsSender;
+    private RecordingSmsCodeSink smsSender;
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -109,7 +112,9 @@ class SmsLoginContractTest {
         var req = post("/api/v1/doctor/login-by-account")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"account\":\"" + account + "\",\"credential\":\"" + credential
-                        + "\",\"challengeId\":\"" + challengeId + "\"}");
+                        + "\",\"challengeId\":\"" + challengeId
+                        // 审计 X-03：本路径同样签发会话，必须携带当前政策版本
+                        + "\",\"consentVersion\":\"" + CONSENT_VERSION + "\"}");
         if (withIdem) {
             req = req.header("Idempotency-Key", idem());
         }
@@ -171,6 +176,16 @@ class SmsLoginContractTest {
                 .content("{\"account\":\"" + PHONE_DOCTOR + "\",\"challengeId\":\"x\"}"))
                 .andReturn();
         probe("POST /api/v1/doctor/login-by-account(缺字段)", st(missingField), 400);
+
+        // 缺 consentVersion（审计 X-03）→ 400：本路径不得在没有同意证明时签发会话
+        MvcResult missingConsent = mockMvc.perform(post("/api/v1/doctor/login-by-account")
+                .header("X-Client-Version", CLIENT_VERSION)
+                .header("X-Platform", PLATFORM)
+                .header("Idempotency-Key", idem())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"account\":\"" + PHONE_DOCTOR + "\",\"credential\":\"123456\",\"challengeId\":\"x\"}"))
+                .andReturn();
+        probe("POST /api/v1/doctor/login-by-account(缺同意版本)", st(missingConsent), 400);
 
         // 缺 Idempotency-Key → 400
         probe("POST /api/v1/doctor/login-by-account(缺幂等键)",

@@ -166,5 +166,13 @@ miniprogram/tools/_assets_src/
 /docs/security/
 /docs/安全审查_20261118_253f05d修复面.md
 
+# ===== 构建/测试临时产物（2026-11-18）=====
+# 并发排查时把 target 改名成 target_old_<时间> / target_stale_<日期> 强制重建，
+# 这些目录与 *-final.exit 标记都不是源码，禁止入库（否则一次 git add -A 就带上几十 MB）。
+/backend/business-service/target_*/
+/backend/edge-gateway/target_*/
+/backend/ai-service/target_*/
+*.exit
+
 
 

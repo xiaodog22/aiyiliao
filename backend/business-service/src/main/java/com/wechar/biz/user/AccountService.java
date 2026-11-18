@@ -108,8 +108,14 @@ public class AccountService {
             // verify 内部 attempts 累计保留（防穷举）；对外统一契约 422 二次校验失败
             throw new ApiException("VERIFY_FAILED", HttpStatus.UNPROCESSABLE_ENTITY, VERIFY_FAILED_MESSAGE);
         }
-        if (!user.phoneHash().equals(challenge.phoneHash())) {
+        boolean phoneMatches = Digests.constantTimeEquals(user.phoneHash(), challenge.phoneHash())
+                || Digests.constantTimeEquals(user.phoneHash(), challenge.phoneHashLegacy());
+        if (!phoneMatches) {
             throw new ApiException("VERIFY_FAILED", HttpStatus.UNPROCESSABLE_ENTITY, VERIFY_FAILED_MESSAGE);
+        }
+        // H2 迁移：旧 SHA 行在二次校验通过后升级为 HMAC，后续比对不再依赖旧摘要
+        if (!Digests.constantTimeEquals(user.phoneHash(), challenge.phoneHash())) {
+            userRepository.updatePhoneHash(userId, challenge.phoneHash(), now);
         }
         smsChallengeService.consume(challenge.challengeId());
 

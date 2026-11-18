@@ -101,3 +101,29 @@ def test_save_creates_parent_directory(tmp_path, path_name):
     store = TaskStore(tmp_path / path_name)
     assert asyncio.run(store.save()) is True
     assert (tmp_path / path_name).exists()
+
+
+def test_result_at_rest_encryption_roundtrip(tmp_path):
+    """审计 M2：落盘 result 正文不得出现明文；同 key 可恢复，错误 key 不把脏数据带入内存。"""
+    from cryptography.fernet import Fernet
+
+    key = Fernet.generate_key().decode("ascii")
+    path = tmp_path / "tasks.json"
+    store = TaskStore(path, key)
+    store.tasks["t1"] = {
+        "taskId": "t1", "status": "SUCCEEDED", "inputInline": "头痛三天",
+        "result": {"text": "PHI-SECRET-TEXT"},
+    }
+    assert asyncio.run(store.save()) is True
+    raw = path.read_text(encoding="utf-8")
+    assert "PHI-SECRET-TEXT" not in raw
+    assert "头痛三天" not in raw
+
+    loaded = TaskStore(path, key)
+    asyncio.run(loaded.load())
+    assert loaded.get("t1")["result"]["text"] == "PHI-SECRET-TEXT"
+
+    wrong = TaskStore(path, Fernet.generate_key().decode("ascii"))
+    asyncio.run(wrong.load())
+    assert wrong.get("t1") is None
+

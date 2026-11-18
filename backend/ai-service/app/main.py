@@ -31,7 +31,7 @@ from .models import CancelRequest, TaskSubmitRequest
 from . import redact, retention, streaming
 from .security import install_auth
 from .store import TaskStore
-from .tasks import TERMINAL, TaskService
+from .tasks import TERMINAL, StreamCapacityExceeded, TaskService
 from .voice import close_tts_connector, preload_asr_model, verify_audio_token
 
 logger = logging.getLogger("ai-service")
@@ -72,6 +72,73 @@ _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
 _MAX_REQUEST_BYTES = 1 << 20  # 1 MiB（业务侧最大载荷是长文本 prompt，远低于该值）
 
 
+class _BodyTooLarge(Exception):
+    """请求体在流式读取阶段超过上限（审计 M3：chunked 也不能绕过）。"""
+
+
+class _BodyLimitMiddleware:
+    """纯 ASGI 请求体上限：Content-Length 与实际累计字节双重校验。
+
+    只靠 Content-Length 会被 `Transfer-Encoding: chunked` 绕过：攻击者可声明无长度并持续发块，
+    等 FastAPI 聚合完 body 才检查已经太晚。这里在 receive 层累计，超过上限立刻中断，
+    在响应未开始时返回 413；响应已开始则不再二次写（避免协议错乱）。
+    """
+
+    def __init__(self, app, max_bytes: int = _MAX_REQUEST_BYTES) -> None:
+        self.app = app
+        self.max_bytes = int(max_bytes)
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
+        declared = headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > self.max_bytes:
+            await self._reject(scope, receive, send)
+            return
+
+        received = 0
+        response_started = False
+
+        async def limited_receive():
+            nonlocal received
+            message = await receive()
+            if message.get("type") == "http.request":
+                received += len(message.get("body", b"") or b"")
+                if received > self.max_bytes:
+                    raise _BodyTooLarge()
+            return message
+
+        async def tracked_send(message):
+            nonlocal response_started
+            if message.get("type") == "http.response.start":
+                response_started = True
+            await send(message)
+
+        try:
+            await self.app(scope, limited_receive, tracked_send)
+        except _BodyTooLarge:
+            if not response_started:
+                await self._reject(scope, receive, send)
+            else:
+                raise
+
+    async def _reject(self, scope, receive, send) -> None:
+        body = json.dumps(
+            error_payload("PAYLOAD_TOO_LARGE", "请求体过大（上限 1MiB）", new_request_id(), retryable=False),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        await send({
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [(b"content-type", b"application/json; charset=utf-8"),
+                        (b"content-length", str(len(body)).encode("ascii"))],
+        })
+        await send({"type": "http.response.body", "body": body})
+
+
 def _rid(request: Request) -> str:
     cached = getattr(request.state, "request_id", None)
     if cached:
@@ -101,8 +168,9 @@ def create_app(
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     redact.install_redaction()  # D4.2：日志脱敏（防原文/凭据落盘）
+    settings.validate_security()  # H10/M2/M3/M4：非法安全配置在创建任何资源前 fail-fast
 
-    store = TaskStore(settings.store_path)
+    store = TaskStore(settings.store_path, settings.store_encryption_key)
     # 内容寻址缓存（D2.4）：默认关（dev/测试不共享全局缓存文件）；deploy 以 AI_CACHE_ENABLED 开启。
     cache_obj = cache if cache is not None else (
         ContentCache(settings.cache_path, settings.cache_ttl_seconds) if settings.cache_enabled else None
@@ -293,6 +361,8 @@ def create_app(
     app.state.probe = probe
 
     install_auth(app, settings)
+    # M3：ASGI 层累计请求体上限（chunked 也不能绕过）。放在鉴权外层，超大体不进入业务/模型链路。
+    app.add_middleware(_BodyLimitMiddleware, max_bytes=_MAX_REQUEST_BYTES)
 
     @app.middleware("http")
     async def _request_guard(request: Request, call_next):
@@ -411,11 +481,16 @@ def create_app(
         request.state.request_id = _rid(request)  # 已由请求守卫校验过（非法值不落地）
         # 订阅位必须先过租户归属（审计 C3）：SSE 直通的是对话增量原文，
         # 越权订阅等价于实时窃听他人问诊。
-        view = await service.get_view(task_id, _tenant(request))
+        tenant = _tenant(request)
+        view = await service.get_view(task_id, tenant)
         if view is None:
             raise ApiError(404, "NOT_FOUND", "任务不存在", retryable=False)
 
-        queue = service.open_stream(task_id)
+        try:
+            queue = service.open_stream(task_id, tenant)
+        except StreamCapacityExceeded as exc:
+            raise ApiError(503, "STREAM_LIMIT", "实时通道繁忙，请改用轮询", retryable=True,
+                           details=[{"field": "stream", "reason": str(exc)}]) from exc
         idle = float(settings.stream_idle_timeout_seconds)
         from .metrics import metrics as _metrics
 

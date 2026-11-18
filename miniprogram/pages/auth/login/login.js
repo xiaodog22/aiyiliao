@@ -22,6 +22,7 @@
 const app = getApp()
 const userService = require('../../../services/user.js')
 const doctorService = require('../../../services/doctor.js')
+const consent = require('../../../services/consent.js')
 const ENV = require('../../../config/env.js')
 const resource = require('../../../services/resource.js')
 
@@ -35,7 +36,9 @@ Page({
     theme: 'standard',
     robotArt: ROBOT_ART_LOCAL,
     // 手输登录入口仅开发构建可用（生产只用微信一键登录）
-    manualEnabled: ENV.legacyManualLoginEnabled
+    manualEnabled: ENV.legacyManualLoginEnabled,
+    // M11：没有对“服务端当前版本”完成独立同意时，登录按钮先跳同意页
+    consentAccepted: false
   },
 
   onLoad() {
@@ -50,7 +53,13 @@ Page({
   onShow() {
     const theme = app.globalData.theme || 'standard'
     if (theme !== this.data.theme) this.setData({ theme })
+    this.refreshConsentState()
     this._syncRobotArt()
+  },
+
+  /** M11：从同意页返回后刷新状态；版本不一致时按钮只负责跳转，不发起登录。 */
+  refreshConsentState() {
+    this.setData({ consentAccepted: consent.isAccepted() })
   },
 
   /**
@@ -108,6 +117,13 @@ Page({
     if (this._busy) return
     const intent = e.currentTarget.dataset.role === 'doctor' ? 'doctor' : 'patient'
     const detail = e.detail || {}
+
+    // M11：必须先完成独立同意（展示服务端当前版本全文 + 用户点击时间戳），
+    // 不能再用“登录即代表同意”的文案替代。
+    if (!consent.isAccepted()) {
+      wx.navigateTo({ url: '/pages/auth/consent/consent?intent=' + intent })
+      return
+    }
 
     // 用户拒绝授权 / 不支持
     if (!detail.code || (detail.errMsg && /deny|fail|refus/i.test(detail.errMsg))) {

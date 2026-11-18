@@ -77,7 +77,7 @@ class Settings:
     #            即使 master=true 也不建连；链路自然回落到本地 Ollama / 预生成音频。
     # 为什么不止靠"注释约定"：熔断触发境外兜底是**自动**的，值守人员不一定在场，
     # 策略必须是机器可执行的开关，而不是文档里的一句话。
-    egress_policy: str = field(default_factory=lambda: _env("AI_EGRESS_POLICY", "allow").strip().lower())
+    egress_policy: str = field(default_factory=lambda: _env("AI_EGRESS_POLICY", "domestic").strip().lower())
 
     # ---- B2 三步走 provider 链（2026-11-04）----
     # 顺序：ollama（本地内网穿透）→ deepseek（OpenAI 兼容 API）→ 兜底。
@@ -141,6 +141,11 @@ class Settings:
     store_path: Path = field(
         default_factory=lambda: Path(_env("AI_STORE_PATH", str(_SERVICE_DIR / "runtime" / "tasks.json")))
     )
+    # 审计 M2：任务快照 result 正文静态加密（Fernet，URL-safe base64 32 字节）。
+    # 留空 = 明文（仅限 dev/itest）；生产 compose 强制注入。
+    store_encryption_key: str = field(
+        default_factory=lambda: _env("AI_STORE_ENCRYPTION_KEY", "")
+    )
     result_ttl_seconds: int = field(default_factory=lambda: int(_env("AI_RESULT_TTL_SECONDS", "3600")))
     task_timeout_seconds: int = field(default_factory=lambda: int(_env("AI_TASK_TIMEOUT_SECONDS", "300")))
     queue_max: int = field(default_factory=lambda: int(_env("AI_QUEUE_MAX", "100")))
@@ -181,6 +186,14 @@ class Settings:
     stream_idle_timeout_seconds: float = field(
         default_factory=lambda: float(_env("AI_STREAM_IDLE_TIMEOUT_SECONDS", "120"))
     )
+    # 审计 M3：SSE 全局并发上限（每连接持一个 asyncio 队列 + 长连接；无上限会被慢连接打爆内存/句柄）。
+    stream_max_connections: int = field(
+        default_factory=lambda: int(_env("AI_STREAM_MAX_CONNECTIONS", "64"))
+    )
+    # 审计 M3：单租户 SSE 并发上限，防止单个租户/租户密钥占满全局连接池。
+    stream_max_connections_per_tenant: int = field(
+        default_factory=lambda: int(_env("AI_STREAM_MAX_CONNECTIONS_PER_TENANT", "3"))
+    )
 
     # ---- M4 硬化前瞻（提前到 M3）：周期清理与保留策略 ----
     # 历史任务保留期（sweep 裁剪阈值）与周期清理间隔。
@@ -188,6 +201,16 @@ class Settings:
     sweep_interval_seconds: int = field(default_factory=lambda: int(_env("AI_SWEEP_INTERVAL_SECONDS", "60")))
     # TTS 合成产物（非权威中间件）保留期：超过且未被在库任务引用的文件由 sweep 删除。
     tts_artifact_ttl_seconds: int = field(default_factory=lambda: int(_env("AI_TTS_ARTIFACT_TTL_SECONDS", "3600")))
+    # 审计 M4：单次 TTS 文本上限与产物目录容量上限（防止免费合成被当存储/带宽放大器）。
+    tts_max_chars: int = field(default_factory=lambda: int(_env("AI_TTS_MAX_CHARS", "2000")))
+    tts_max_disk_mb: int = field(default_factory=lambda: int(_env("AI_TTS_MAX_DISK_MB", "512")))
+    # 审计 M4：按租户的 TTS 提交配额（滑动窗口），防止单个租户反复合成占满磁盘/带宽。
+    tts_tenant_per_minute: int = field(
+        default_factory=lambda: int(_env("AI_TTS_TENANT_PER_MINUTE", "6"))
+    )
+    tts_tenant_per_day: int = field(
+        default_factory=lambda: int(_env("AI_TTS_TENANT_PER_DAY", "200"))
+    )
 
     # TRIAGE 补充档：单次生成调用的独立短超时（快降级；不占满任务总预算）
     triage_timeout_seconds: float = field(default_factory=lambda: float(_env("AI_TRIAGE_TIMEOUT_SECONDS", "20")))
@@ -217,7 +240,7 @@ class Settings:
     # 业务 TTS 总预算（秒）：qwen3 35 + edge 12 + 余量，必须小于 business task-budget(60)。
     tts_timeout_seconds: float = field(default_factory=lambda: float(_env("AI_TTS_TIMEOUT_SECONDS", "55")))
     tts_qwen3_timeout_seconds: float = field(
-        default_factory=lambda: float(_env("AI_TTS_QWEN3_TIMEOUT_SECONDS", "35"))
+        default_factory=lambda: float(_env("AI_TTS_QWEN3_TIMEOUT_SECONDS", "42"))
     )
     tts_edge_timeout_seconds: float = field(
         default_factory=lambda: float(_env("AI_TTS_EDGE_TIMEOUT_SECONDS", "12"))
@@ -324,6 +347,32 @@ class Settings:
     log_level: str = field(default_factory=lambda: _env("AI_LOG_LEVEL", "INFO"))
 
     # ---- provider 链取值辅助（B2）----
+    def validate_security(self) -> None:
+        """启动自检（审计 H10/M3/M4）：非法值直接拒绝启动，避免静默降级放行。"""
+        policy = (self.egress_policy or "domestic").strip().lower()
+        if policy not in ("domestic", "allow"):
+            raise RuntimeError(f"AI_EGRESS_POLICY={policy} 非法（允许：domestic/allow）")
+        if policy == "domestic" and (self.deepseek_api_key or "").strip():
+            # H10：domestic 下 DeepSeek 本来就会被 provider_allowed 否决；
+            # 但“配了境外 key 却假装 domestic”会让运维误判，启动即拒绝。
+            raise RuntimeError("AI_EGRESS_POLICY=domestic 时禁止配置 AI_DEEPSEEK_API_KEY（医疗数据不出境）")
+        if int(self.stream_max_connections) < 1:
+            raise RuntimeError("AI_STREAM_MAX_CONNECTIONS 必须 ≥ 1")
+        if int(self.stream_max_connections_per_tenant) < 1:
+            raise RuntimeError("AI_STREAM_MAX_CONNECTIONS_PER_TENANT 必须 ≥ 1")
+        if int(self.tts_max_chars) < 1:
+            raise RuntimeError("AI_TTS_MAX_CHARS 必须 ≥ 1")
+        if int(self.tts_max_disk_mb) < 0:
+            raise RuntimeError("AI_TTS_MAX_DISK_MB 不得为负")
+        if int(self.tts_tenant_per_minute) < 0 or int(self.tts_tenant_per_day) < 0:
+            raise RuntimeError("AI_TTS_TENANT_PER_MINUTE / AI_TTS_TENANT_PER_DAY 不得为负")
+        if (self.store_encryption_key or "").strip():
+            try:
+                from cryptography.fernet import Fernet
+                Fernet(self.store_encryption_key.strip().encode("ascii"))
+            except Exception as exc:  # noqa: BLE001
+                raise RuntimeError("AI_STORE_ENCRYPTION_KEY 非法：必须是 Fernet URL-safe base64 32 字节密钥") from exc
+
     def first_token_timeout_for(self, task: str) -> float:
         """逐任务首 token 阈值；未配置则回落到全局默认。"""
         override = getattr(self, f"{task}_first_token_timeout", None)
@@ -358,7 +407,7 @@ class Settings:
             return True
         # 出境策略 domestic：境外供应商一票否决（审计 H10），与降级总开关正交：
         # 总开关打开表示"允许降级"，出境策略表示"降级也不能出医疗数据"。
-        if (self.egress_policy or "allow") == "domestic":
+        if (self.egress_policy or "domestic") == "domestic":
             return False
         if not self.degrade_enabled:
             return False

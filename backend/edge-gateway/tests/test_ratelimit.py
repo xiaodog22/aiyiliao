@@ -64,9 +64,17 @@ def test_stale_buckets_are_evicted_when_exceeding_max_keys():
 
 
 def test_client_key_prefers_first_hop_of_x_forwarded_for():
-    assert client_key({"X-Forwarded-For": "203.0.113.9, 10.0.0.1"}, "10.0.0.5") == "203.0.113.9"
+    # 只有显式 trust 才采信 XFF（审计 F-01：默认 False）
+    assert client_key({"X-Forwarded-For": "203.0.113.9, 10.0.0.1"}, "10.0.0.5",
+                      trust_forwarded_for=True) == "203.0.113.9"
     assert client_key({}, "10.0.0.5") == "10.0.0.5"
     assert client_key({}, None) == "unknown"
+
+
+def test_client_key_ignores_forgeable_xff_by_default():
+    """默认不采信 XFF：伪造首跳不能换桶（否则限流等于没有）。"""
+    assert client_key({"X-Forwarded-For": "203.0.113.9"}, "10.0.0.5") == "10.0.0.5"
+    assert client_key({"X-Forwarded-For": "198.51.100.7, 10.0.0.1"}, "10.0.0.5") == "10.0.0.5"
 
 
 def test_health_paths_are_exempt():

@@ -47,11 +47,12 @@ class GateSettings:
     rate_limit_enabled: bool = False
     rate_limit_per_minute: int = 300
     rate_limit_window_seconds: int = 60
-    # 是否信任 X-Forwarded-For 作为限流键（DEF-13）。
-    # 默认 True = 保持既有行为（网关跑在 frp/反代之后，直连地址恒为 127.0.0.1）。
-    # ⚠️ XFF 可被客户端伪造 → 开启限流时若前面**没有**可信反代，务必置 False，
-    #    否则每次换个 XFF 值就是一个新桶，"防绕过"形同虚设。
-    rate_limit_trust_forwarded_for: bool = True
+    # 是否信任 X-Forwarded-For 作为限流键（DEF-13 / 审计 F-01）。
+    # ⚠️ 安全默认 = False：XFF 完全由客户端控制，采信即等于"每换一个 XFF 值 = 一个新桶"，
+    #    网关限流与 business 侧 login 限流同时失效（H6 只改了转发侧，没改信任默认值）。
+    # 仅当前面**确有**可信反代（frp / Nginx，且会覆盖客户端自带 XFF）才显式开启：
+    #    GW_RATE_LIMIT_TRUST_XFF=true 或 deploy/config.json rateLimit.trustForwardedFor=true
+    rate_limit_trust_forwarded_for: bool = False
     # ---- 受控 CORS（本地调试台跨域调用；生产应置 false）----
     cors_enabled: bool = True
     # 允许的跨域来源（安全默认：空 = 不开放任何来源，绝不回落通配 "*"）。

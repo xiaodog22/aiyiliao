@@ -23,7 +23,10 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from cryptography.fernet import Fernet, InvalidToken
+
 _STORE_VERSION = 1
+_RESULT_ENC_MARKER = "__fernet_v1__"
 
 #: 终态集合（与 tasks.TERMINAL 同义；此处独立定义避免 store ↔ tasks 循环导入）
 _TERMINAL_STATUSES = frozenset({"SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"})
@@ -35,9 +38,23 @@ logger = logging.getLogger("ai-service.store")
 _REPLACE_BACKOFF = (0.01, 0.02, 0.04, 0.08)
 
 
+def _harden_file(path: Path, mode: int) -> None:
+    """审计 M2：任务/缓存快照含 PHI，落盘文件仅属主可读；目录仅属主可进入。
+
+    Windows 的 chmod 语义有限（会被映射为只读位），失败不影响功能，只留 WARN；
+    Linux 容器/主机上必须生效（0600/0700 是真正的访问边界）。
+    """
+    try:
+        os.chmod(path, mode)
+    except OSError as exc:
+        logger.debug("chmod 未生效 path=%s mode=%o err=%s", path.name, mode, exc.__class__.__name__)
+
+
 class TaskStore:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, encryption_key: str = "") -> None:
         self.path = Path(path)
+        key = (encryption_key or "").strip()
+        self._fernet = Fernet(key.encode("ascii")) if key else None
         self._lock = asyncio.Lock()
         self.tasks: dict[str, dict] = {}
         self.idempotency: dict[str, dict] = {}
@@ -50,10 +67,15 @@ class TaskStore:
                 return
             try:
                 raw = json.loads(self.path.read_text(encoding="utf-8"))
-                self.tasks = raw.get("tasks") or {}
+                self.tasks = self._decrypt_tasks(raw.get("tasks") or {})
                 self.idempotency = raw.get("idempotency") or {}
             except (OSError, json.JSONDecodeError):
                 # 存储损坏不是数据丢失：丢弃中间态，从头开始。
+                self.tasks = {}
+                self.idempotency = {}
+            except InvalidToken:
+                # 密钥不匹配/密文被篡改：不把半解密数据带进内存；任务本身是中间态。
+                logger.error("任务快照解密失败（AI_STORE_ENCRYPTION_KEY 不匹配或被篡改），丢弃快照")
                 self.tasks = {}
                 self.idempotency = {}
 
@@ -66,6 +88,7 @@ class TaskStore:
         async with self._lock:
             try:
                 self.path.parent.mkdir(parents=True, exist_ok=True)
+                _harden_file(self.path.parent, 0o700)
                 payload = {
                     "version": _STORE_VERSION,
                     "tasks": self._tasks_for_disk(),
@@ -73,9 +96,11 @@ class TaskStore:
                 }
                 tmp = self.path.with_suffix(".tmp")
                 tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=None), encoding="utf-8")
+                _harden_file(tmp, 0o600)
+                await _replace_with_retry(tmp, self.path)
+                _harden_file(self.path, 0o600)
                 # 重试用 await asyncio.sleep：本方法是协程且持锁，同步 sleep 会把事件循环
                 # 整体卡住（推理任务的状态推进也走这条锁），退避 155ms 就会连带拖慢请求。
-                await _replace_with_retry(tmp, self.path)
                 return True
             except OSError as exc:
                 # 典型：Windows WinError 5（目标被占用）、磁盘满、只读挂载。
@@ -93,6 +118,25 @@ class TaskStore:
 
     # ---- 任务 ----
 
+    def _decrypt_tasks(self, tasks: dict) -> dict:
+        if self._fernet is None:
+            return tasks
+        out = {}
+        for task_id, task in tasks.items():
+            item = dict(task)
+            result = item.get("result")
+            if isinstance(result, dict) and result.get(_RESULT_ENC_MARKER) is not None:
+                payload = self._fernet.decrypt(str(result[_RESULT_ENC_MARKER]).encode("ascii"))
+                item["result"] = json.loads(payload.decode("utf-8"))
+            out[task_id] = item
+        return out
+
+    def _result_for_disk(self, result):
+        if self._fernet is None or not isinstance(result, dict):
+            return result
+        token = self._fernet.encrypt(json.dumps(result, ensure_ascii=False).encode("utf-8")).decode("ascii")
+        return {_RESULT_ENC_MARKER: token}
+
     def _tasks_for_disk(self) -> dict:
         """落盘前的 PHI 收敛（审计 M2）。
 
@@ -103,12 +147,15 @@ class TaskStore:
         """
         out: dict = {}
         for task_id, task in self.tasks.items():
+            item = task
             if task.get("status") in _TERMINAL_STATUSES and task.get("inputInline") is not None:
-                scrubbed = dict(task)
-                scrubbed["inputInline"] = None
-                out[task_id] = scrubbed
-            else:
-                out[task_id] = task
+                item = dict(item)
+                item["inputInline"] = None
+            if self._fernet is not None and isinstance(item.get("result"), dict):
+                if item is task:
+                    item = dict(item)
+                item["result"] = self._result_for_disk(item["result"])
+            out[task_id] = item
         return out
 
     def get(self, task_id: str) -> Optional[dict]:

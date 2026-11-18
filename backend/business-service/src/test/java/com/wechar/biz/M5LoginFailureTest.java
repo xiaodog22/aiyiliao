@@ -120,6 +120,9 @@ class M5LoginFailureTest {
         when(userRepository.findById(anyString())).thenReturn(Optional.of(new UserRepository.UserRow(
                 "u-dev-user-1", "dev-user-1", null, null, false, "开发用户甲", null,
                 "ACTIVE", 1, Instant.now(), null)));
+        // 审计 X-03：会话签收发口会先读“已确认的政策版本”，mock 仓需显式给值，
+        // 否则闸门 409 会挡在 issue() 之前，本用例就测不到 500 失败面。
+        when(userRepository.loginConsentVersion(anyString())).thenReturn(Optional.of("v1.0"));
         when(authSessionStore.issue(anyString()))
                 .thenThrow(new DataAccessResourceFailureException("auth_sessions unavailable"));
         int before = sessionCount();

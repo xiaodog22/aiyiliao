@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from pathlib import Path
 
 import pytest
@@ -41,7 +42,6 @@ def _settings(tmp_path, **overrides) -> Settings:
 class _Ctx:
     async def set_phase(self, phase: str):
         pass
-
 
 # ---------------------------------------------------------------- 开关公式
 
@@ -101,6 +101,78 @@ def test_qwen3_failure_falls_back_to_edge_and_reports_degraded(tmp_path, monkeyp
     assert result["result"]["mime"] == "audio/mpeg"
     assert result["result"]["audioUrl"].endswith(".mp3?token=" + result["result"]["audioUrl"].split("token=")[-1])
     assert result["model"]["modelId"] == "tts-edge"
+
+
+class _FakeQwen3Response:
+    status_code = 200
+    headers = {"content-type": "application/json"}
+    content = b""
+
+    def __init__(self, payload):
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+class _FakeQwen3Client:
+    def __init__(self, payload):
+        self._payload = payload
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def post(self, url, json=None):
+        return _FakeQwen3Response(self._payload)
+
+    async def get(self, url):
+        raise AssertionError("success payload should not fetch audioUrl")
+
+
+def _patch_qwen3(monkeypatch, payload):
+    monkeypatch.setattr(voice.httpx, "AsyncClient", lambda timeout: _FakeQwen3Client(payload))
+
+
+def test_qwen3_adapter_unwraps_v02_nested_data(tmp_path, monkeypatch):
+    """V02 返回 {code,message,data:{audio_base64}}，适配器必须解包并落盘。"""
+    _patch_qwen3(monkeypatch, {
+        "code": 200,
+        "message": "success",
+        "data": {
+            "audio_base64": base64.b64encode(b"RIFF-v02-wav").decode("ascii"),
+            "sample_rate": 24000,
+            "mock": False,
+            "degraded": False,
+            "cached": False,
+        },
+    })
+    settings = _settings(tmp_path, tts_qwen3_endpoint="http://qwen.test", tts_qwen3_timeout_seconds=5)
+    out = tmp_path / "nested.wav"
+    asyncio.run(voice.synthesize(settings, "请按时服药。", "female-1", out, engine="qwen3", locale="zh-CN"))
+    assert out.read_bytes() == b"RIFF-v02-wav"
+
+
+def test_qwen3_adapter_rejects_mock_or_degraded_audio(tmp_path, monkeypatch):
+    """真实模型失败时 sidecar 会回模拟正弦波；不得当真实医疗语音播放。"""
+    _patch_qwen3(monkeypatch, {
+        "code": 200,
+        "message": "success",
+        "data": {
+            "audio_base64": base64.b64encode(b"RIFF-mock").decode("ascii"),
+            "sample_rate": 24000,
+            "mock": False,
+            "degraded": True,
+            "cached": False,
+        },
+    })
+    settings = _settings(tmp_path, tts_qwen3_endpoint="http://qwen.test", tts_qwen3_timeout_seconds=5)
+    out = tmp_path / "mock.wav"
+    with pytest.raises(RuntimeError, match="模拟音频"):
+        asyncio.run(voice.synthesize(settings, "请按时服药。", "female-1", out, engine="qwen3", locale="zh-CN"))
+    assert not out.exists()
 
 
 def test_qwen3_success_is_not_overwritten_by_edge(tmp_path, monkeypatch):
@@ -180,3 +252,18 @@ def test_asr_rejects_cantonese_without_calling_funasr(tmp_path):
     assert ei.value.code == "CAPABILITY_UNAVAILABLE"
     assert called["n"] == 0
     assert "仅支持普通话" in ei.value.message
+
+
+def test_domestic_rejects_cloud_deepseek_key_at_startup(tmp_path):
+    """H10：domestic 不是“运行期再否决”，配了境外 key 应在启动自检直接失败。"""
+    settings = _settings(tmp_path, egress_policy="domestic", deepseek_api_key="sk-test")
+    with pytest.raises(RuntimeError, match="AI_DEEPSEEK_API_KEY"):
+        settings.validate_security()
+
+
+def test_invalid_store_encryption_key_rejected_at_startup(tmp_path):
+    """M2：静态加密密钥形状非法时启动即失败，禁止带病运行。"""
+    settings = _settings(tmp_path, store_encryption_key="not-a-fernet-key")
+    with pytest.raises(RuntimeError, match="AI_STORE_ENCRYPTION_KEY"):
+        settings.validate_security()
+

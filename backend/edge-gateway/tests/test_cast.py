@@ -44,9 +44,30 @@ def _make_client(**overrides) -> TestClient:
     return TestClient(app)
 
 
+class _WhoamiResponse:
+    status_code = 200
+
+    @staticmethod
+    def json():
+        return {"code": "OK", "data": {"role": "doctor", "roles": ["DOCTOR"]}}
+
+
+def _install_doctor_session(client: TestClient) -> None:
+    """审计 H5：投屏端点会向 business /auth/whoami 反查角色。
+
+    本文件测的是桥接状态机，不是会话校验；把 whoami 固定为 DOCTOR，
+    避免每个用例都起一个假 business。真实 403/503 分支由 test_h5_auth.py 覆盖。
+    """
+    async def fake_get(*_args, **_kwargs):
+        return _WhoamiResponse()
+
+    client.app.state.http.get = fake_get
+
+
 @pytest.fixture()
 def gw_on():
     with _make_client(cast_bridge_enabled=True, cast_devices=[dict(d) for d in DEVICES]) as client:
+        _install_doctor_session(client)
         yield client
 
 

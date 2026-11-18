@@ -795,9 +795,13 @@ Page({
       content: '将退出当前账号并返回登录页，确定吗？',
       success: (res) => {
         if (res.confirm) {
-          app.logout()
-          userService.logout()
-          wx.reLaunch({ url: '/pages/auth/login/login' })
+          app.logout().then((ok) => {
+            if (!ok) {
+              wx.showToast({ title: '退出未完成，请联网后重试', icon: 'none' })
+              return
+            }
+            wx.reLaunch({ url: '/pages/auth/login/login' })
+          })
         }
       }
     })

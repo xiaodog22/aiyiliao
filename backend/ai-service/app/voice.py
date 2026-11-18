@@ -363,13 +363,18 @@ async def _synthesize_qwen3(
     body = {"text": text, "voice": engine_voice, "locale": normalize_locale(locale), "format": "wav"}
 
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=2.0)) as client:
             resp = await client.post(url, json=body)
             if resp.status_code >= 400:
                 raise RuntimeError(f"Qwen3-TTS sidecar 返回 HTTP {resp.status_code}")
             content_type = (resp.headers.get("content-type") or "").lower()
             audio: bytes
             if content_type.startswith("audio/") or "octet-stream" in content_type:
+                # 不伪造音频：sidecar 真实模型失败会回模拟正弦波，raw 路径用响应头标记，
+                # 命中即拒绝并切下一引擎，绝不把占位音当医疗语音播放。
+                if str(resp.headers.get("x-tts-mock", "")).lower() in ("1", "true") or \
+                        str(resp.headers.get("x-tts-degraded", "")).lower() in ("1", "true"):
+                    raise RuntimeError("Qwen3-TTS sidecar 已降级为模拟音频，拒绝作为真实语音")
                 audio = resp.content
                 first_byte_ms = round((time.perf_counter() - started) * 1000, 1)
             else:
@@ -380,6 +385,10 @@ async def _synthesize_qwen3(
                 # V02 Qwen3-TTS sidecar 返回 {code,message,data:{audio_base64,...}}；
                 # 兼容旧契约的顶层 audio_base64/audioUrl。
                 payload = data.get("data") if isinstance(data.get("data"), dict) else data
+                # 不伪造音频：mock=true / degraded=true 是 sidecar 的占位正弦波，不是真实语音。
+                if str(payload.get("mock")).lower() in ("1", "true") or \
+                        str(payload.get("degraded")).lower() in ("1", "true"):
+                    raise RuntimeError("Qwen3-TTS sidecar 已降级为模拟音频，拒绝作为真实语音")
                 b64 = (payload.get("audio_base64") or payload.get("audio") or payload.get("wav_base64")
                        or payload.get("data"))
                 if b64:

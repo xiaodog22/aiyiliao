@@ -67,6 +67,20 @@ wechat:
 app:
   auth:
     mode: ${APP_AUTH_MODE:strict}
+    # 审计 H2：手机号 phone_hash 必须 HMAC-SHA256；生产由 ProductionSecurityCheck 强制非空。
+    phone-hmac-key: ${APP_PHONE_HMAC_KEY:}
+    # 审计 H2 轮换窗口：上一把密钥仅用于双读旧 row，命中后自动回写当前 key；可留空。
+    phone-hmac-key-previous: ${APP_PHONE_HMAC_KEY_PREVIOUS:}
+    # 审计 H2：6 位验证码摘要必须 HMAC-SHA256；生产由 ProductionSecurityCheck 强制非空。
+    code-hash-secret: ${APP_CODE_HASH_SECRET:}
+  # 审计 M11：隐私政策版本由服务端发布，客户端不得硬编码；登录携带旧版本 → 409。
+  consent:
+    current-version: ${APP_CONSENT_VERSION:v1.0}
+    effective-at: ${APP_CONSENT_EFFECTIVE_AT:2026-11-18}
+    title: ${APP_CONSENT_TITLE:隐私政策}
+  # 审计 M5：匿名头像读取必须短签；未配置时回落附件签名密钥（生产由 ProductionSecurityCheck 强制非空）。
+  avatar:
+    sign-secret: ${APP_AVATAR_SIGN_SECRET:${APP_ATTACHMENT_SIGN_SECRET:}}
   # 资源库（V14）：图片/图标元数据登记在 resource_asset 表，二进制留在文件系统（**不存 BLOB**）。
   # public-base-url 配置后，资源清单 items[].url 拼为 {base}/api/v1/resources/{key}（绝对 HTTPS，
   # 供 <image> 与 wx.downloadFile；小程序后台 downloadFile 合法域名需与之一致）。

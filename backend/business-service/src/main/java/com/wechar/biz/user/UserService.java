@@ -128,13 +128,13 @@ public class UserService {
         return "UNKNOWN";
     }
 
-    /** 头像只下发可直接加载的 URL：完整 http(s) 或站内相对路径（客户端拼网关前缀）。 */
-    private static String avatarUrlOf(String avatarKey) {
+    /** 头像只下发可直接加载的 URL：完整 http(s) 或站内相对路径（客户端拼网关前缀）；站内头像追加短签。 */
+    private String avatarUrlOf(String avatarKey) {
         if (avatarKey == null || avatarKey.isBlank()) {
             return null;
         }
         if (avatarKey.startsWith("http://") || avatarKey.startsWith("https://") || avatarKey.startsWith("/")) {
-            return avatarKey;
+            return avatarStorage.signedPath(avatarKey);
         }
         return null;
     }

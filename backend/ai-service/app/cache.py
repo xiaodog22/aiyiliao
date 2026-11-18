@@ -165,10 +165,22 @@ class ContentCache:
     async def save(self) -> None:
         async with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                os.chmod(self.path.parent, 0o700)  # 审计 M2：缓存可能含模型回答，目录仅属主可进入
+            except OSError:
+                pass
             payload = {"version": _CACHE_VERSION, "entries": self.entries}
             tmp = self.path.with_suffix(".tmp")
             tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            try:
+                os.chmod(tmp, 0o600)  # 审计 M2：先收紧临时文件，再原子替换
+            except OSError:
+                pass
             os.replace(tmp, self.path)
+            try:
+                os.chmod(self.path, 0o600)
+            except OSError:
+                pass
 
     def get(self, key: str) -> Optional[dict]:
         """命中返回条目副本；过期/缺失返回 None（过期即顺手剔除）。"""

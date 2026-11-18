@@ -51,6 +51,11 @@ services:
       # 启动即校验的三把密钥：缺失直接拒绝启动（不再有"可用默认值"）。
       PHONE_KEY_BASE64: ${PHONE_KEY_BASE64:?必须注入 PHONE_KEY_BASE64（32 字节 base64）}
       APP_ATTACHMENT_SIGN_SECRET: ${APP_ATTACHMENT_SIGN_SECRET:?必须注入 APP_ATTACHMENT_SIGN_SECRET}
+      # 审计 H2/M5/M11 启动自检：生产缺任意一把即拒绝启动（ProductionSecurityCheck @PostConstruct）
+      APP_PHONE_HMAC_KEY: ${APP_PHONE_HMAC_KEY:?必须注入 APP_PHONE_HMAC_KEY（≥32 字符）}
+      APP_CODE_HASH_SECRET: ${APP_CODE_HASH_SECRET:?必须注入 APP_CODE_HASH_SECRET（≥32 字符）}
+      APP_AVATAR_SIGN_SECRET: ${APP_AVATAR_SIGN_SECRET:?必须注入 APP_AVATAR_SIGN_SECRET（≥32 字符）}
+      APP_CONSENT_VERSION: ${APP_CONSENT_VERSION:-v1.0}
       AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?必须注入 AI_SERVICE_TOKEN（与 ai 侧同名同值）}
       APP_RESOURCES_DIR: /app/resources
       APP_UPLOAD_DIR: /app/run/uploads
@@ -72,9 +77,13 @@ services:
       AI_DEEPSEEK_BASE_URL: ${AI_DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       AI_DEEPSEEK_MODEL: ${AI_DEEPSEEK_MODEL:-deepseek-flash}
       AI_STORE_PATH: /app/runtime/tasks.json
+      # 审计 M2：任务 result 正文静态加密；Fernet URL-safe base64 32 字节
+      AI_STORE_ENCRYPTION_KEY: ${AI_STORE_ENCRYPTION_KEY:?必须注入 AI_STORE_ENCRYPTION_KEY（Fernet key）}
       # ai 侧令牌必须与 business 侧同值，否则 business 全部调用 401（fail-fast 更好过静默零凭证）
       AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?必须注入 AI_SERVICE_TOKEN}
       AI_AUTH_MODE: static
+      # 审计 H10：默认 domestic，境外 provider 一票否决；不得用 allow 放开医疗数据出境。
+      AI_EGRESS_POLICY: ${AI_EGRESS_POLICY:-domestic}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # 审计 C3/H7：不发布 ai 端口（18001 直达 = 绕过网关读全租户任务）。
@@ -89,6 +98,10 @@ services:
       GW_ASSETS_DIR: /app/assets
       GW_PROXY_TIMEOUT_SECONDS: "220"
       GW_RATE_LIMIT_ENABLED: "true"
+      # 审计 F-01：显式声明不采信 XFF。compose 直连场景（只绑 127.0.0.1，前置可以是任意客户端）
+      # 采信 XFF = 每换一个伪造值就换一个限流桶，网关与 login 限流同时失效。
+      # 仅当确有可信反代（frp/Nginx 且覆盖客户端自带 XFF）时才改 true。
+      GW_RATE_LIMIT_TRUST_XFF: "false"
       GW_LOG_LEVEL: INFO
     depends_on: [business, ai]
     # 审计 H7：只绑 127.0.0.1，交给 frp/反代从回环转发，避免"本机 8080 直接对局域网开放"

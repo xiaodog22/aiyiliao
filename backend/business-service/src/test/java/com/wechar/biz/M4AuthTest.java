@@ -97,7 +97,7 @@ class M4AuthTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Client-Version", "dev")
                         .header("X-Platform", "wechat-miniprogram")
-                        .content("{\"code\":\"dev-code-alpha\",\"consentVersion\":\"v1\"}"))
+                        .content("{\"code\":\"dev-code-alpha\",\"consentVersion\":\"v1.0\"}"))
                 .andExpect(status().isOk());
     }
 
@@ -189,12 +189,69 @@ class M4AuthTest {
                 .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
+    /**
+     * 审计 X-02 回归：refresh 轮换不得把旧行算进"存活会话"，logout 必须撤整条链。
+     *
+     * <p>原缺陷：rotate 只把旧行标 refresh_used=1（不置 revoked），而 activeSessionCount
+     * 按 revoked=0 计数 → 单设备每 2h 轮换一次就 +1，约 4~6h 撞满上限 3，/auth/session
+     * 永久 409；且 logout 只撤"令牌命中的那一行"，越登越死。</p>
+     */
+    @Test
+    void refresh轮换不累积存活会话_且logout撤销整条链() throws Exception {
+        int baseline = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM auth_sessions WHERE revoked = 0", Integer.class);
+        int baselineLive = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM auth_sessions WHERE revoked = 0 AND refresh_used = 0", Integer.class);
+
+        String body = mockMvc.perform(post("/api/v1/auth/wechat/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Client-Version", "dev")
+                        .header("X-Platform", "wechat-miniprogram")
+                        .content("{\"code\":\"dev-code-alpha\",\"consentVersion\":\"v1.0\"}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        String access = extract(body, "at-");
+        String refresh = extract(body, "rt-");
+
+        // 连续轮换 4 次：模拟单设备长时间在线（每次 refresh 都换新的一对令牌）
+        for (int i = 0; i < 4; i++) {
+            String rotated = mockMvc.perform(post("/api/v1/auth/refresh")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"refreshToken\":\"" + refresh + "\"}"))
+                    .andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+            access = extract(rotated, "at-");
+            refresh = extract(rotated, "rt-");
+        }
+
+        // 存活会话口径：只数"还能续期"的行 → 单设备恒为 1（旧口径这里会是 5 → 409）
+        Integer live = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM auth_sessions WHERE revoked = 0 AND refresh_used = 0", Integer.class);
+        // 同一 Spring 上下文的其它用例会先留下会话，故断言相对基线 +1，而非绝对 1
+        org.assertj.core.api.Assertions.assertThat(live)
+                .as("单设备轮换后存活会话数应相对基线 +1").isEqualTo(baselineLive + 1);
+        // 轮换出的旧行保持未撤销（其 access token 仍可用至过期），靠 refresh_used 区分
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM auth_sessions WHERE revoked = 0", Integer.class))
+                .as("轮换链共 5 行（1 登录 + 4 轮换）").isEqualTo(baseline + 5);
+
+        // logout 撤整条链，而不是只撤最后一行
+        mockMvc.perform(post("/api/v1/auth/logout")
+                        .header("Idempotency-Key", "it-x02-" + java.util.UUID.randomUUID())
+                        .header("Authorization", "Bearer " + access))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.revoked").value(true));
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM auth_sessions WHERE revoked = 0", Integer.class))
+                .as("logout 后该链全部行都应被撤销（含轮换出的旧行）").isEqualTo(baseline);
+    }
+
     private String login(String code) throws Exception {
         String body = mockMvc.perform(post("/api/v1/auth/wechat/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Client-Version", "dev")
                         .header("X-Platform", "wechat-miniprogram")
-                        .content("{\"code\":\"" + code + "\",\"consentVersion\":\"v1\"}"))
+                        .content("{\"code\":\"" + code + "\",\"consentVersion\":\"v1.0\"}"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
         return extract(body, "at-");

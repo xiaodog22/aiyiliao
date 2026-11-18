@@ -60,7 +60,7 @@ class M4StrictAuthTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Client-Version", "dev")
                         .header("X-Platform", "wechat-miniprogram")
-                        .content("{\"code\":\"dev-code-strict-1\",\"consentVersion\":\"v1\"}"))
+                        .content("{\"code\":\"dev-code-strict-1\",\"consentVersion\":\"v1.0\"}"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
         String access = java.util.regex.Pattern.compile("\"(at-[^\"]+)\"").matcher(body)

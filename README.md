@@ -76,11 +76,11 @@ flowchart LR
 
 ```
 miniprogram/          原生小程序前端
-  pages/              主包 26 页（首页 / 导诊 / 问诊 / 养生 / 挂号 / 我的 等）
+  pages/              主包 27 页（首页 / 导诊 / 问诊 / 养生 / 挂号 / 我的 等）
     doctor/           分包（root=pages/doctor）：医生端 8 页，患者端不预载
   packageNav/         分包：院内导航
   packageContent/     分包：健康科普
-                      主包 26 + 3 分包 11 = 全量 **37 页**（以 app.json 实测为准，2026-11-17）
+                      主包 27 + 3 分包 11 = 全量 **38 页**（以 app.json 实测为准，2026-11-17）
   services/           数据访问层，页面不直接发请求
   components/         通用组件（app.json 全局注册，页面可直接用标签）
   utils/              纯逻辑真源；submission-actions.js = 提交完成态操作入口状态机
@@ -160,6 +160,8 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 - 院内导航为 1F 示意平面图，不是全院楼层
 - 语音能力按 `AI_DEGRADE_ENABLED` 总开关降级：开启=全链路（TTS：预生成→Qwen3→edge→WechatSI；ASR：本地 FunASR→WechatSI），
   关闭=仅本地；前端启动读取 `/api/v1/voice/capabilities` 快照，被否决的云端供应商不建连、不重试；全部失败时自动退回文字输入
+- TTS L1 已接回：V02 `scripts/tts_sidecar_only.py`（默认 `127.0.0.1:9000`，`TTS_PRELOAD=1`）提供本地 Qwen3-TTS；V01 `AI_TTS_QWEN3_TIMEOUT_SECONDS=42`，
+  预热后 10 字实测 22.5~29.2s（CPU RTF≈7~10×），缓存命中 158ms；sidecar 返回 `mock/degraded` 时 V01 拒绝冒充真实语音并切 edge
 - 平台隐私授权已接入（`app.json` 的 `__usePrivacyCheck__` + `utils/privacy.js` 在录音前调 `wx.requirePrivacyAuthorize`）；
   **上线前仍需在小程序后台配置《隐私保护指引》**，并核对 `scope.record` 用途文案与实际采集一致
 - 在线问诊仍是双端 2s 轮询（WebSocket 化需后端事件通道，列为 V1.21）
@@ -307,7 +309,7 @@ skill 见 `.workbuddy/skills/wechar-device-test/SKILL.md`。
 ## 贡献
 
 见 **[CONTRIBUTING.md](CONTRIBUTING.md)**（环境、启动、9 条代码红线、数据库迁移规则、提交前必跑的四条验证命令）。
-仓库当前**未配置 CI**，`check-project` / `test-fe` / `mvnw test` / `pytest` 是唯一门禁来源。
+CI 见 **`.github/workflows/ci.yml`**（Java / ai / gateway / 前端 / 结构 / 契约 / 安全门禁）；本地仍以 `check-project` / `test-fe` / `mvnw test` / `pytest` 为并行门禁。
 
 ## 安全
 
@@ -329,13 +331,20 @@ skill 见 `.workbuddy/skills/wechar-device-test/SKILL.md`。
 | H6 限流 | 网关 `rateLimit.enabled=true` 成为部署默认；转发前统一归一 `X-Forwarded-For`（不信任客户端自报）；business 登录限流改按归一后的客户端 IP |
 | H10 数据出境 | 新增 `AI_EGRESS_POLICY=domestic`（境外 provider 一律否决）；DeepSeek / edge-tts 调用前强制 `deep_sanitize()` 打码 |
 | H11 探针 | `probe_redis` 改线程池执行（不再阻塞事件循环）；未持服务令牌只回 `{status, degraded}`；探针 30 次/分/IP |
-| H1/H2 认证强度 | `app.sms.provider` 缺省反转为 `prod`（漏配即如实 503）；验证码改 HMAC-SHA256（`APP_CODE_HASH_SECRET`）；验证码校验改原子扣减 + 恒定时间比较 |
+| H1/H2 认证强度 | `app.sms.provider` 缺省反转为 `prod`（漏配即如实 503）；手机号写入改 HMAC-SHA256（`APP_PHONE_HMAC_KEY`），支持 `APP_PHONE_HMAC_KEY_PREVIOUS` 轮换双读（当前 → 上一把 → 旧 SHA），命中旧摘要自动回写；验证码摘要走 `APP_CODE_HASH_SECRET` + 原子扣减 |
+| H5 投屏越权 | gateway `cast/devices|pair|push` 不再只看 `at-` 前缀，统一向 business `/api/v1/auth/whoami` 反查 `roles` 含 `DOCTOR`；患者 403，business 不可达 503（fail-closed） |
+| M5 头像枚举 | `GET /api/v1/avatars/{name}` 必须带 900s HMAC 短签（`expires`+`sig`）；裸文件名/过期/篡改 403，缓存改 `private, 15m` |
+| M11 同意版本 | 新增匿名 `GET /api/v1/consent/latest` + `APP_CONSENT_VERSION`；登录旧版本 409；前端新增独立同意页，版本与点击时间分别记录，`env.js` 不再写死版本 |
+| M12/M13/M14 会话 | `/auth/session` 派生会话上限 3 且写 `parent_session_id`；refresh TTL 24h；`whoami` 为服务端权威角色，`wb_role` 不再本地落盘；退出必须服务端 2xx 才清本地令牌 |
+| M2 静态加密 | `tasks.json` 的 `result` 正文用 Fernet 加密（`AI_STORE_ENCRYPTION_KEY`，生产 compose 必填）；终态剥离 `inputInline`；0600/0700；密钥不匹配/密文篡改时丢弃快照 |
+| M3/M4 租户配额 | SSE 全局 64 + 单租户 3（`AI_STREAM_MAX_CONNECTIONS_PER_TENANT`）；TTS 2000 字/512MB + 租户 6 次/分、200 次/日（`AI_TTS_TENANT_PER_MINUTE/DAY`），超限 429 `TTS_QUOTA_EXCEEDED` |
+| M7 幂等键 | 服务端按 tenant 域化；前端 `newIdempotencyKey()` 固定生成 32 位小写 hex |
 
-**遗留（需排期，非本轮可安全落地）**：`phone_hash` 改 HMAC 需库表双写迁移（H2 后半）、
-头像签名 URL（M5）、独立同意页（M11）、会话拓扑与 refresh 存储（M12/M13/M14）、
-`tasks.json` 结果正文加密（M2 仅剥离了 `inputInline`）、TTS 配额（M4）、
-ASR 上传魔数嗅探（L9，pcm/webm 无可靠魔数，需按机型采样）、SBOM（L6）、
-prod 档 JDBC 变量强制注入（L5）。
+**仍需排期（不阻塞本轮）**：
+refresh token 本地 at-rest 加密（微信无应用级安全存储）、
+`DevSmsSender.lastCodes` 仅 dev 的内存明文（生产不可达，后续改测试注入）、
+ASR 上传魔数嗅探（L9）、SBOM（L6）、prod 档 JDBC 变量强制注入（L5）、
+M11/M13 的真机渲染与全局 `Page` 包装实测。
 
 ### 本地联调档（`env.local.js`，不入库）
 
@@ -355,7 +364,7 @@ module.exports = {
 
 发布前跑 `node tools/check-build-env.js`（不带 `--allow-dev`）：它要求默认档位为 `production`、
 `env.js` 内不含隧道域名/联调密钥，并校验后端默认档位与闸门默认关闭。
-`node docs/security/2026-11-18-remediation/security-gate.js` 是仓库级敏感信息门禁，两者应同时为绿。
+`node tools/security-gate.js` 是仓库级敏感信息门禁（已纳入 `.github/workflows/ci.yml` 的 `security` job），两者应同时为绿。
 
 ## 免责声明
 

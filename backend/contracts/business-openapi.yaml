@@ -300,6 +300,26 @@ paths:
         '422': {$ref: '#/components/responses/ValidationFailed'}
         '429': {$ref: '#/components/responses/TooManyRequests'}
 
+  # 审计 M13：服务端权威角色。客户端本地 wb_role 只作路由提示，医生端进入前必须用本接口裁决。
+  /api/v1/auth/whoami:
+    get:
+      operationId: getAuthWhoami
+      tags: [auth]
+      summary: 服务端权威角色
+      description: |
+        角色只从服务端任职关系（doctors.user_id + ACTIVE）判定，不接受客户端自述。
+        医生端分包入口据此裁决；与本地缓存冲突时以本接口为准。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 当前用户身份与角色。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkWhoami'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+
   # ==========================================================================
   # me
   # ==========================================================================
@@ -482,6 +502,27 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '413': {$ref: '#/components/responses/PayloadTooLarge'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  # 审计 M11：服务端发布当前政策版本。客户端不得硬编码版本号 —— 登录前先取这里，
+  # 把 version 原样带回登录请求；不一致 → 409 CONSENT_VERSION_MISMATCH。
+  /api/v1/consent/latest:
+    get:
+      operationId: getConsentLatest
+      tags: [me]
+      summary: 当前隐私政策版本（公开）
+      description: |
+        只返回版本元数据与处理目的清单，**不返回政策全文**（全文在客户端静态页，
+        避免接口被篡改后误导用户确认）。本端点匿名可读，不需要 Authorization。
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 当前政策元数据。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkConsentLatest'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
 
   /api/v1/consents:
     get:
@@ -2077,6 +2118,27 @@ paths:
   # voice
   # ==========================================================================
 
+  # 前端降级开关快照（2026-11-18）：探针不可达时服务端 fail-closed 为 local + 全部 false，
+  # 前端不得据此放行云端兜底。匿名可读（登录页也要据此决定是否展示语音入口）。
+  /api/v1/voice/capabilities:
+    get:
+      operationId: getVoiceCapabilities
+      tags: [voice]
+      summary: AI 能力降级开关
+      description: |
+        degradeMode=full 表示全链路可用；local 表示仅本地能力。
+        switches 的每个值都是**最终生效结果**（已乘总开关），客户端不得自行推导。
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 能力快照。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkVoiceCapabilities'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+
   /api/v1/voice/asr:
     post:
       operationId: recognizeSpeech
@@ -3422,11 +3484,12 @@ components:
 
     DoctorAccountLogin:
       type: object
-      required: [account, credential, challengeId]
+      required: [account, credential, challengeId, consentVersion]
       properties:
         account: {type: string, minLength: 1, maxLength: 64, description: 医生工号或绑定手机号。}
         credential: {type: string, minLength: 1, maxLength: 16, description: 短信验证码（6 位数字）；错误/过期/已用统一 401，不区分原因。}
         challengeId: {type: string, minLength: 1, maxLength: 64, description: POST /api/v1/auth/sms/send 返回的一次性挑战 ID。}
+        consentVersion: {type: string, minLength: 1, maxLength: 20, description: 用户已确认的隐私政策版本（审计 X-03：本路径同样签发会话，必须与 GET /api/v1/consent/latest 的 version 一致，旧版本 → 409）。}
       additionalProperties: false
 
     AccountDeletionVerify:
@@ -3516,6 +3579,42 @@ components:
 
     OkUser:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/User'}}}]
+
+    WhoamiData:
+      type: object
+      required: [userId, roles, role]
+      properties:
+        userId: {type: string}
+        roles: {type: array, items: {type: string}, description: 由服务端任职关系导出的角色标签（如 DOCTOR）；无任职为空数组。}
+        role: {type: string, enum: [patient, doctor], description: 路由提示。以本字段为准，本地缓存不得覆盖。}
+
+    OkWhoami:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/WhoamiData'}}}]
+
+    ConsentLatest:
+      type: object
+      required: [version, effectiveAt, title, purposes]
+      properties:
+        version: {type: string, maxLength: 20, description: 登录请求必须原样带回的版本号；旧版本 → 409。}
+        effectiveAt: {type: string, maxLength: 20, description: 生效日期（YYYY-MM-DD）。}
+        title: {type: string}
+        purposes: {type: array, items: {$ref: '#/components/schemas/ConsentPurpose'}}
+
+    OkConsentLatest:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/ConsentLatest'}}}]
+
+    VoiceCapabilities:
+      type: object
+      required: [degradeMode, switches]
+      properties:
+        degradeMode: {type: string, enum: [full, local], description: full=全链路；local=仅本地能力。}
+        switches:
+          type: object
+          description: 键为 llm/asr/tts/rag/deepseek/edge/wechatSi/asrCloud，值为最终生效结果（已乘总开关）。
+          additionalProperties: {type: boolean}
+
+    OkVoiceCapabilities:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/VoiceCapabilities'}}}]
 
     ConsentPurpose:
       type: string

@@ -219,3 +219,27 @@ def test_m1_entries_no_longer_pending():
     assert compat.match("POST", "/api/v1/consultation/start")["kind"] == "pending"
     assert compat.match("POST", "/api/appoint/updateStatus")["kind"] == "pending"
     assert compat.match("POST", "/api/v1/bed/update/9")["kind"] == "pending"
+
+
+def test_legacy_login_injects_current_consent_version(monkeypatch):
+    """审计 X-04：手输登录翻译必须带**当前**政策版本，不能再写死占位值。
+
+    背景：M11 之后 business 的 loginIdentity 会严格比对 app.consent.current-version，
+    旧实现注入的 "legacy-compat-dev" 必然 409 —— 演示登录整条不可用。
+    """
+    phone = "13800138001"
+    monkeypatch.delenv("APP_CONSENT_VERSION", raising=False)
+    monkeypatch.setenv("GW_DEV_LOGIN_PHONES", phone)
+    monkeypatch.delenv("GW_DEV_LOGIN_PASSWORD", raising=False)
+
+    body, content_type = compat._legacy_login_to_wechat(
+        json.dumps({"phone": phone}).encode("utf-8"))
+    payload = json.loads(body.decode("utf-8"))
+    assert content_type == "application/json"
+    assert payload["consentVersion"] == "v1.0"          # 与 application.yml 默认值一致
+    assert payload["code"] == "legacy-compat-" + phone
+
+    # 运营把服务端版本升到 v2 时，网关侧只需同名环境变量即可跟随，无需改代码
+    monkeypatch.setenv("APP_CONSENT_VERSION", "v2")
+    body2, _ = compat._legacy_login_to_wechat(json.dumps({"phone": phone}).encode("utf-8"))
+    assert json.loads(body2.decode("utf-8"))["consentVersion"] == "v2"

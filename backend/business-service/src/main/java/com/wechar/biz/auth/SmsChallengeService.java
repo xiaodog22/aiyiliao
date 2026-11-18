@@ -3,6 +3,7 @@ package com.wechar.biz.auth;
 import com.wechar.biz.auth.dto.SmsChallengeData;
 import com.wechar.biz.common.ApiException;
 import com.wechar.biz.common.Digests;
+import com.wechar.biz.common.PhoneHashing;
 import java.security.SecureRandom;
 import java.sql.Timestamp;
 import java.time.Clock;
@@ -36,6 +37,7 @@ public class SmsChallengeService {
     private final JdbcTemplate jdbc;
     private final SmsSender smsSender;
     private final Clock clock;
+    private final PhoneHashing phoneHashing;
     private final int ttlSeconds;
     private final int cooldownSeconds;
     private final int maxAttempts;
@@ -43,6 +45,7 @@ public class SmsChallengeService {
     private final String codeHashSecret;
 
     public SmsChallengeService(JdbcTemplate jdbc, SmsSender smsSender, Clock clock,
+                               PhoneHashing phoneHashing,
                                @Value("${app.sms.ttl-seconds:300}") int ttlSeconds,
                                @Value("${app.sms.cooldown-seconds:60}") int cooldownSeconds,
                                @Value("${app.sms.max-attempts:5}") int maxAttempts,
@@ -50,6 +53,7 @@ public class SmsChallengeService {
         this.jdbc = jdbc;
         this.smsSender = smsSender;
         this.clock = clock;
+        this.phoneHashing = phoneHashing;
         this.ttlSeconds = Math.max(1, ttlSeconds);
         this.cooldownSeconds = Math.max(0, cooldownSeconds);
         this.maxAttempts = Math.max(1, maxAttempts);
@@ -66,12 +70,12 @@ public class SmsChallengeService {
         return codeHashSecret.isEmpty() ? Digests.sha256Hex(code) : Digests.hmacSha256Hex(codeHashSecret, code);
     }
 
-    /** 校验通过的挑战（phoneHash 供登录侧比对"验证码手机号 == 账号绑定手机号"）。 */
-    public record VerifiedChallenge(String challengeId, String phoneHash) {
+    /** 校验通过的挑战（phoneHash/phoneHashLegacy 供登录侧比对"验证码手机号 == 账号绑定手机号"）。 */
+    public record VerifiedChallenge(String challengeId, String phoneHash, String phoneHashLegacy) {
     }
 
-    private record ChallengeRow(String phoneHash, String codeHash, String scene, Instant expiresAt,
-                                Instant consumedAt, int attempts) {
+    private record ChallengeRow(String phoneHash, String phoneHashLegacy, String codeHash, String scene,
+                                Instant expiresAt, Instant consumedAt, int attempts) {
     }
 
     /**
@@ -82,7 +86,8 @@ public class SmsChallengeService {
     @Transactional
     public SmsChallengeData send(String phone, String scene, String idempotencyKey) {
         // idempotencyKey 已由控制器 IdempotencyKeys.require 校验（契约 required）；键本身不构成凭证
-        String phoneHash = Digests.sha256Hex(phone);
+        String phoneHash = phoneHashing.hash(phone);
+        String phoneHashLegacy = phoneHashing.legacyHash(phone);
         Instant now = clock.instant();
 
         if (cooldownSeconds > 0) {
@@ -98,9 +103,9 @@ public class SmsChallengeService {
         String code = sixDigitCode();
         String challengeId = "sms-" + UUID.randomUUID();
         jdbc.update("INSERT INTO sms_challenges "
-                        + "(id, phone_hash, scene, code_hash, challenge_id, expires_at, consumed_at, attempts, created_at) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, NULL, 0, ?)",
-                "sm-" + UUID.randomUUID(), phoneHash, scene, codeDigest(code), challengeId,
+                        + "(id, phone_hash, phone_hash_legacy, scene, code_hash, challenge_id, expires_at, consumed_at, attempts, created_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 0, ?)",
+                "sm-" + UUID.randomUUID(), phoneHash, phoneHashLegacy, scene, codeDigest(code), challengeId,
                 Timestamp.from(now.plusSeconds(ttlSeconds)), Timestamp.from(now));
         smsSender.send(phone, code, scene);
         return new SmsChallengeData(challengeId, ttlSeconds);
@@ -127,9 +132,10 @@ public class SmsChallengeService {
             throw rejected();
         }
         List<ChallengeRow> rows = jdbc.query(
-                "SELECT phone_hash, code_hash, scene, expires_at, consumed_at, attempts "
+                "SELECT phone_hash, phone_hash_legacy, code_hash, scene, expires_at, consumed_at, attempts "
                         + "FROM sms_challenges WHERE challenge_id = ?",
-                (rs, i) -> new ChallengeRow(rs.getString("phone_hash"), rs.getString("code_hash"),
+                (rs, i) -> new ChallengeRow(rs.getString("phone_hash"), rs.getString("phone_hash_legacy"),
+                        rs.getString("code_hash"),
                         rs.getString("scene"),
                         rs.getTimestamp("expires_at").toInstant(),
                         rs.getTimestamp("consumed_at") == null ? null : rs.getTimestamp("consumed_at").toInstant(),
@@ -143,7 +149,7 @@ public class SmsChallengeService {
         if (!Digests.constantTimeEquals(row.codeHash(), codeDigest(credential))) {
             throw rejected();
         }
-        return new VerifiedChallenge(challengeId, row.phoneHash());
+        return new VerifiedChallenge(challengeId, row.phoneHash(), row.phoneHashLegacy());
     }
 
     /** 一次性消费：登录成功时原子置 consumed_at；已被使用 → 401（challengeId 一次性红线）。 */

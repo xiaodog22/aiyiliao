@@ -11,6 +11,7 @@ import com.wechar.biz.bed.BedRepository;
 import com.wechar.biz.common.ApiException;
 import com.wechar.biz.common.Cursors;
 import com.wechar.biz.common.Digests;
+import com.wechar.biz.common.PhoneHashing;
 import com.wechar.biz.common.GlobalExceptionHandler;
 import com.wechar.biz.doctor.dto.AppointmentStatusUpdateRequest;
 import com.wechar.biz.doctor.dto.DoctorAccountLoginRequest;
@@ -67,12 +68,15 @@ public class DoctorService {
     private final SmsChallengeService smsChallengeService;
     private final MessageService messageService;
     private final UserRepository userRepository;
+    private final PhoneHashing phoneHashing;
+    private final com.wechar.biz.consent.ConsentPolicy consentPolicy;
     private final Clock clock;
 
     public DoctorService(AuthService authService, DoctorRepository doctorRepository,
                          AppointmentRepository appointmentRepository, AppointmentService appointmentService,
                          BedRepository bedRepository, SmsChallengeService smsChallengeService,
-                         MessageService messageService, UserRepository userRepository, Clock clock) {
+                         MessageService messageService, UserRepository userRepository, PhoneHashing phoneHashing,
+                         com.wechar.biz.consent.ConsentPolicy consentPolicy, Clock clock) {
         this.authService = authService;
         this.doctorRepository = doctorRepository;
         this.appointmentRepository = appointmentRepository;
@@ -81,6 +85,8 @@ public class DoctorService {
         this.smsChallengeService = smsChallengeService;
         this.messageService = messageService;
         this.userRepository = userRepository;
+        this.phoneHashing = phoneHashing;
+        this.consentPolicy = consentPolicy;
         this.clock = clock;
     }
 
@@ -140,6 +146,12 @@ public class DoctorService {
         if (isBlank(request.challengeId())) {
             throw new ApiException("BAD_REQUEST", HttpStatus.BAD_REQUEST, "缺少必需字段 challengeId");
         }
+        // 审计 X-03：同意闸门不能只挂在微信登录上 —— 这条路径同样签发会话。
+        // 缺版本/旧版本一律 409（与 /auth/wechat/login 同一口径），不进入验证码核销。
+        if (isBlank(request.consentVersion())) {
+            throw new ApiException("BAD_REQUEST", HttpStatus.BAD_REQUEST, "缺少必需字段 consentVersion");
+        }
+        consentPolicy.requireCurrent(request.consentVersion());
         String account = request.account().trim();
         var challenge = smsChallengeService.verify(request.challengeId().trim(), request.credential().trim(),
                 "DOCTOR_LOGIN");
@@ -147,12 +159,18 @@ public class DoctorService {
         String userId = resolveAccountUser(account);
         var user = userId == null ? null : userRepository.findById(userId).orElse(null);
         if (user == null || user.phoneHash() == null
-                || !user.phoneHash().equals(challenge.phoneHash())) {
+                || !phoneMatches(user.phoneHash(), challenge)) {
             // 账号不存在 与 验证码手机号不匹配 同一文案/状态（防账号枚举）
             throw new ApiException("INVALID_CREDENTIAL", HttpStatus.UNAUTHORIZED,
                     SmsChallengeService.CREDENTIAL_REJECTED);
         }
+        // 旧行仍是 SHA-256：本次登录成功后升级为 HMAC（不改变手机号绑定状态）
+        if (!Digests.constantTimeEquals(user.phoneHash(), challenge.phoneHash())) {
+            userRepository.updatePhoneHash(userId, challenge.phoneHash(), clock.instant());
+        }
         requireDoctor(userId);
+        // 审计 X-03：与微信登录同口径落库（users.login_consent_version），争议时可回溯
+        userRepository.recordLoginConsentVersion(userId, request.consentVersion(), clock.instant());
         smsChallengeService.consume(challenge.challengeId());
         return authService.issueFreshSession(userId);
     }
@@ -160,10 +178,16 @@ public class DoctorService {
     /** 账号 → 内部用户 ID：11 位手机号走 phone_hash，其余按工号 employee_no；查不到返回 null（401）。 */
     private String resolveAccountUser(String account) {
         if (account.matches("1[3-9]\\d{9}")) {
-            return userRepository.findByPhoneHash(Digests.sha256Hex(account))
+            return userRepository.findByPhoneHashes(phoneHashing.candidateHashes(account))
                     .map(UserRepository.UserRow::id).orElse(null);
         }
         return doctorRepository.findActiveUserIdByEmployeeNo(account).orElse(null);
+    }
+
+    /** 验证码挑战携带新 HMAC 与旧 SHA 两个摘要：账号行命中任一即视为同一手机号。 */
+    private static boolean phoneMatches(String storedHash, SmsChallengeService.VerifiedChallenge challenge) {
+        return Digests.constantTimeEquals(storedHash, challenge.phoneHash())
+                || Digests.constantTimeEquals(storedHash, challenge.phoneHashLegacy());
     }
 
     private static boolean isBlank(String s) {

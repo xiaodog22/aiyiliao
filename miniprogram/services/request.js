@@ -24,7 +24,11 @@ function requestId() {
 
 /** 写操作幂等键（契约：8~128 字符，重试必须复用同一键，相同键不同载荷 409） */
 function newIdempotencyKey() {
-  return 'ik-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8)
+  // 审计 M7：统一 32 位小写 hex（服务端按 tenant 域化后仍保持可读长度）；
+  // 不用 Math.random 直接拼 base36，避免字符集/长度不稳定。
+  let out = Date.now().toString(16)
+  while (out.length < 32) out += Math.floor(Math.random() * 0x100000000).toString(16).padStart(8, '0')
+  return out.slice(0, 32)
 }
 
 /** 契约要求的小程序平台/版本头（login / doctor-login 为 required，其余接口无害） */
@@ -164,7 +168,7 @@ function isRefreshSpec(spec) {
  *    此时若直接返回 false，服务端那条会话还能换新 access 满 7 天（审查 D-A-P1-01）。
  *    故无 access 但有 refresh 时，先用 refresh 静默换一次 access 再撤销（不写 session）。
  * ⚠️ 永不 reject：退出登录不能被网络问题挡住，失败由调用方按"尽力而为"处理。
- * @returns {Promise<boolean>} 是否完成了一次撤销往返（不代表服务端确实撤销成功）
+ * @returns {Promise<boolean>} 是否收到服务端 2xx 撤销确认（网络失败/401/5xx 一律 false，调用方不得清本地令牌）
  */
 function revokeSession() {
   const full = buildURL(API.AUTH_LOGOUT)
@@ -222,7 +226,7 @@ function sendLogout(full, accessToken) {
         'Idempotency-Key': newIdempotencyKey()
       }),
       timeout: 5000,
-      success: () => resolve(true),
+      success: (res) => resolve(!!res && res.statusCode >= 200 && res.statusCode < 300),
       fail: () => resolve(false)
     })
   })

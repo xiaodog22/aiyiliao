@@ -175,8 +175,8 @@ const REMOTE_VOICES = [
   const ENV = require(path.join(ROOT, 'config', 'env.js'))
   check('resolveAvatar: 站内相对路径拼网关',
     userService.resolveAvatar('/api/v1/avatars/a.png') === ENV.gateway + '/api/v1/avatars/a.png')
-  check('resolveAvatar: 绝对 URL 原样',
-    userService.resolveAvatar('https://cdn.example.com/a.png') === 'https://cdn.example.com/a.png')
+  check('resolveAvatar: 非网关域绝对 URL 拒绝（防第三方追踪）',
+    userService.resolveAvatar('https://cdn.example.com/a.png') === '/assets/img/avatar-default.png')
 })()
 
 // ==================== ③ records 分页 / 触底 / 状态中文 / 错误态 ====================

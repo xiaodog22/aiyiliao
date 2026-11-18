@@ -18,6 +18,7 @@
 const req = require('./request.js')
 const { post, get, API, withPath } = req
 const session = require('./session.js')
+const consent = require('./consent.js')
 const ENV = req.ENV
 
 let _user = null
@@ -66,7 +67,11 @@ function applySession(data) {
 
 /** 组装契约 WechatLoginRequest（严格按契约字段，不夹带契约外字段） */
 function loginBody(code, phoneCode) {
-  const body = { code: String(code || ''), consentVersion: ENV.consentVersion }
+  const version = consent.versionForLogin()
+  if (!version) {
+    throw Object.assign(new Error('请先阅读并同意当前隐私政策'), { code: 'CONSENT_REQUIRED' })
+  }
+  const body = { code: String(code || ''), consentVersion: version }
   if (phoneCode) body.phoneCode = String(phoneCode)
   return body
 }
@@ -77,7 +82,9 @@ function loginBody(code, phoneCode) {
  * @param {string} [phoneCode] getPhoneNumber 的 detail.code（服务端解密手机号；可选）
  */
 function loginByWxCode(code, phoneCode) {
-  return post(API.USER_WX_LOGIN, loginBody(code, phoneCode)).then(applySession)
+  return Promise.resolve()
+    .then(() => post(API.USER_WX_LOGIN, loginBody(code, phoneCode)))
+    .then(applySession)
 }
 
 /**
@@ -98,7 +105,8 @@ function login(phone, password) {
     return Promise.reject(Object.assign(new Error('联调登录未配置密钥，请联系管理员'), { code: 'BAD_SPEC' }))
   }
   const p = String(phone || '').trim()
-  return post(API.USER_WX_LOGIN, loginBody('dev-user-1-manual-' + p, 'dev-phone-' + p))
+  return Promise.resolve()
+    .then(() => post(API.USER_WX_LOGIN, loginBody('dev-user-1-manual-' + p, 'dev-phone-' + p)))
     .then(applySession)
 }
 
@@ -145,6 +153,14 @@ function asList(data) {
  */
 function getMe() {
   return get(API.ME)
+}
+
+/**
+ * M13：服务端权威角色（GET /api/v1/auth/whoami）。
+ * 医生端进入前必须以此为准，本地 wb_role 只能当路由提示，不能当准入依据。
+ */
+function whoami() {
+  return get(API.AUTH_WHOAMI)
 }
 
 /** 健康档案（GET /api/v1/health-records → HealthRecordData[]：category/title/summary/recordedAt…） */
@@ -463,7 +479,7 @@ function resolveAvatar(avatarUrl) {
 module.exports = {
   getUser, setUser, restore, logout,
   login, loginByWxCode, listMyAppointments, submitAppointment, cancelAppointment,
-  getMe, listHealthRecords, listReports, getReport, listFamilyMembers, createFamilyMember, removeFamilyMember,
+  getMe, whoami, listHealthRecords, listReports, getReport, listFamilyMembers, createFamilyMember, removeFamilyMember,
   createFamilyInvitation, acceptFamilyInvitation,
   listMyConsultations, getConsultation, createConsultation, listConsultationMessages, sendConsultationMessage,
   listCatalogDoctors, listDepartments, listMessages, unreadCount, markMessageRead,

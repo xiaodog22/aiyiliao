@@ -5,7 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.wechar.biz.auth.DevSmsSender;
+import com.wechar.biz.support.RecordingSmsCodeSink;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -36,6 +36,7 @@ import org.springframework.test.web.servlet.MvcResult;
         "spring.sql.init.encoding=UTF-8",
         "spring.sql.init.data-locations=classpath:db/test-m3-seed.sql"
 })
+@org.springframework.context.annotation.Import(RecordingSmsCodeSink.class)
 @AutoConfigureMockMvc
 class AccountLifecycleContractTest {
 
@@ -51,7 +52,7 @@ class AccountLifecycleContractTest {
     @Autowired
     private JdbcTemplate jdbc;
     @Autowired
-    private DevSmsSender smsSender;
+    private RecordingSmsCodeSink smsSender;
 
     private final ObjectMapper mapper = new ObjectMapper();
 
@@ -143,7 +144,7 @@ class AccountLifecycleContractTest {
                 .header("X-Client-Version", CLIENT_VERSION)
                 .header("X-Platform", PLATFORM)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"code\":\"dev-user-2-code\",\"consentVersion\":\"v9.9\"}"))
+                .content("{\"code\":\"dev-user-2-code\",\"consentVersion\":\"v1.0\"}"))
                 .andReturn();
         probe("POST /api/v1/auth/wechat/login(F7前置)", st(login), 200, 400, 403, 422, 429, 503);
         String accessToken = mapper.readTree(body(login)).get("data").get("accessToken").asText();
@@ -151,7 +152,7 @@ class AccountLifecycleContractTest {
         // F7：登录携带的同意版本已落 users.login_consent_version（合规审计）
         String recorded = jdbc.queryForObject(
                 "SELECT login_consent_version FROM users WHERE id = 'u-dev-user-2'", String.class);
-        if (!"v9.9".equals(recorded)) {
+        if (!"v1.0".equals(recorded)) {
             throw new AssertionError("F7 login_consent_version 未记录，实际=" + recorded);
         }
 
@@ -194,7 +195,7 @@ class AccountLifecycleContractTest {
                         .header("X-Client-Version", CLIENT_VERSION)
                         .header("X-Platform", PLATFORM)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"code\":\"dev-user-2-code\",\"consentVersion\":\"v9.9\"}"))
+                        .content("{\"code\":\"dev-user-2-code\",\"consentVersion\":\"v1.0\"}"))
                         .andReturn()), 403);
     }
 

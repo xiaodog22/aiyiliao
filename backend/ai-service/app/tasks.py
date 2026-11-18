@@ -19,7 +19,7 @@ from typing import Awaitable, Callable, Optional
 from . import streaming
 from .cache import ContentCache, compute_cache_key, resolve_tenant_secret
 from .config import APP_VERSION, Settings
-from .envelope import idempotency_conflict, queue_full
+from .envelope import ApiError, idempotency_conflict, queue_full
 from .knowledge import get_knowledge_loader
 from .models import ModelProfile, TaskSubmitRequest, TaskType
 from .store import TaskStore
@@ -126,6 +126,10 @@ class TaskContext:
 Executor = Callable[[dict, TaskContext], Awaitable[dict]]
 
 
+class StreamCapacityExceeded(Exception):
+    """SSE 并发连接达到上限（审计 M3）；由端点转 503 + Retry-After，不阻塞任务执行。"""
+
+
 def _default_model_resolver(settings: Settings, profile: Optional[str]) -> str:
     """资源档 → 模型名兜底实现（生产由 create_app 注入 executors._llm.resolve_model，保持单一事实源）。"""
     return settings.large_model if profile == ModelProfile.LARGE.value else settings.small_model
@@ -169,6 +173,10 @@ class TaskService:
         # 每任务最多一个 token 订阅队列（对外流式旁路）。键只在订阅时创建，
         # 任务终态或订阅断开即删除 → 不订阅就不占内存，轮询链路零影响。
         self._streams: dict[str, asyncio.Queue] = {}
+        # 审计 M3：任务 → 租户，用于单租户并发配额；终态/断开时同步清理。
+        self._stream_tenants: dict[str, str] = {}
+        # 审计 M4：租户 → 最近 TTS 提交时间戳（滑动分钟/日窗口）；仅进程内中间态。
+        self._tts_submits: dict[str, list[float]] = {}
 
     def register_executor(
         self, task_type: TaskType, executor: Executor, cache_descriptor: Optional[dict] = None
@@ -264,6 +272,23 @@ class TaskService:
         """
         return hashlib.sha256(f"{tenant_id}\x00{raw_key}".encode("utf-8")).hexdigest()
 
+    def _consume_tts_quota(self, tenant: str) -> None:
+        """审计 M4：TTS 租户滑动窗口配额；0 = 关闭该窗口。"""
+        per_minute = max(0, int(getattr(self.settings, "tts_tenant_per_minute", 6) or 0))
+        per_day = max(0, int(getattr(self.settings, "tts_tenant_per_day", 200) or 0))
+        if per_minute == 0 and per_day == 0:
+            return
+        now = time.time()
+        rows = [ts for ts in self._tts_submits.get(tenant, []) if now - ts < 86400]
+        if per_minute and sum(1 for ts in rows if now - ts < 60) >= per_minute:
+            raise ApiError(429, "TTS_QUOTA_EXCEEDED",
+                           f"该租户每分钟最多合成 {per_minute} 次，请稍后重试", retryable=True)
+        if per_day and len(rows) >= per_day:
+            raise ApiError(429, "TTS_QUOTA_EXCEEDED",
+                           f"该租户每日最多合成 {per_day} 次，请稍后重试", retryable=True)
+        rows.append(now)
+        self._tts_submits[tenant] = rows
+
     async def submit(self, req: TaskSubmitRequest, idempotency_key: str, request_id: str) -> tuple[dict, bool]:
         """返回 (任务视图, 是否新建)。相同键相同载荷 → 返回既有任务；不同载荷 → 409。"""
         digest = _payload_digest(req)
@@ -279,6 +304,8 @@ class TaskService:
 
         if self._queue.full():
             raise queue_full()
+        if req.task_type == TaskType.TTS:
+            self._consume_tts_quota(req.tenant_id)
 
         now = _now()
         task: dict = {
@@ -375,7 +402,7 @@ class TaskService:
         """
         return task_id in self._streams
 
-    def open_stream(self, task_id: str) -> asyncio.Queue:
+    def open_stream(self, task_id: str, tenant: str = "") -> asyncio.Queue:
         """登记一个订阅者并返回**专属**队列（每次调用都是新队列）。
 
         为什么不能复用旧队列：手机端断网重连时，旧连接常常只是死链、服务端尚未感知，
@@ -383,9 +410,26 @@ class TaskService:
         一个取走 —— 抢到的是死连接就等于丢字。故新订阅者顶替旧的：旧队列收到
         `STREAM_SUPERSEDED` 后自行收尾，新连接独占后续增量。
         """
+        # 审计 M3：全局并发上限。每个任务最多一个队列，但仍可能有大量不同任务同时订阅；
+        # 超限直接拒绝新连接（客户端可退化为轮询），不能让慢连接无限占用内存/句柄。
+        limit = max(1, int(getattr(self.settings, "stream_max_connections", 64) or 64))
+        if len(self._streams) >= limit:
+            raise StreamCapacityExceeded(f"SSE connections reached limit {limit}")
+        tenant_key = (tenant or "").strip()
+        if tenant_key:
+            per_tenant = max(1, int(getattr(self.settings, "stream_max_connections_per_tenant", 3) or 3))
+            active_for_tenant = sum(
+                1 for tid, owner in self._stream_tenants.items()
+                if owner == tenant_key and tid != task_id
+            )
+            if active_for_tenant >= per_tenant:
+                raise StreamCapacityExceeded(
+                    f"tenant {tenant_key} SSE connections reached limit {per_tenant}"
+                )
         queue = streaming.new_queue()
         old = self._streams.get(task_id)
         self._streams[task_id] = queue
+        self._stream_tenants[task_id] = tenant_key
         if old is not None:
             try:
                 old.put_nowait(streaming.STREAM_SUPERSEDED)
@@ -419,6 +463,7 @@ class TaskService:
         if queue is not None and current is not queue:
             return
         self._streams.pop(task_id, None)
+        self._stream_tenants.pop(task_id, None)
         try:
             current.put_nowait(streaming.STREAM_END)
         except asyncio.QueueFull:

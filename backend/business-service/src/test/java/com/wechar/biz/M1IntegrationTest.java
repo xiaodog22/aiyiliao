@@ -82,7 +82,7 @@ class M1IntegrationTest {
                         .header("X-Client-Version", "dev")
                         .header("X-Platform", "wechat-miniprogram")
                         .header("X-Request-Id", "m1-test-login-0001")
-                        .content("{\"code\":\"dev-code-alpha\",\"consentVersion\":\"v1\"}"))
+                        .content("{\"code\":\"dev-code-alpha\",\"consentVersion\":\"v1.0\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value("OK"))
                 .andExpect(jsonPath("$.data.accessToken").value(
@@ -101,7 +101,7 @@ class M1IntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-Client-Version", "dev")
                         .header("X-Platform", "wechat-miniprogram")
-                        .content("{\"code\":\"dev-code-1\",\"consentVersion\":\"v1\",\"clientType\":\"mp\"}"))
+                        .content("{\"code\":\"dev-code-1\",\"consentVersion\":\"v1.0\",\"clientType\":\"mp\"}"))
                 .andExpect(status().isBadRequest());
     }
 

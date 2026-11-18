@@ -106,3 +106,7 @@ def not_found(message: str = "路径不存在") -> ApiError:
 
 def unauthorized(message: str = "未登录或登录态无效") -> ApiError:
     return ApiError(401, "UNAUTHORIZED", message, retryable=False)
+
+
+def forbidden(message: str = "当前账号无权访问该资源") -> ApiError:
+    return ApiError(403, "FORBIDDEN", message, retryable=False)
