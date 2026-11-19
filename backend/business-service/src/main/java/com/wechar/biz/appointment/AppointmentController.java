@@ -94,8 +94,11 @@ public class AppointmentController {
     public ResponseEntity<Envelope<AppointmentData>> patch(
             @PathVariable String appointmentId,
             @Valid @RequestBody AppointmentUpdateRequest request) {
+        // 审计 F-01（2026-11-19）：对象级归属校验必须发生在服务层，身份只能取自会话；
+        // 此前 patch(id, request) 未带 userId，任意登录用户可读改他人预约。
+        String userId = authService.ensureUser(currentUserContext.currentUserId());
         return ResponseEntity.ok(Envelope.ok(RequestIds.current(),
-                appointmentService.patch(appointmentId, request)));
+                appointmentService.patch(userId, appointmentId, request)));
     }
 
     /**

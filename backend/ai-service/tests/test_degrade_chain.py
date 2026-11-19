@@ -267,3 +267,10 @@ def test_invalid_store_encryption_key_rejected_at_startup(tmp_path):
     with pytest.raises(RuntimeError, match="AI_STORE_ENCRYPTION_KEY"):
         settings.validate_security()
 
+
+def test_store_encryption_required_but_missing_key_rejected(tmp_path):
+    """F-03：生产置 AI_STORE_REQUIRE_ENCRYPTION=true 时，缺 key 必须拒绝启动。"""
+    settings = _settings(tmp_path, store_require_encryption=True)
+    with pytest.raises(RuntimeError, match="AI_STORE_REQUIRE_ENCRYPTION"):
+        settings.validate_security()
+

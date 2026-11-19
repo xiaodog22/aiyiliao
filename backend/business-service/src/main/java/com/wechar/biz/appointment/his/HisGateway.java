@@ -25,8 +25,11 @@ public class HisGateway {
 
     private static final Logger log = LoggerFactory.getLogger(HisGateway.class);
 
-    /** 仅允许 mock（V1.20）；sandbox/live 需先过 PRODUCTION_GATE 与真实凭据评审。 */
-    private static final Set<String> SUPPORTED_MODES = Set.of("mock");
+    /**
+     * 允许 mock（默认，无外部调用）与 http（仅指向本地社区诊所演示系统 clinic-his）；
+     * sandbox/live 需先过 PRODUCTION_GATE 与真实凭据评审。
+     */
+    private static final Set<String> SUPPORTED_MODES = Set.of("mock", "http");
 
     private final HisClient client;
     private final boolean enabled;
@@ -40,7 +43,7 @@ public class HisGateway {
         this.mode = mode == null ? "mock" : mode.trim().toLowerCase();
         // fail-fast：配了不支持的 mode 就直接启动失败，避免「以为接了沙箱、实际走 mock」
         if (enabled && !SUPPORTED_MODES.contains(this.mode)) {
-            throw new IllegalStateException("app.his.mode 不支持: " + mode + "（V1.20 仅支持 mock）");
+            throw new IllegalStateException("app.his.mode 不支持: " + mode + "（支持 mock / http）");
         }
     }
 

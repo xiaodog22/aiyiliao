@@ -70,6 +70,25 @@ public class BedRepository {
         return jdbc.query(BED_SELECT + " AND b.id = ?", BedRepository::map, bedId).stream().findFirst();
     }
 
+    /**
+     * 护士站床位列表（2026-11-19）：按病区/状态过滤，不依赖医生授权病区。
+     * 终端令牌已证明操作者在本病区，故不再套 listBeds 的 authorizedWardIds 白名单。
+     */
+    public List<BedRow> listBedsByWard(String wardId, String status) {
+        StringBuilder sql = new StringBuilder(BED_SELECT);
+        List<Object> args = new java.util.ArrayList<>();
+        if (wardId != null && !wardId.isBlank()) {
+            sql.append(" AND b.ward_id = ?");
+            args.add(wardId);
+        }
+        if (status != null && !status.isBlank()) {
+            sql.append(" AND b.status = ?");
+            args.add(status);
+        }
+        sql.append(" ORDER BY b.ward_id, b.label");
+        return jdbc.query(sql.toString(), BedRepository::map, args.toArray());
+    }
+
     /** 床位所属科室（越权判定：与医生科室不一致 → 按 404 处理，不泄露他人资源）。 */
     public Optional<String> findBedDepartmentId(String bedId) {
         return jdbc.query("SELECT w.department_id FROM beds b, wards w WHERE b.ward_id = w.id AND b.id = ?",

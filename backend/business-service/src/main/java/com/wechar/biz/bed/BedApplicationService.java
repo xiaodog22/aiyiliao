@@ -176,6 +176,83 @@ public class BedApplicationService {
                 .stream().map(BedApplicationService::toData).toList();
     }
 
+    /** 护士站终端：按状态 + 可选病区列待审申请（2026-11-19）。 */
+    @Transactional(readOnly = true)
+    public List<BedApplicationData> listForNurse(String status, String wardId) {
+        String s = blankToNull(status);
+        if (s == null) {
+            s = "PENDING";
+        }
+        if (!Set.of("PENDING", "APPROVED", "REJECTED", "CANCELLED").contains(s)) {
+            throw new ApiException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY,
+                    "status 只能是 PENDING / APPROVED / REJECTED / CANCELLED");
+        }
+        String w = blankToNull(wardId);
+        List<BedApplicationRepository.ApplicationRow> rows = w == null
+                ? applicationRepository.listByStatus(s, LIST_LIMIT)
+                : applicationRepository.listByStatusAndWard(s, w, LIST_LIMIT);
+        return rows.stream().map(BedApplicationService::toData).toList();
+    }
+
+    /**
+     * 护士站终端审批（2026-11-19）：在 {@link #review} 之上增加病区范围校验与排床逻辑。
+     *  · wardId 非空时，申请单病区必须与终端病区一致，否则 403（防止跨病区批床）；
+     *  · 通过时可传 bedId：申请单没有床/需要改床时，先写入 bed_id，再走 review 落床；
+     *  · 申请单和请求都没有 bedId → 422（避免出现“批了但没床”的悬空状态）；
+     *  · 床位必须属于申请病区且当前 AVAILABLE；占用冲突由 review 的乐观锁兜底转 409；
+     *  · 驳回必须填原因（控制器已校验，这里再兜底一次）。
+     */
+    @Transactional
+    public BedApplicationData reviewForNurse(String applicationId, String decision, String note,
+                                             String reviewer, String wardId, String bedId) {
+        BedApplicationRepository.ApplicationRow app = applicationRepository.findById(applicationId)
+                .orElseThrow(() -> new ApiException("APPLICATION_NOT_FOUND", HttpStatus.NOT_FOUND,
+                        "床位申请不存在"));
+        String scope = blankToNull(wardId);
+        if (scope != null && !scope.equals(app.wardId())) {
+            throw new ApiException("FORBIDDEN", HttpStatus.FORBIDDEN,
+                    "该申请不属于当前护士站病区，不能跨病区审批");
+        }
+        String d = decision == null ? "" : decision.trim().toUpperCase();
+        if ("APPROVED".equals(d)) {
+            String appWard = blankToNull(app.wardId());
+            if (appWard == null) {
+                throw new ApiException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY,
+                        "该申请未指定病区，护士站无法排床；请医生补充病区后重新提交");
+            }
+            String pickedBed = blankToNull(bedId);
+            String effectiveBed = pickedBed != null ? pickedBed : blankToNull(app.bedId());
+            if (effectiveBed == null) {
+                throw new ApiException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY,
+                        "该申请尚未排床，请在通过时选择床位（bedId）");
+            }
+            BedRepository.BedRow bed = bedRepository.findBed(effectiveBed)
+                    .orElseThrow(() -> new ApiException("BED_NOT_FOUND", HttpStatus.NOT_FOUND,
+                            "床位不存在：" + effectiveBed));
+            if (!appWard.equals(bed.wardId())) {
+                throw new ApiException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY,
+                        "床位 " + effectiveBed + " 不属于申请病区 " + appWard + "，不能跨病区排床");
+            }
+            if (!"AVAILABLE".equals(bed.status())) {
+                throw new ApiException("BED_STATE_CONFLICT", HttpStatus.CONFLICT,
+                        "床位当前不可用（状态 " + bed.status() + "），请改派其他床位", false,
+                        List.of(new GlobalExceptionHandler.ErrorDetail(
+                                "bedId", "床位状态 " + bed.status() + " 不可用", "BED_STATE_CONFLICT")));
+            }
+            if (pickedBed != null && !pickedBed.equals(app.bedId())) {
+                if (!applicationRepository.assignBed(applicationId, pickedBed, clock.instant())) {
+                    throw new ApiException("APPLICATION_STATE_CONFLICT", HttpStatus.CONFLICT,
+                            "该申请已被其他护士站处理，请刷新后重试");
+                }
+            }
+        }
+        if ("REJECTED".equals(d) && (note == null || note.isBlank())) {
+            throw new ApiException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY,
+                    "驳回必须填写原因");
+        }
+        return review(applicationId, d, note, reviewer);
+    }
+
     /**
      * 审批：PENDING → APPROVED / REJECTED。
      * APPROVED 且申请带 bedId 时先落床；床位已被占用 → 409，整笔回滚，申请保持 PENDING。

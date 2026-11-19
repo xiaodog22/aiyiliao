@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>康诊云 · 护士站床位审批</title>
+<style>
+  :root {
+    --brand: #0B6EF8;
+    --brand-dark: #084FB3;
+    --bg: #F4F7FB;
+    --panel: #FFFFFF;
+    --ink: #1B2A3A;
+    --muted: #6B7C8F;
+    --line: #E3EAF2;
+    --ok: #1E8449;
+    --warn: #B26A00;
+    --danger: #C0392B;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 14px;
+  }
+  header {
+    background: linear-gradient(135deg, #0B1F33, #102B45);
+    color: #fff;
+    padding: 20px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .02em; }
+  header .sub { color: #A9C3D9; font-size: 12.5px; margin-top: 4px; }
+  main { max-width: 1240px; margin: 22px auto 48px; padding: 0 20px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: 0 2px 8px rgba(16, 34, 46, .06);
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+  .setup { display: grid; grid-template-columns: 1.4fr .8fr auto auto; gap: 10px; align-items: end; }
+  .field label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
+  input, select {
+    width: 100%;
+    min-height: 38px;
+    border: 1px solid #D7E2EA;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 14px;
+    color: var(--ink);
+    background: #fff;
+  }
+  input:focus, select:focus { outline: 2px solid #BFD8FF; border-color: var(--brand); }
+  .btn {
+    min-height: 38px;
+    border: 1px solid #D7E2EA;
+    border-radius: 8px;
+    background: #fff;
+    color: var(--ink);
+    padding: 8px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--brand); color: var(--brand-dark); }
+  .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .btn.primary:hover { background: var(--brand-dark); color: #fff; }
+  .btn.danger { color: var(--danger); border-color: #EBC1BC; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .stats { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .stat {
+    flex: 1 1 180px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .stat .label { color: var(--muted); font-size: 12.5px; }
+  .stat .value { font-size: 26px; font-weight: 600; margin-top: 4px; letter-spacing: -.02em; }
+  .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .toolbar h2 { font-size: 15px; margin: 0; }
+  .toolbar .right { display: flex; gap: 8px; align-items: center; }
+  .hint { color: var(--muted); font-size: 12.5px; }
+  .error { color: var(--danger); font-size: 13px; margin-top: 8px; white-space: pre-wrap; }
+  .ok { color: var(--ok); font-size: 13px; margin-top: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 10px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+  th { background: #F5F9FD; color: #35505F; font-weight: 600; position: sticky; top: 0; }
+  tr:hover td { background: #F7FBFF; }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 500; }
+  .badge.PENDING { background: #FFF3DF; color: #8A5200; }
+  .badge.APPROVED { background: #E6F6EC; color: #176B3C; }
+  .badge.REJECTED { background: #FDE8E5; color: #A93226; }
+  .badge.URGENT { background: #FDE8E5; color: #A93226; }
+  .badge.NORMAL { background: #E7F0FF; color: #0B5CD6; }
+  .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .empty { padding: 34px 12px; text-align: center; color: var(--muted); }
+  .foot { color: var(--muted); font-size: 12px; margin-top: 12px; line-height: 1.6; }
+  @media (max-width: 860px) {
+    .setup { grid-template-columns: 1fr; }
+    table { font-size: 12.5px; }
+    th:nth-child(4), td:nth-child(4), th:nth-child(5), td:nth-child(5) { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>康诊云 · 护士站床位审批</h1>
+    <div class="sub">医生提交申请 → 护士站核验病区与床位 → 通过/驳回（全程留痕）</div>
+  </div>
+  <div class="sub">终端令牌模式 · 仅床位审批</div>
+</header>
+<main>
+  <section class="card">
+    <div class="setup">
+      <div class="field">
+        <label for="token">护士站终端令牌</label>
+        <input id="token" type="password" placeholder="由信息科配置的 NURSE_STATION_TOKEN" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="ward">病区 ID（可选，建议填写）</label>
+        <input id="ward" placeholder="如 W01；填写后只能审本病区">
+      </div>
+      <button class="btn primary" id="connect">连接并刷新</button>
+      <button class="btn" id="clear">清空令牌</button>
+    </div>
+    <div id="setup-error" class="error"></div>
+    <div class="hint" style="margin-top:10px">令牌只保存在本机 sessionStorage，关闭页面即失效；不要把令牌写进代码或群聊。</div>
+  </section>
+
+  <div class="stats">
+    <div class="stat"><div class="label">待审批</div><div class="value" id="stat-pending">—</div></div>
+    <div class="stat"><div class="label">本病区待审批</div><div class="value" id="stat-ward">—</div></div>
+    <div class="stat"><div class="label">空闲床位</div><div class="value" id="stat-beds">—</div></div>
+    <div class="stat"><div class="label">当前筛选</div><div class="value" id="stat-status" style="font-size:18px">—</div></div>
+  </div>
+
+  <section class="card">
+    <div class="toolbar">
+      <h2>空闲床位</h2>
+      <span class="hint" id="bed-count">—</span>
+    </div>
+    <div style="overflow:auto; max-height:230px">
+      <table>
+        <thead>
+          <tr><th>床位 ID</th><th>病区</th><th>床位</th><th>状态</th></tr>
+        </thead>
+        <tbody id="bed-rows">
+          <tr><td colspan="4" class="empty">连接后显示当前病区的空闲床位</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="hint" style="margin-top:8px">通过申请时填写这里的床位 ID；只显示 `AVAILABLE` 床位，占用/清洁/停用不出现在列表。</div>
+  </section>
+
+  <section class="card">
+    <div class="toolbar">
+      <h2>床位申请列表</h2>
+      <div class="right">
+        <select id="status" style="width:130px">
+          <option value="PENDING">待审批</option>
+          <option value="APPROVED">已通过</option>
+          <option value="REJECTED">已驳回</option>
+          <option value="CANCELLED">已撤销</option>
+        </select>
+        <button class="btn" id="refresh">刷新</button>
+      </div>
+    </div>
+    <div id="error" class="error"></div>
+    <div id="success" class="ok"></div>
+    <div style="overflow:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>申请号</th>
+            <th>患者</th>
+            <th>申请医生</th>
+            <th>病区 / 床位</th>
+            <th>优先级</th>
+            <th>申请理由</th>
+            <th>状态</th>
+            <th>提交时间</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr><td colspan="9" class="empty">请先填写终端令牌并点击「连接并刷新」</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="foot">
+      通过时填写床位 ID 即可排床/改床；系统会校验床位属于本病区且为空闲。<br>
+      驳回必须填写原因，医生会在「我的床位申请」看到意见并补充材料。
+    </div>
+  </section>
+</main>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const tokenInput = $('token');
+  const wardInput = $('ward');
+  const statusSelect = $('status');
+  const rows = $('rows');
+  const bedRows = $('bed-rows');
+  const bedCount = $('bed-count');
+  const errorBox = $('error');
+  const successBox = $('success');
+  const setupError = $('setup-error');
+
+  tokenInput.value = sessionStorage.getItem('nurse.station.token') || '';
+  wardInput.value = sessionStorage.getItem('nurse.station.ward') || '';
+
+  function esc(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function fmt(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return esc(value);
+    const p = (n) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' +
+      p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  function token() {
+    return tokenInput.value.trim();
+  }
+
+  function headers() {
+    const h = { 'Content-Type': 'application/json' };
+    if (token()) h['X-Nurse-Station-Token'] = token();
+    return h;
+  }
+
+  function query() {
+    const params = new URLSearchParams();
+    params.set('status', statusSelect.value);
+    if (wardInput.value.trim()) params.set('wardId', wardInput.value.trim());
+    return params.toString();
+  }
+
+  function showError(message) {
+    errorBox.textContent = message || '';
+    successBox.textContent = '';
+  }
+
+  function showSuccess(message) {
+    successBox.textContent = message || '';
+    errorBox.textContent = '';
+  }
+
+  async function request(method, path, body) {
+    const res = await fetch(path, {
+      method,
+      headers: headers(),
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    let payload = null;
+    try { payload = await res.json(); } catch (e) { payload = null; }
+    if (!res.ok || (payload && payload.code && payload.code !== 'OK')) {
+      const message = (payload && payload.message) || ('请求失败（HTTP ' + res.status + '）');
+      const err = new Error(message);
+      err.status = res.status;
+      throw err;
+    }
+    return payload ? payload.data : null;
+  }
+
+  function render(list) {
+    if (!list || !list.length) {
+      rows.innerHTML = '<tr><td colspan="9" class="empty">当前没有符合条件的申请</td></tr>';
+      return;
+    }
+    rows.innerHTML = list.map((item) => {
+      const pending = item.status === 'PENDING';
+      const hasBed = Boolean(item.bedId);
+      return '<tr>' +
+        '<td>' + esc(item.id) + '</td>' +
+        '<td><strong>' + esc(item.patientDisplayName || '—') + '</strong></td>' +
+        '<td>' + esc(item.doctorName || '—') + '<br><span class="hint">' + esc(item.departmentId || '') + '</span></td>' +
+        '<td>' + esc(item.wardName || item.wardId || '—') + '<br><span class="hint">' + esc(item.bedLabel || (hasBed ? item.bedId : '未排床')) + '</span></td>' +
+        '<td><span class="badge ' + esc(item.priority || 'NORMAL') + '">' + (item.priority === 'URGENT' ? '紧急' : '普通') + '</span></td>' +
+        '<td style="max-width:260px;white-space:normal">' + esc(item.reason || '—') + '</td>' +
+        '<td><span class="badge ' + esc(item.status) + '">' + esc(statusText(item.status)) + '</span>' +
+          (item.reviewNote ? '<br><span class="hint">' + esc(item.reviewNote) + '</span>' : '') + '</td>' +
+        '<td>' + fmt(item.createdAt) + '</td>' +
+        '<td>' + (pending
+          ? '<div class="actions">' +
+              '<button class="btn primary" data-approve="' + esc(item.id) + '" data-bed="' + esc(item.bedId || '') + '">通过</button>' +
+              '<button class="btn danger" data-reject="' + esc(item.id) + '">驳回</button>' +
+            '</div>'
+          : '<span class="hint">已处理</span>') + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  function renderBeds(list) {
+    const beds = list || [];
+    bedCount.textContent = beds.length ? (beds.length + ' 张可用') : '无可用床位';
+    $('stat-beds').textContent = String(beds.length);
+    if (!beds.length) {
+      bedRows.innerHTML = '<tr><td colspan="4" class="empty">当前病区没有 AVAILABLE 床位，请先处理出院/清洁</td></tr>';
+      return;
+    }
+    bedRows.innerHTML = beds.map((bed) =>
+      '<tr>' +
+        '<td><code style="font-family:ui-monospace,Consolas,monospace">' + esc(bed.id) + '</code></td>' +
+        '<td>' + esc(bed.wardName || bed.wardId || '—') + '</td>' +
+        '<td>' + esc(bed.label || '—') + '</td>' +
+        '<td><span class="badge AVAILABLE">空闲</span></td>' +
+      '</tr>').join('');
+  }
+
+  async function loadBeds() {
+    const params = new URLSearchParams();
+    params.set('status', 'AVAILABLE');
+    if (wardInput.value.trim()) params.set('wardId', wardInput.value.trim());
+    try {
+      const beds = await request('GET', '/api/v1/nurse/beds?' + params.toString());
+      renderBeds(beds || []);
+    } catch (err) {
+      bedRows.innerHTML = '<tr><td colspan="4" class="empty">床位列表加载失败：' + esc(err.message) + '</td></tr>';
+      bedCount.textContent = '—';
+      $('stat-beds').textContent = '—';
+    }
+  }
+
+  function statusText(status) {
+    return ({ PENDING: '待审批', APPROVED: '已通过', REJECTED: '已驳回', CANCELLED: '已撤销' })[status] || status || '—';
+  }
+
+  async function load() {
+    if (!token()) {
+      setupError.textContent = '请先填写护士站终端令牌';
+      return;
+    }
+    setupError.textContent = '';
+    showError('');
+    await loadBeds();
+    try {
+      const data = await request('GET', '/api/v1/nurse/bed-applications?' + query());
+      render(data || []);
+      $('stat-pending').textContent = statusSelect.value === 'PENDING' ? String((data || []).length) : '—';
+      $('stat-ward').textContent = wardInput.value.trim()
+        ? String((data || []).filter((x) => x.wardId === wardInput.value.trim()).length) : '—';
+      $('stat-status').textContent = statusText(statusSelect.value);
+    } catch (err) {
+      if (err.status === 403) setupError.textContent = '令牌无效或已过期，请向信息科确认';
+      else if (err.status === 503) setupError.textContent = err.message;
+      else showError(err.message);
+    }
+  }
+
+  async function review(id, decision, currentBed) {
+    if (!token()) { setupError.textContent = '请先填写护士站终端令牌'; return; }
+    const isApprove = decision === 'APPROVED';
+    let bedId = '';
+    if (isApprove) {
+      const picked = window.prompt('床位 ID（该申请未排床时必填；已有床位可直接确定）', currentBed || '');
+      if (picked === null) return;
+      bedId = picked.trim();
+      if (!bedId) { showError('通过前必须指定床位 ID'); return; }
+    }
+    const note = window.prompt(isApprove ? '排床说明（可选，直接确定即可）' : '驳回原因（必填）', '');
+    if (note === null) return;
+    if (!isApprove && !note.trim()) { showError('驳回必须填写原因'); return; }
+    try {
+      const path = '/api/v1/nurse/bed-applications/' + encodeURIComponent(id) +
+        (isApprove ? '/approve' : '/reject') +
+        (wardInput.value.trim() ? ('?wardId=' + encodeURIComponent(wardInput.value.trim())) : '');
+      await request('POST', path, isApprove ? { bedId: bedId, note: note.trim() } : { note: note.trim() });
+      showSuccess((isApprove ? '已通过：' : '已驳回：') + id);
+      await load();
+    } catch (err) {
+      showError(err.message);
+    }
+  }
+
+  $('connect').addEventListener('click', () => {
+    sessionStorage.setItem('nurse.station.token', token());
+    sessionStorage.setItem('nurse.station.ward', wardInput.value.trim());
+    load();
+  });
+  $('clear').addEventListener('click', () => {
+    sessionStorage.removeItem('nurse.station.token');
+    sessionStorage.removeItem('nurse.station.ward');
+    tokenInput.value = '';
+    wardInput.value = '';
+    rows.innerHTML = '<tr><td colspan="9" class="empty">令牌已清空</td></tr>';
+  });
+  $('refresh').addEventListener('click', load);
+  statusSelect.addEventListener('change', load);
+  rows.addEventListener('click', (event) => {
+    const approve = event.target.closest('[data-approve]');
+    const reject = event.target.closest('[data-reject]');
+    if (approve) review(approve.dataset.approve, 'APPROVED', approve.dataset.bed || '');
+    if (reject) review(reject.dataset.reject, 'REJECTED');
+  });
+})();
+</script>
+</body>
+</html>

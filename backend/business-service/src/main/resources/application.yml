@@ -108,12 +108,37 @@ app:
     careplan-profile: ${APP_AI_CAREPLAN_PROFILE:large-upgrade}
   # HIS 受限接入（REQ-14，V1.20）：
   #   enabled 默认 **false** —— 关闭时不触达任何外部系统，预约按 LOCAL_DEMO 落库、页面标「演示预约」。
-  #   开启后仅允许 mock 适配器（生成 HIS-MOCK-* 模拟单号）；sandbox/live 需先过
-  #   PRODUCTION_GATE.md 与真实凭据评审，配了不支持的 mode 会启动失败（fail-fast，不静默降级）。
+  #   mode 支持两种（互斥，由 @ConditionalOnProperty 保证只装配一个 HisClient Bean）：
+  #     mock = 进程内模拟单号 HIS-MOCK-*（默认）；
+  #     http = 指向本地社区诊所演示系统 clinic-his（clinic-his/，默认 :8310）做真实 HTTP 联调。
+  #   sandbox/live 仍属未开放档：需先过 PRODUCTION_GATE.md 与真实凭据评审；
+  #   配了不支持的 mode 会启动失败（fail-fast，不静默降级）。
   #   受理失败 → 503 HIS_UNAVAILABLE，事务整体回滚（含号源扣减），绝不显示「预约成功」。
+  #   http 档联调步骤：
+  #     1) 启动诊所系统（clinic-his/start.bat 或 python -m app.main）；
+  #     2) 从 clinic-his/data/openapi-credentials.txt 取 appSecret；
+  #     3) 本服务环境变量：APP_HIS_ENABLED=true、APP_HIS_MODE=http、
+  #        APP_HIS_HTTP_APP_SECRET=<上一步的 secret>；base-url 默认 http://127.0.0.1:8310。
+  #   demo=true 时回执来源按 HIS_MOCK 下发（页面显示「演示预约」），不冒充实院受理；
+  #   接真实院方且完成评审后才可置 false（走 HIS_LIVE）。
   his:
     enabled: ${APP_HIS_ENABLED:false}
     mode: ${APP_HIS_MODE:mock}
+    http:
+      base-url: ${APP_HIS_HTTP_BASE_URL:http://127.0.0.1:8310}
+      app-id: ${APP_HIS_HTTP_APP_ID:wechar-mini}
+      # 缺省为空 = http 档启动即失败（fail-fast）；真实值只从运行环境注入，任何文件不得写入
+      app-secret: ${APP_HIS_HTTP_APP_SECRET:}
+      timeout-ms: ${APP_HIS_HTTP_TIMEOUT_MS:3000}
+      demo: ${APP_HIS_HTTP_DEMO:true}
+      # 主数据映射：主项目 dep-*/doc-* 与诊所 QK/D001 不同源，诊所返回 NOT_FOUND 时用这两个值重试一次
+      fallback-doctor-id: ${APP_HIS_HTTP_FALLBACK_DOCTOR_ID:D001}
+      fallback-department-id: ${APP_HIS_HTTP_FALLBACK_DEPARTMENT_ID:QK}
+  # 护士站终端令牌（2026-11-19）：仅用于床位申请审批端点，不携带患者身份。
+  # 未配置时 /api/v1/nurse/bed-applications 返回 503（fail-closed），不会退化成无鉴权审批。
+  # 生产应由独立护士账号 + RBAC 替换（见 docs/clinic-his-integration/02）。
+  nurse:
+    station-token: ${NURSE_STATION_TOKEN:}
   # 健康档案附件签名与限额（V9；2026-10-19 阶段一支持 mp4）
   # ⚠️ sign-secret 生产必须固定且多实例一致（2026-10-23 收口）：缺省空值时代码**启动即失败**
   #    （fail-fast，不再生成进程内随机密钥），必须用 APP_ATTACHMENT_SIGN_SECRET 注入强随机值。

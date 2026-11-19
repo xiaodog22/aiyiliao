@@ -79,6 +79,8 @@ services:
       AI_STORE_PATH: /app/runtime/tasks.json
       # 审计 M2：任务 result 正文静态加密；Fernet URL-safe base64 32 字节
       AI_STORE_ENCRYPTION_KEY: ${AI_STORE_ENCRYPTION_KEY:?必须注入 AI_STORE_ENCRYPTION_KEY（Fernet key）}
+      # 审计 F-03：活动任务的 inputInline 也必须加密；缺 key 直接拒绝启动
+      AI_STORE_REQUIRE_ENCRYPTION: "true"
       # ai 侧令牌必须与 business 侧同值，否则 business 全部调用 401（fail-fast 更好过静默零凭证）
       AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?必须注入 AI_SERVICE_TOKEN}
       AI_AUTH_MODE: static

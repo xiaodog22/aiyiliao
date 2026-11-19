@@ -83,6 +83,17 @@ public class BedApplicationRepository {
                 BedApplicationRepository::map, status, limit);
     }
 
+    /** 护士站终端：按状态 + 病区列待审申请（2026-11-19）。 */
+    public List<ApplicationRow> listByStatusAndWard(String status, String wardId, int limit) {
+        if (status == null || status.isBlank()) {
+            return jdbc.query(SELECT + "WHERE a.ward_id = ? ORDER BY a.created_at ASC, a.id ASC LIMIT ?",
+                    BedApplicationRepository::map, wardId, limit);
+        }
+        return jdbc.query(SELECT + "WHERE a.status = ? AND a.ward_id = ? "
+                        + "ORDER BY a.created_at ASC, a.id ASC LIMIT ?",
+                BedApplicationRepository::map, status, wardId, limit);
+    }
+
     public Optional<ApplicationRow> findById(String id) {
         return jdbc.query(SELECT + "WHERE a.id = ?", BedApplicationRepository::map, id).stream().findFirst();
     }
@@ -90,6 +101,17 @@ public class BedApplicationRepository {
     public Optional<ApplicationRow> findByIdempotencyKey(String key) {
         return jdbc.query(SELECT + "WHERE a.idempotency_key = ?", BedApplicationRepository::map, key)
                 .stream().findFirst();
+    }
+
+    /**
+     * 护士站排床（2026-11-19）：只允许对 PENDING 申请写 bed_id。
+     * 与审批同事务调用；若申请已被他人处理，返回 false，由调用方转 409。
+     */
+    public boolean assignBed(String id, String bedId, Instant now) {
+        int updated = jdbc.update("UPDATE bed_applications SET bed_id = ?, updated_at = ? "
+                        + "WHERE id = ? AND status = 'PENDING'",
+                bedId, Timestamp.from(now), id);
+        return updated == 1;
     }
 
     /** 审批落定：仅当仍是 PENDING 才写入（并发下第二个审批人拿不到行 → 409）。 */

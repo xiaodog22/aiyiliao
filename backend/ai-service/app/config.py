@@ -146,6 +146,11 @@ class Settings:
     store_encryption_key: str = field(
         default_factory=lambda: _env("AI_STORE_ENCRYPTION_KEY", "")
     )
+    # 审计 F-03（2026-11-19）：生产强制“快照必须加密”。compose/云部署置 true：
+    # 缺 key 直接拒绝启动，避免运维漏配后退化成明文 PHI。
+    store_require_encryption: bool = field(
+        default_factory=lambda: _env_bool("AI_STORE_REQUIRE_ENCRYPTION", False)
+    )
     result_ttl_seconds: int = field(default_factory=lambda: int(_env("AI_RESULT_TTL_SECONDS", "3600")))
     task_timeout_seconds: int = field(default_factory=lambda: int(_env("AI_TASK_TIMEOUT_SECONDS", "300")))
     queue_max: int = field(default_factory=lambda: int(_env("AI_QUEUE_MAX", "100")))
@@ -366,6 +371,8 @@ class Settings:
             raise RuntimeError("AI_TTS_MAX_DISK_MB 不得为负")
         if int(self.tts_tenant_per_minute) < 0 or int(self.tts_tenant_per_day) < 0:
             raise RuntimeError("AI_TTS_TENANT_PER_MINUTE / AI_TTS_TENANT_PER_DAY 不得为负")
+        if self.store_require_encryption and not (self.store_encryption_key or "").strip():
+            raise RuntimeError("AI_STORE_REQUIRE_ENCRYPTION=true 但未配置 AI_STORE_ENCRYPTION_KEY，拒绝启动")
         if (self.store_encryption_key or "").strip():
             try:
                 from cryptography.fernet import Fernet

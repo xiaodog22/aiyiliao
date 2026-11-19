@@ -101,8 +101,23 @@ docs/                 方案 / 契约 / 交付文档 / 手册 / 评审复盘 / �
 docs/screenshots/     界面截图
 tools/                构建与校验脚本（依赖、样式、契约、分页、包体门禁等）
 site/                 项目主页（单文件 HTML）
+clinic-his/           社区诊所演示系统（模拟医院 HIS，Python 标准库 + SQLite，独立运行 :8310）
 archive/              已退出活动链的本地归档（重复副本 / 旧产物 / 大备份包，不入库）
 ```
+
+### 社区诊所演示系统（clinic-his，2026-11-19）
+
+为验证预留的 HIS 对接接口，在根目录附带一套可独立运行的社区诊所系统（8 名医师 / 14 名护士 /
+6 名行政 + 2 名医技，13 科室）。零第三方依赖，双击 `clinic-his/start.bat`（或 `python -m app.main`）
+即启动于 `http://127.0.0.1:8310`，管理端按真实 HIS 业务域分 5 组导航（门诊／住院留观／药事／医技与公卫／运营与系统），
+提供角色工作台待办、统一患者全视图、三栏医生站（候诊／结构化病历／诊断医嘱）、合理用药提示、病历质控、
+留观床位与护理执行，以及药房、收费、医技、公卫、报表与审计；
+对外 `/openapi/v1/*` 提供 HMAC 签名、Idempotency-Key 幂等与撤销受理，对应 `HisClient#book/cancel`。
+后端已内置 `HttpHisClient`（`APP_HIS_MODE=http`）直接对接，联调三件套见
+[clinic-his/README.md](clinic-his/README.md) §八；回归：`python clinic-his/scripts/smoke_test.py`（98 项，
+自动使用隔离临时数据目录，可重复运行）。安全上已按审查报告修复越权读病历、过敏开方硬阻断、账号恢复与退费闭环；
+危急值报告会在工作台与医生站提示，并可一键引用回写病历。
+数据与接口密钥写入 `clinic-his/data/`，已加入 `.gitignore`。
 
 ### 包体基线（2026-11-05 质量面板整改后）
 
@@ -154,8 +169,10 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 ## 已知限制
 
 - 导诊、问诊结论来自本地规则引擎与大模型，属演示性质，不能替代医生面诊
-- 挂号流程用的是本地预约号，未对接医院 HIS；V1.20 只做**受限接入**（`HisClient` 接口 + Mock 适配器，
-  `app.his.enabled` 默认关闭，模拟单号前缀 `HIS-MOCK-`，不接真实凭据、不承诺真实号源），预约页与成功页标「演示预约」
+- 挂号流程用的是本地预约号，未对接医院 HIS；V1.20 只做**受限接入**（`HisClient` 接口 +
+  `mock` 适配器，`app.his.enabled` 默认关闭，模拟单号前缀 `HIS-MOCK-`，不接真实凭据、不承诺真实号源），
+  预约页与成功页标「演示预约」。另提供 `http` 档（`HttpHisClient`）**仅用于本地 clinic-his 联调**，
+  且 `app.his.http.demo` 默认 true、回执来源仍按 `HIS_MOCK` 下发，不构成真实受理
 - 电视投屏为本地模拟，DLNA / 局域网协议尚未接入
 - 院内导航为 1F 示意平面图，不是全院楼层
 - 语音能力按 `AI_DEGRADE_ENABLED` 总开关降级：开启=全链路（TTS：预生成→Qwen3→edge→WechatSI；ASR：本地 FunASR→WechatSI），
@@ -336,7 +353,7 @@ CI 见 **`.github/workflows/ci.yml`**（Java / ai / gateway / 前端 / 结构 / 
 | M5 头像枚举 | `GET /api/v1/avatars/{name}` 必须带 900s HMAC 短签（`expires`+`sig`）；裸文件名/过期/篡改 403，缓存改 `private, 15m` |
 | M11 同意版本 | 新增匿名 `GET /api/v1/consent/latest` + `APP_CONSENT_VERSION`；登录旧版本 409；前端新增独立同意页，版本与点击时间分别记录，`env.js` 不再写死版本 |
 | M12/M13/M14 会话 | `/auth/session` 派生会话上限 3 且写 `parent_session_id`；refresh TTL 24h；`whoami` 为服务端权威角色，`wb_role` 不再本地落盘；退出必须服务端 2xx 才清本地令牌 |
-| M2 静态加密 | `tasks.json` 的 `result` 正文用 Fernet 加密（`AI_STORE_ENCRYPTION_KEY`，生产 compose 必填）；终态剥离 `inputInline`；0600/0700；密钥不匹配/密文篡改时丢弃快照 |
+| M2 静态加密 | `tasks.json` 的 `result` 正文用 Fernet 加密（`AI_STORE_ENCRYPTION_KEY`，生产 compose 必填）；终态剥离 `inputInline`；**活动任务 `inputInline` 同 key 加密**（F-03）；`AI_STORE_REQUIRE_ENCRYPTION=true` 时缺 key 拒绝启动；0600/0700；密钥不匹配/密文篡改时丢弃快照 |
 | M3/M4 租户配额 | SSE 全局 64 + 单租户 3（`AI_STREAM_MAX_CONNECTIONS_PER_TENANT`）；TTS 2000 字/512MB + 租户 6 次/分、200 次/日（`AI_TTS_TENANT_PER_MINUTE/DAY`），超限 429 `TTS_QUOTA_EXCEEDED` |
 | M7 幂等键 | 服务端按 tenant 域化；前端 `newIdempotencyKey()` 固定生成 32 位小写 hex |
 
@@ -376,3 +393,13 @@ module.exports = {
 ## 许可
 
 [MIT](LICENSE)
+
+
+## 社区诊所 HIS 整合（2026-11-19）
+
+- 新增 `clinic-his/` 社区诊所演示 HIS（Python 标准库 + SQLite，管理端 8310）。
+- 整合结论：**HIS 为临床主数据源，平台为患者身份/触达主数据源；逻辑合并、物理分库**，不做 SQLite/MySQL 双写。
+- 已完成：OpenAPI 跨租户越权修复、患者嵌套资源权限收口、病历/处方/检查/缴费单 PDF 与打印、10 分钟签名链接、打印审计；护士站床位审批（`/api/v1/nurse/bed-applications` + `/nurse-station/index.html`，病区终端令牌模式）。
+- 护士站启用：启动 business-service 前设置 `NURSE_STATION_TOKEN`（至少 16 位随机串），打开 `http://127.0.0.1:8088/nurse-station/index.html`，填入令牌与病区 ID；通过申请时填床位 ID（已有床直接确定），系统校验病区归属与空闲状态后落床。
+- 设计文档：`docs/clinic-his-integration/00~04`。
+- 验证：`python -m py_compile` + 副本 8311 安全/PDF 回归；详见 `DEV_LOG.md` 2026-11-19。

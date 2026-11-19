@@ -3,6 +3,7 @@ package com.wechar.biz.appointment.his;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Component;
  * 任何人看到单号就能判断这是演示受理，不构成「已接 HIS」的误导。
  */
 @Component
+@ConditionalOnProperty(name = "app.his.mode", havingValue = "mock", matchIfMissing = true)
 public class MockHisClient implements HisClient {
 
     private static final Logger log = LoggerFactory.getLogger(MockHisClient.class);

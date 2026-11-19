@@ -303,6 +303,42 @@ class M1IntegrationTest {
     }
 
     @Test
+    void PATCH预约_他人预约_404且原数据不被篡改() throws Exception {
+        // 审计 F-01 回归：A 创建，B 拿同一个 appointmentId 改写 → 必须 404
+        String created = mockMvc.perform(post("/api/v1/appointments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-User-Id", "dev-user-1")
+                        .header("Idempotency-Key", "m1-test-key-f01")
+                        .content("{\"slotId\":\"slot-future-1\",\"patientName\":\"越权测试\","
+                                + "\"symptomSummary\":\"原始主诉\"}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        String id = extractId(created, "ap-");
+
+        String attackBody = mockMvc.perform(patch("/api/v1/appointments/" + id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-User-Id", "dev-user-2")
+                        .content("{\"version\":1,\"symptomSummary\":\"越权篡改\",\"contactPhone\":\"13900000000\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("APPOINTMENT_NOT_FOUND"))
+                .andExpect(jsonPath("$.message").value("预约不存在"))
+                .andExpect(jsonPath("$.data").doesNotExist())
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+        // 不泄露受害者姓名/主诉（404 不得变成“存在性预言机”）
+        org.assertj.core.api.Assertions.assertThat(attackBody)
+                .doesNotContain("越权测试").doesNotContain("原始主诉");
+
+        // 关键证明：攻击者没改成功 —— 本人仍可用 version=1 更新（若被篡改则 version 已变 2 → 409）
+        mockMvc.perform(patch("/api/v1/appointments/" + id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-User-Id", "dev-user-1")
+                        .content("{\"version\":1,\"symptomSummary\":\"本人更新\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.version").value(2))
+                .andExpect(jsonPath("$.data.symptomSummary").value("本人更新"));
+    }
+
+    @Test
     void 预约统计_三计数() throws Exception {
         mockMvc.perform(get("/api/v1/appointments/stats").header("X-User-Id", "dev-user-2"))
                 .andExpect(status().isOk())

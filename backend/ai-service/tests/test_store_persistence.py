@@ -127,3 +127,39 @@ def test_result_at_rest_encryption_roundtrip(tmp_path):
     asyncio.run(wrong.load())
     assert wrong.get("t1") is None
 
+
+def test_active_input_at_rest_encrypted_roundtrip(tmp_path):
+    """审计 F-03：QUEUED/RUNNING 需要重启续跑，但 inputInline 也必须以密文落盘。"""
+    from cryptography.fernet import Fernet
+
+    key = Fernet.generate_key().decode("ascii")
+    path = tmp_path / "tasks.json"
+    store = TaskStore(path, key)
+    store.tasks["t2"] = {
+        "taskId": "t2", "status": "RUNNING",
+        "inputInline": "胸痛两天，PHI-INPUT-SECRET",
+    }
+    assert asyncio.run(store.save()) is True
+    raw = path.read_text(encoding="utf-8")
+    assert "胸痛两天" not in raw
+    assert "PHI-INPUT-SECRET" not in raw
+
+    loaded = TaskStore(path, key)
+    asyncio.run(loaded.load())
+    assert loaded.get("t2")["inputInline"] == "胸痛两天，PHI-INPUT-SECRET", "同 key 必须能续跑"
+
+
+def test_encrypted_input_without_key_is_dropped_not_misread(tmp_path):
+    """审计 F-03：无密钥读取加密快照时，不得把密文 dict 当 inputInline 交给执行器。"""
+    from cryptography.fernet import Fernet
+
+    key = Fernet.generate_key().decode("ascii")
+    path = tmp_path / "tasks.json"
+    store = TaskStore(path, key)
+    store.tasks["t3"] = {"taskId": "t3", "status": "QUEUED", "inputInline": "病情原文"}
+    assert asyncio.run(store.save()) is True
+
+    plain = TaskStore(path)  # 未配置 key
+    asyncio.run(plain.load())
+    assert plain.get("t3")["inputInline"] is None
+

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>康诊云社区诊所信息系统</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <div id="boot" class="boot">正在加载…</div>
+
+  <section id="login" class="login hidden">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="logo">康</div>
+        <div>
+          <h1>康诊云社区诊所</h1>
+          <p>Clinic HIS · 社区诊所信息系统 V1.0</p>
+        </div>
+      </div>
+      <form id="login-form" autocomplete="off">
+        <label>账号
+          <input id="login-username" name="username" required maxlength="40" placeholder="如 doctor01">
+        </label>
+        <label>口令
+          <input id="login-password" name="password" type="password" required maxlength="64"
+                 placeholder="初始口令 Clinic@2026">
+        </label>
+        <button type="submit" class="btn primary block">登 录</button>
+        <p id="login-error" class="form-error"></p>
+      </form>
+      <div class="demo-accounts">
+        <p>演示账号（初始口令 <code>Clinic@2026</code>，点击填入）</p>
+        <div class="chips" id="demo-chips"></div>
+      </div>
+      <p class="login-foot">演示环境：数据均为虚构，请勿录入真实患者信息。</p>
+    </div>
+  </section>
+
+  <section id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand"><span class="logo small">康</span><span>社区诊所 HIS</span></div>
+      <nav id="nav"></nav>
+      <div class="sidebar-foot">等保 2.0 二级 · 演示版</div>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <h2 id="view-title" class="crumb">工作台</h2>
+        <div class="top-actions">
+          <div class="global-search">
+            <input id="global-search" type="search" placeholder="患者姓名 / 病历号" autocomplete="off" aria-label="全局患者搜索">
+            <div id="global-search-results" class="search-results hidden"></div>
+          </div>
+          <span id="whoami" class="role-badge"></span>
+          <button class="btn ghost" data-action="change-password">修改口令</button>
+          <button class="btn ghost" data-action="logout">退出</button>
+        </div>
+      </header>
+      <main id="content"></main>
+    </div>
+  </section>
+
+  <div id="modal-root"></div>
+  <div id="drawer-root"></div>
+  <div id="toast-root"></div>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

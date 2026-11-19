@@ -27,6 +27,7 @@ from cryptography.fernet import Fernet, InvalidToken
 
 _STORE_VERSION = 1
 _RESULT_ENC_MARKER = "__fernet_v1__"
+_INPUT_ENC_MARKER = "__fernet_input_v1__"
 
 #: 终态集合（与 tasks.TERMINAL 同义；此处独立定义避免 store ↔ tasks 循环导入）
 _TERMINAL_STATUSES = frozenset({"SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"})
@@ -119,15 +120,31 @@ class TaskStore:
     # ---- 任务 ----
 
     def _decrypt_tasks(self, tasks: dict) -> dict:
-        if self._fernet is None:
-            return tasks
+        """解密落盘的 result / inputInline。
+
+        审计 F-03（2026-11-19）：活动任务（QUEUED/RUNNING）的 inputInline 现在是密文；
+        无密钥时不能把密文当明文交给执行器，宁可丢弃该字段（任务会按 INVALID_INPUT 失败，
+        而不是带着乱码去推理）。
+        """
         out = {}
         for task_id, task in tasks.items():
             item = dict(task)
             result = item.get("result")
             if isinstance(result, dict) and result.get(_RESULT_ENC_MARKER) is not None:
-                payload = self._fernet.decrypt(str(result[_RESULT_ENC_MARKER]).encode("ascii"))
-                item["result"] = json.loads(payload.decode("utf-8"))
+                if self._fernet is None:
+                    item["result"] = None
+                    logger.warning("任务快照含加密 result 但未配置密钥，已丢弃该结果 task=%s", task_id)
+                else:
+                    payload = self._fernet.decrypt(str(result[_RESULT_ENC_MARKER]).encode("ascii"))
+                    item["result"] = json.loads(payload.decode("utf-8"))
+            inline = item.get("inputInline")
+            if isinstance(inline, dict) and inline.get(_INPUT_ENC_MARKER) is not None:
+                if self._fernet is None:
+                    item["inputInline"] = None
+                    logger.warning("任务快照含加密 inputInline 但未配置密钥，已丢弃该输入 task=%s", task_id)
+                else:
+                    payload = self._fernet.decrypt(str(inline[_INPUT_ENC_MARKER]).encode("ascii"))
+                    item["inputInline"] = payload.decode("utf-8")
             out[task_id] = item
         return out
 
@@ -137,13 +154,19 @@ class TaskStore:
         token = self._fernet.encrypt(json.dumps(result, ensure_ascii=False).encode("utf-8")).decode("ascii")
         return {_RESULT_ENC_MARKER: token}
 
-    def _tasks_for_disk(self) -> dict:
-        """落盘前的 PHI 收敛（审计 M2）。
+    def _input_for_disk(self, text):
+        """活动任务的原始输入（患者症状/多轮对话）静态加密；无密钥（dev/itest）原样保留。"""
+        if self._fernet is None:
+            return text
+        token = self._fernet.encrypt(str(text).encode("utf-8")).decode("ascii")
+        return {_INPUT_ENC_MARKER: token}
 
-        `tasks.json` 原先原样保存 `inputInline`（患者症状/对话原文），保留 24h 且无加密：
-        任何能读该文件的主机进程/运维动作都能拿到全量 PHI 时序档案。
-        终态任务不再需要 inputInline（不会被重新执行），因此落盘时剥掉；
-        QUEUED/RUNNING 仍保留 —— 那样重启后还能续跑，功能不受影响。
+    def _tasks_for_disk(self) -> dict:
+        """落盘前的 PHI 收敛（审计 M2 / F-03）。
+
+        - 终态任务不再需要 inputInline（不会被重新执行），落盘直接剥离；
+        - QUEUED/RUNNING 需要重启续跑，配置了 `AI_STORE_ENCRYPTION_KEY` 时改为 Fernet 密文，
+          磁盘上不再出现病情原文；未配置密钥仅限 dev/itest（生产由启动自检拒绝）。
         """
         out: dict = {}
         for task_id, task in self.tasks.items():
@@ -151,6 +174,9 @@ class TaskStore:
             if task.get("status") in _TERMINAL_STATUSES and task.get("inputInline") is not None:
                 item = dict(item)
                 item["inputInline"] = None
+            elif task.get("inputInline") is not None:
+                item = dict(item)
+                item["inputInline"] = self._input_for_disk(task["inputInline"])
             if self._fernet is not None and isinstance(item.get("result"), dict):
                 if item is task:
                     item = dict(item)

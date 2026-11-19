@@ -102,8 +102,19 @@ USER_DATA_GUARD = (
 
 
 def wrap_user_data(text: str) -> str:
-    """把不可信用户内容包进定界标签（与 USER_DATA_GUARD 配对使用）。"""
-    return f"<user_input>\n{text}\n</user_input>"
+    """把不可信用户内容包进定界标签（与 USER_DATA_GUARD 配对使用）。
+
+    审计 F-02（2026-11-19）：只加标签不转义，患者输入里的 `</user_input>` 会提前闭合
+    数据块，后续文本在模型看来就“回到指令区”。这里把 `&`/`<`/`>` 全部实体化，
+    保证定界符只由本函数产生；`&` 必须先替换，避免二次转义。
+    """
+    safe = (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+    return f"<user_input>\n{safe}\n</user_input>"
 
 
 def build_options(task: dict, *, temperature: float, num_predict: int) -> dict:

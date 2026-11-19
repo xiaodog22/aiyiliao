@@ -197,13 +197,17 @@ public class AppointmentService {
     /**
      * PATCH 更新（version 乐观锁 + 状态机）。
      * 仅 PENDING/CONFIRMED 可变更字段；CANCELLED/COMPLETED/… 终态 → 409。
+     *
+     * <p>审计 F-01（2026-11-19）：身份范围过滤必须先于任何字段读写——
+     * 他人/不存在的预约一律 404（不泄露存在性），与 cancel 同口径。</p>
      */
     @Transactional
-    public AppointmentData patch(String appointmentId, AppointmentUpdateRequest request) {
+    public AppointmentData patch(String userId, String appointmentId, AppointmentUpdateRequest request) {
         if (request.version() == null) {
             throw new ApiException("VERSION_REQUIRED", HttpStatus.BAD_REQUEST, "缺少必需字段 version（乐观锁）");
         }
         var view = repository.findViewById(appointmentId)
+                .filter(v -> userId.equals(v.appt().userId())) // 身份范围过滤（不泄露他人存在性）
                 .orElseThrow(() -> new ApiException("APPOINTMENT_NOT_FOUND", HttpStatus.NOT_FOUND, "预约不存在"));
         var row = view.appt();
         String status = row.status();
@@ -234,11 +238,12 @@ public class AppointmentService {
                 request.familyMemberId() != null ? request.familyMemberId() : row.familyMemberId(),
                 phoneCipher, row.status(), row.cancelReason(), clock.instant());
         if (!updated) {
+            // 审计 F-01（2026-11-19）：不再回显当前 version——旧文案让攻击者一次 409 就拿到
+            // 正确版本号，乐观锁对“已知预约 ID 的攻击者”形同虚设。
             throw new ApiException("VERSION_CONFLICT", HttpStatus.CONFLICT,
                     "版本不匹配（乐观锁），请刷新后重试", false,
                     List.of(new com.wechar.biz.common.GlobalExceptionHandler.ErrorDetail(
-                            "version", "当前 version=" + row.version() + "，请求 version=" + request.version(),
-                            "VERSION_CONFLICT")));
+                            "version", "版本已变化，请刷新后重试", "VERSION_CONFLICT")));
         }
         return toData(repository.findViewById(appointmentId).orElseThrow(), null);
     }

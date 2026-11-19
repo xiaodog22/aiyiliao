@@ -77,6 +77,8 @@ business ──> MySQL（独立 CDB，平台不支持容器内跑有状态服务
 | 变量 | 缺失后果 |
 |---|---|
 | `AI_SERVICE_TOKEN`（≥32 字符） | `AI_AUTH_MODE=static` 默认，空值 → **启动失败** |
+| `AI_STORE_ENCRYPTION_KEY`（Fernet URL-safe base64 32B） | 任务快照含患者原文/结果；置 `AI_STORE_REQUIRE_ENCRYPTION=true` 时缺失 → **启动失败** |
+| `AI_STORE_REQUIRE_ENCRYPTION` | 生产必须 `true`；与上项联动，缺 key 拒绝启动（防明文 PHI 落盘） |
 | `AI_DEEPSEEK_API_KEY` | 不阻断；第二级直接跳过，云上（连不到 Ollama）AI 只剩 business 规则兜底 |
 | `AI_TTS_PUBLIC_BASE` / `AI_TTS_PUBLIC_PATH` | 不阻断，但返回 `http://127.0.0.1:8001/...` → **TTS 100% 播不出** |
 | `AI_ASR_AUDIO_DIR` | 必须与 business 同路径，但两容器不同盘 → **云上 ASR 确定不可用** |

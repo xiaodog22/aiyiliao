@@ -176,3 +176,14 @@ miniprogram/tools/_assets_src/
 
 
 
+
+# ===== 社区诊所演示系统（clinic-his，2026-11-19）=====
+# 运行期数据库、接口密钥与备份产物不入库。
+/clinic-his/data/
+/clinic-his/backups/
+/clinic-his/app/__pycache__/
+/clinic-his/app/api/__pycache__/
+
+# 未修漏洞清单 / 审批审查报告不入库（Public 仓库，避免自曝风险面）
+/clinic-his/审批前审查报告.md
+/docs/安全审计_20261119_全仓代码级攻击面.md
