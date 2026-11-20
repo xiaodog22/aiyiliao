@@ -215,8 +215,9 @@ def main() -> int:
         target_ticket = checkin["queueNo"]
         hit = False
         for _ in range(10):
+            # force=True：跳过环境中残留的未处理叫号，保证测试可在非洁净库重复执行
             called = ok_data(*call("POST", "/api/v1/queue/call-next", token=nurse_token,
-                                   body={"deptId": slot["deptId"]}), "叫号")
+                                   body={"deptId": slot["deptId"], "force": True}), "叫号")
             current = called.get("called")
             if not current:
                 break
@@ -617,12 +618,17 @@ def main() -> int:
                            if c["refType"] == "REGISTRATION" and c["refId"] == reg4["id"])
         ok_data(*call("POST", "/api/v1/charges/pay", token=cashier_token,
                       body={"ids": [reg4_charge["id"]]}), "缴费丁")
+        director_token = login("admin01")
+        status, payload = call("POST", f"/api/v1/charges/{reg4_charge['id']}/refund",
+                               token=cashier_token, body={"reason": "本人收退分离测试"})
+        check("收费员退本人收的账被拒（403 SEPARATION_OF_DUTIES）",
+              status == 403 and payload.get("code") == "SEPARATION_OF_DUTIES", f"{status} {payload}")
         refunded_reg = ok_data(*call("POST", f"/api/v1/charges/{reg4_charge['id']}/refund",
-                                     token=cashier_token, body={"reason": "患者临时取消就诊"}),
-                               "挂号费退费")
+                                     token=director_token, body={"reason": "患者临时取消就诊"}),
+                               "主管退费")
         check("退费成功置为 REFUNDED", refunded_reg["status"] == "REFUNDED")
         status, payload = call("POST", f"/api/v1/charges/{reg4_charge['id']}/refund",
-                               token=cashier_token, body={"reason": "重复退费尝试"})
+                               token=director_token, body={"reason": "重复退费尝试"})
         check("重复退费被拒（400 STATE_CONFLICT）",
               status == 400 and payload.get("code") == "STATE_CONFLICT", f"{status} {payload}")
         regs = ok_data(*call("GET", f"/api/v1/registrations?date={today}", token=admin_token), "挂号列表")
@@ -656,13 +662,13 @@ def main() -> int:
               reg5_refund is not None and reg5_refund["status"] == "REFUNDED",
               json.dumps(refunded_list, ensure_ascii=False))
 
-        # 检查费已出报告不可退；药品费退费联动处方 REFUNDED 与药品回库
+        # 检查费已出报告不可退；药品费退费联动处方 REFUNDED 与药品回库（主管办理，避开收退分离）
         status, payload = call("POST", f"/api/v1/charges/{lab_charge['id']}/refund",
-                               token=cashier_token, body={"reason": "检查退费测试"})
+                               token=director_token, body={"reason": "检查退费测试"})
         check("已出报告检查费不可退（400）",
               status == 400 and payload.get("code") == "STATE_CONFLICT", f"{status} {payload}")
         drug_refund = ok_data(*call("POST", f"/api/v1/charges/{drug_charge['id']}/refund",
-                                    token=cashier_token, body={"reason": "患者要求退药"}),
+                                    token=director_token, body={"reason": "患者要求退药"}),
                               "药品费退费")
         check("药品费退费成功", drug_refund["status"] == "REFUNDED")
         rx_rows = ok_data(*call("GET", f"/api/v1/prescriptions?date={today}", token=pharmacist_token),
@@ -875,7 +881,7 @@ def main() -> int:
         checkin_ok(reg8["id"], "叫号甲")
         checkin_ok(reg9["id"], "叫号乙")
         called1 = ok_data(*call("POST", "/api/v1/queue/call-next", token=nurse_token,
-                                body={"deptId": slot["deptId"]}), "叫号甲")
+                                body={"deptId": slot["deptId"], "force": True}), "叫号甲")
         check("首次叫号成功", called1.get("called") is not None,
               json.dumps(called1, ensure_ascii=False))
         status, payload = call("POST", "/api/v1/queue/call-next", token=nurse_token,
