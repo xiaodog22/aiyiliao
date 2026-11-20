@@ -559,3 +559,27 @@ tr.abnormal td { background: #fff6f4; }
   .global-search input { width: 150px; }
   .role-badge { display: none; }
 }
+
+/* ---------------------------------------------------------------- AutoComplete 组件 */
+.ac-wrap { position: relative; display: inline-block; min-width: 160px; }
+.ac-wrap > input { width: 100%; }
+.ac-pop {
+  position: absolute; z-index: 60; top: calc(100% + 3px); left: 0; right: 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: var(--shadow); overflow-y: auto; max-height: 280px;
+}
+.ac-spacer { position: relative; }
+.ac-item {
+  position: absolute; left: 0; right: 0; height: 34px; line-height: 34px;
+  display: flex; align-items: center; gap: 10px; padding: 0 10px;
+  font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden;
+}
+.ac-item.sel { background: #e7f2f7; }
+.ac-item .ac-main { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.ac-item .ac-sub {
+  margin-left: auto; flex: 0 0 auto; color: var(--muted); font-size: 12px;
+  overflow: hidden; text-overflow: ellipsis; max-width: 55%;
+}
+.ac-item mark { background: #ffe58a; color: inherit; border-radius: 2px; }
+.ac-empty { padding: 10px 12px; color: var(--muted); font-size: 13px; display: flex; gap: 8px; align-items: center; }
+.ac-clear { border: 1px solid var(--line); background: #f6fafc; border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; }

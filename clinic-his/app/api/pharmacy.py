@@ -19,6 +19,7 @@ def list_drugs(ctx):
         "id": r["id"], "code": r["code"], "name": r["name"], "spec": r["spec"], "unit": r["unit"],
         "price": r["price"], "stock": r["stock"], "alertStock": r["alert_stock"],
         "category": r["category"], "antibioticLevel": r["antibiotic_level"],
+        "defaultRoute": r["default_route"], "defaultFreq": r["default_freq"],
         "controlled": bool(r["controlled"]), "status": r["status"],
         "lowStock": r["stock"] <= r["alert_stock"],
     } for r in rows]

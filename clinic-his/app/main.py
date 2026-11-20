@@ -30,6 +30,7 @@ STATIC_FILES = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/assets/app.js": ("app.js", "application/javascript; charset=utf-8"),
+    "/assets/autocomplete.js": ("autocomplete.js", "application/javascript; charset=utf-8"),
     "/assets/style.css": ("style.css", "text/css; charset=utf-8"),
     "/assets/print.css": ("print.css", "text/css; charset=utf-8"),
     "/assets/print.js": ("print.js", "application/javascript; charset=utf-8"),

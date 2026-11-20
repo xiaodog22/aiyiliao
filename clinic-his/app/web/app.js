@@ -506,8 +506,8 @@ async function viewRegistration() {
       <div class="panel-body">
         <div class="filter-bar">
           <label>就诊日期<input type="date" id="reg-date" value="${todayStr()}"></label>
-          <label>科室<select id="reg-dept">${deptOptions('')}</select></label>
-          <label>患者检索<input id="reg-patient-q" placeholder="姓名 / 病历号" style="min-width:150px"></label>
+          <label>科室<input id="reg-dept" placeholder="如 nk" style="min-width:150px" autocomplete="off"></label>
+          <label>患者检索<input id="reg-patient-q" placeholder="姓名 / 病历号 / 手机尾号" style="min-width:170px" autocomplete="off"></label>
           <button class="btn" id="reg-patient-search">搜索</button>
           <label style="min-width:230px">选择患者<select id="reg-patient"><option value="">加载中…</option></select></label>
           <label style="min-width:300px">号源<select id="reg-slot"><option value="">加载中…</option></select></label>
@@ -548,7 +548,7 @@ async function viewRegistration() {
 
   const loadSlots = async () => {
     const date = formVal('reg-date') || todayStr();
-    const deptId = formVal('reg-dept');
+    const deptId = document.getElementById('reg-dept').dataset.acValue || '';
     const rows = await api('GET', `/api/v1/schedules?date=${date}${deptId ? '&deptId=' + deptId : ''}`);
     const open = rows.filter(s => s.status === 'OPEN' && s.remaining > 0);
     $('#reg-slot').innerHTML = open.length
@@ -583,8 +583,33 @@ async function viewRegistration() {
   };
 
   $('#reg-patient-search').onclick = () => loadPatients().catch(err => toast(err.message, 'error'));
-  $('#reg-patient-q').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); loadPatients().catch(err => toast(err.message, 'error')); } };
-  $('#reg-dept').onchange = () => loadSlots().catch(err => toast(err.message, 'error'));
+  $('#reg-patient-q').onkeydown = e => { if (e.key === 'Enter' && !document.querySelector('.ac-pop:not(.hidden)')) { e.preventDefault(); loadPatients().catch(err => toast(err.message, 'error')); } };
+  // IDEA 式自动补全：科室（字典）/ 患者主索引（远程检索 + 失败降级缓存）
+  AutoComplete.attach($('#reg-dept'), {
+    items: () => state.depts || [],
+    label: d => d.name, code: d => String(d.id),
+    sub: d => d.code || '',
+    tabTarget: '#reg-patient-q',
+    emptyHint: '无匹配科室',
+    onPick: () => loadSlots().catch(err => toast(err.message, 'error')),
+  });
+  AutoComplete.attach($('#reg-patient-q'), {
+    remote: async q => await api('GET', `/api/v1/patients?q=${encodeURIComponent(q)}`),
+    label: p => p.name, code: p => p.mrn,
+    sub: p => `${p.mrn} · ${p.gender || ''}${p.age != null ? ' · ' + p.age + '岁' : ''}`,
+    value: p => `${p.mrn} ${p.name}`,
+    emptyHint: '无匹配患者，可点「搜索」按病历号建档后重试',
+    onPick: async p => {
+      const qEl = $('#reg-patient-q');
+      const shown = qEl.value;
+      qEl.value = p.mrn;                       // 按病历号精确刷新下拉
+      await loadPatients();
+      const sel = $('#reg-patient');
+      if ([...sel.options].some(o => o.value === String(p.id))) sel.value = String(p.id);
+      qEl.value = shown;
+      loadSlots().catch(() => {});
+    },
+  });
   $('#reg-date').onchange = () => { loadSlots(); loadTable(); };
   $('#reg-status').onchange = () => loadTable().catch(err => toast(err.message, 'error'));
   $('#reg-refresh').onclick = () => loadTable().catch(err => toast(err.message, 'error'));
@@ -1118,7 +1143,7 @@ function renderVisitSide(v) {
         ${editable ? `
           <div class="section-title">添加诊断</div>
           <div class="form-grid">
-            <label class="full">ICD-10<select id="sd-code">${icdOptions || '<option value="">无编码</option>'}</select></label>
+            <label class="full">ICD-10 诊断<input id="sd-code" placeholder="拼音简码 / 名称 / 编码，如 gxy" style="min-width:230px" autocomplete="off"></label>
             <label class="full">诊断说明<input id="sd-note" maxlength="500"></label>
             <label class="check-line"><input type="checkbox" id="sd-suspected"> 设为疑似</label>
           </div>
@@ -1134,9 +1159,7 @@ function renderVisitSide(v) {
       <div class="panel-body">
         ${editable ? `
           <div class="form-grid">
-            <label class="full">药品<select id="rx-drug">${(state.drugs || []).map(d =>
-              `<option value="${d.id}">${esc(d.name)} ${esc(d.spec)} · ${money(d.price)} / ${esc(d.unit)}${d.controlled ? '（管制）' : ''}${d.antibioticLevel ? '（' + esc(d.antibioticLevel) + '级抗菌）' : ''}</option>`
-            ).join('')}</select></label>
+            <label class="full">药品<input id="rx-drug" placeholder="拼音简码 / 名称 / 编码，如 aspl" style="min-width:230px" autocomplete="off"></label>
             <label>用法<input id="rx-dosage" placeholder="如 口服"></label>
             <label>频次<input id="rx-frequency" placeholder="如 一日三次"></label>
             <label>天数<input id="rx-days" type="number" min="1" max="30" value="3"></label>
@@ -1154,6 +1177,7 @@ function renderVisitSide(v) {
       <div class="panel-head"><h3>检查申请</h3></div>
       <div class="panel-body">
         ${editable ? `
+          <div class="lab-search-row"><input id="lab-search" placeholder="检索检查项目，如 xdt / 心" autocomplete="off" style="min-width:230px"></div>
           <div class="lab-picker" id="lab-picker">
             ${(state.labItems || []).map(i => `<label class="lab-item">
               <input type="checkbox" value="${esc(i.code)}"> ${esc(i.name)} ${money(i.price)}
@@ -1215,8 +1239,39 @@ function renderVisitSide(v) {
   };
 
   if (editable) {
+    // IDEA 式自动补全：诊断（ICD-10 字典）/ 药品（药品字典，选中联动用法频次）/ 检查项目检索
+    AutoComplete.attach($('#sd-code'), {
+      items: () => state.icd || [],
+      label: d => d.name, code: d => d.code,
+      sub: d => `${d.code}${d.category ? ' · ' + d.category : ''}`,
+      emptyHint: '无匹配诊断，可输入编码前缀或拼音简码',
+    });
+    AutoComplete.attach($('#rx-drug'), {
+      items: () => (state.drugs || []).filter(d => d.status === 'ACTIVE'),
+      label: d => d.name, code: d => d.code,
+      sub: d => `${d.spec} · ${money(d.price)}/${d.unit} · 库存${d.stock}${d.antibioticLevel ? ' · ' + d.antibioticLevel + '级抗菌' : ''}`,
+      tabTarget: '#rx-dosage',
+      onPick: (d, el) => {
+        el.dataset.drugId = d.id;
+        const dos = $('#rx-dosage'); const frq = $('#rx-frequency');
+        if (dos && !dos.value) dos.value = d.defaultRoute || '';
+        if (frq && !frq.value) frq.value = d.defaultFreq || '';
+      },
+    });
+    AutoComplete.attach($('#lab-search'), {
+      items: () => state.labItems || [],
+      label: i => i.name, code: i => i.code,
+      sub: i => `${money(i.price)}${i.category ? ' · ' + i.category : ''}`,
+      emptyHint: '无匹配检查项目',
+      onPick: (i, el) => {
+        const cb = document.querySelector(`#lab-picker input[value="${i.code}"]`);
+        if (cb) cb.checked = true;
+        el.value = '';
+      },
+    });
     const addDiagnosis = async isPrimary => {
-      const code = formVal('sd-code');
+      const el = document.getElementById('sd-code');
+      const code = el.dataset.acValue || el.value.trim();
       if (!code) { toast('请选择诊断编码', 'error'); return; }
       const suspectedEl = document.getElementById('sd-suspected');
       try {
@@ -1242,7 +1297,7 @@ function renderVisitSide(v) {
     });
 
     $('#rx-add').onclick = () => {
-      const drugId = Number(formVal('rx-drug'));
+      const drugId = Number(document.getElementById('rx-drug').dataset.drugId || 0);
       const dosage = formVal('rx-dosage');
       const frequency = formVal('rx-frequency');
       const days = formNum('rx-days');

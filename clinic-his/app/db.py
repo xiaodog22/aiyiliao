@@ -257,6 +257,8 @@ CREATE TABLE IF NOT EXISTS drugs (
   antibiotic_level TEXT NOT NULL DEFAULT '',
   controlled INTEGER NOT NULL DEFAULT 0,
   allergy_tags TEXT NOT NULL DEFAULT '',
+  default_route TEXT NOT NULL DEFAULT '',
+  default_freq TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'ACTIVE'
 );
 
@@ -510,6 +512,8 @@ VISIT_MIGRATIONS = [
 # 药品过敏标签（| 分隔）用于处方前置过敏冲突校验，存量库补齐
 DRUG_MIGRATIONS = [
     ("allergy_tags", "TEXT NOT NULL DEFAULT ''"),
+    ("default_route", "TEXT NOT NULL DEFAULT ''"),
+    ("default_freq", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 # 收费退费留痕列（存量库补齐）

@@ -108,6 +108,19 @@ DRUGS = [
     ("JWP", "健胃消食片", "0.8g*32片", "盒", 12.00, 120, 20, "口服", "", 0),
 ]
 
+# 药品默认用法/频次（AutoComplete 选中后联动带出；幂等覆盖空值）
+DRUG_RX_DEFAULTS = {
+    "AMX": ("口服", "每日三次"), "CFK": ("口服", "每日三次"), "AZM": ("口服", "每日一次"),
+    "DXP": ("口服", "睡前一次"), "BLD": ("口服", "每日两次"), "DXY": ("口服", "需要时"),
+    "LLT": ("口服", "每日一次"), "OMP": ("口服", "每日一次"), "MTS": ("口服", "每日三次"),
+    "ORS": ("口服补液", "按需"), "NFD": ("口服", "每日一次"), "ALD": ("口服", "每日一次"),
+    "MET": ("口服", "每日两次"), "ATV": ("口服", "睡前一次"), "GML": ("开水冲服", "每日三次"),
+    "BGL": ("开水冲服", "每日三次"), "DFS": ("外用", "每日两次"), "NS5": ("静脉滴注", "每日一次"),
+    "GS5": ("静脉滴注", "每日一次"), "YNB": ("外用喷敷", "每日三次"),
+    "ASA": ("口服", "每日一次"), "JWP": ("口服", "每日三次"),
+}
+
+
 # 药品过敏标签（| 分隔）：用于处方前置过敏冲突校验；只标注常见高风险药品
 DRUG_ALLERGY_TAGS = {
     "AMX": "青霉素|阿莫西林",
@@ -266,6 +279,14 @@ def ensure_drug_allergy_tags(con) -> None:
                     (tags, code))
 
 
+def ensure_drug_rx_defaults(con) -> None:
+    """补齐药品默认用法/频次（幂等）：仅覆盖空值，不破坏人工维护过的数据。"""
+    for code, (route, freq) in DRUG_RX_DEFAULTS.items():
+        con.execute("UPDATE drugs SET default_route=?, default_freq=? "
+                    "WHERE code=? AND (default_route IS NULL OR default_route='')",
+                    (route, freq, code))
+
+
 def ensure_seed() -> bool:
     """首次启动时写入演示数据；返回是否执行了初始化。"""
     con = db.connect()
@@ -300,6 +321,7 @@ def ensure_seed() -> bool:
         ensure_slots(con)
         ensure_beds(con)
         ensure_drug_allergy_tags(con)
+        ensure_drug_rx_defaults(con)
         con.commit()
         return seeded
     finally:
