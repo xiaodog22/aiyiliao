@@ -206,6 +206,7 @@ function enterApp() {
   $('#app').classList.remove('hidden');
   const u = state.user;
   $('#whoami').textContent = [u.name, u.roleName, u.deptName].filter(Boolean).join(' · ');
+  applyNavHidden();
   renderNav();
   route();
 }
@@ -282,6 +283,22 @@ const VIEWS = [
 ];
 
 const NAV_COLLAPSE_KEY = 'clinic.nav.collapsed';
+const NAV_HIDDEN_KEY = 'clinic.nav.hidden';
+
+function navHidden() {
+  return localStorage.getItem(NAV_HIDDEN_KEY) === '1';
+}
+
+/* 整体隐藏/展开左侧导航（状态存 localStorage） */
+function applyNavHidden() {
+  const hidden = navHidden();
+  $('#app').classList.toggle('nav-hidden', hidden);
+  const btn = $('#nav-toggle');
+  if (btn) {
+    btn.textContent = hidden ? '☰' : '«';
+    btn.title = hidden ? '展开左侧导航' : '收起左侧导航';
+  }
+}
 
 function can(perm) {
   if (!perm) return true;
@@ -2769,6 +2786,10 @@ async function bootApp() {
     collapsed[head.dataset.group] = !collapsed[head.dataset.group];
     localStorage.setItem(NAV_COLLAPSE_KEY, JSON.stringify(collapsed));
     renderNav();
+  });
+  $('#nav-toggle').addEventListener('click', () => {
+    localStorage.setItem(NAV_HIDDEN_KEY, navHidden() ? '0' : '1');
+    applyNavHidden();
   });
   setupGlobalSearch();
   window.addEventListener('hashchange', () => { if (state.user) route(); });

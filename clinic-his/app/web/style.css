@@ -583,3 +583,30 @@ tr.abnormal td { background: #fff6f4; }
 .ac-item mark { background: #ffe58a; color: inherit; border-radius: 2px; }
 .ac-empty { padding: 10px 12px; color: var(--muted); font-size: 13px; display: flex; gap: 8px; align-items: center; }
 .ac-clear { border: 1px solid var(--line); background: #f6fafc; border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+
+/* ---------------------------------------------------------------- 导航整体隐藏 */
+.topbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.icon-btn { width: 32px; min-width: 32px; padding: 0; font-size: 15px; line-height: 1; text-align: center; }
+.app.nav-hidden .sidebar { display: none; }
+
+/* ---------------------------------------------------------------- 医生工作站全年龄优化 */
+/* 病历正文字号加大、行高放宽，减少老年医师阅读/录入疲劳 */
+.emr-sec textarea {
+  font-size: 15px; line-height: 1.75; min-height: 84px; padding: 10px 12px;
+}
+#v-cc, #v-pi, #v-pe, #v-adv { min-height: 96px; }
+.emr-head { font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.tpl-select { font-size: 13px; min-height: 32px; padding: 4px 8px; }
+/* 患者信息条更醒目 */
+.patient-strip .kv { font-size: 13.5px; gap: 10px 18px; }
+.ps-name { font-size: 19px; }
+/* 右侧操作列在大屏下吸顶：滚动病历时「保存病历/完成就诊」始终可见 */
+@media (min-width: 1401px) {
+  #doc-side { position: sticky; top: 74px; max-height: calc(100vh - 90px); overflow-y: auto; }
+}
+/* 关键操作按钮加大点击热区 */
+#doc-side .form-actions .btn { min-height: 40px; padding: 9px 20px; font-size: 14px; }
+#doc-side .btn.small { min-height: 32px; }
+/* 待接诊/今日就诊行点击热区加大 */
+#doc-pending .mini-row, #doc-visits .mini-row { padding: 10px 8px; }
+#doc-pending .btn.small, #doc-visits .btn.small { min-height: 34px; padding: 7px 16px; font-size: 13.5px; }

@@ -102,7 +102,7 @@
 | 规则 | 实现 | 实测证据 |
 | --- | --- | --- |
 | 医师只能读写本人接诊的就诊（水平越权防线） | `_owner_check`：非本人且无 `visit.read.all` → 403 VISIT_FORBIDDEN | H1/H2/H3（下） |
-| 医师只能接诊本人号源的挂号 | start_visit 校验 registration.doctor_id → 409 NOT_YOUR_PATIENT | H4 |
+| 医师只能接诊本人号源的挂号 | start_visit 校验 `reg.doctor_id != staff_id` → 403 FORBIDDEN | H4（[clinical.py L121-122](file:///d:/asr_chaoshanhua/asr_chaoshanhua_V01/_V01/wechar/clinic-his/app/api/clinical.py#L121-L122)） |
 | 患者姓名/电话脱敏 | 无 `patient.read.all` 且非诊疗岗位 → `mask_name`/`mask_phone` | D1/D2 |
 | 住址仅诊疗/管理岗可见 | 无 `patient.read.all` 时详情不返回 address 字段 | D3 |
 | 病历全文（EMR 文本） | 无 `clinical.read` → 按脱敏口径返回（管理员亦无 clinical.read） | 代码 security.py L41 注释 + V 系列 |
@@ -134,7 +134,7 @@
 | H1 读他人就诊 | GET /api/v1/visits/{vid} | 403 VISIT_FORBIDDEN |
 | H2 改他人病历 | PATCH /api/v1/visits/{vid} | 403 VISIT_FORBIDDEN |
 | H3 给他人患者加诊断 | POST /api/v1/visits/{vid}/diagnoses | 403 |
-| H4 抢接诊他人号源 | POST /api/v1/visits（registration 属医生04） | 409 NOT_YOUR_PATIENT（拒绝，错误码语义为状态冲突） |
+| H4 抢接诊他人号源 | POST /api/v1/visits（registration 属医生04） | 首轮 409（测试数据为 BOOKED 状态，先命中状态前置校验）；2026-11-20 以 CHECKED_IN 号源复测 → **403 FORBIDDEN**（h4_grant_verify.py），防线正确 |
 
 ### 5.3 脱敏——4/4 通过 ✅
 
@@ -202,9 +202,9 @@ if row["cashier_id"] and str(row["cashier_id"]) == str(me) \
 
 ---
 
-## 8. 遗留与建议（P2）
+## 8. 遗留与建议
 
-1. **权限不落库的取舍**：当前 ROLE_PERMS 常量 + 重启生效，适合本项目规模；若需运行时自助配权，应引入 role_perms 表 + 缓存失效机制，并保留本文件矩阵作为验收基线。
-2. **H4 错误码语义**：抢接诊返回 409 NOT_YOUR_PATIENT 而非 403，拒绝有效但建议统一为 403 语义（低优先级）。
-3. **documents grant 路由**：S3 依赖内部 authorize 而非 Router `perm=` 声明，建议补 `perm="visit.read"` 使防线显式化（当前实测已 403，无实际暴露）。
+1. ~~**H4 错误码语义**~~ **已解决（2026-11-20）**：实况复验——他人已签到（CHECKED_IN）号源抢接诊返回 403 FORBIDDEN（clinical.py L121-122）；首轮审计的 409 系测试数据为 BOOKED 状态先命中状态校验，非防线缺陷。
+2. ~~**documents grant 路由无 perm 声明**~~ **已解决（2026-11-20）**：`app/api/documents.py` `grant()` 增加路由级基线权限映射 `_GRANT_BASE_PERM`（visit/packet→visit.read、prescription→rx.read、charge→charge.read、lab→lab.read；charge 保留医生本人缴费单例外，由内部 `_authorize_charge` 细分）。复测：收费员/技师 grant 病历 403"无该单据查看权限"（路由级）、医生 grant 他人缴费单 403"无收费单查看权限"（内部分细生效）、药师 grant 处方 200。
+3. **权限不落库的取舍**：当前 ROLE_PERMS 常量 + 重启生效，适合本项目规模；若需运行时自助配权，应引入 role_perms 表 + 缓存失效机制，并保留本文件矩阵作为验收基线。（保留，架构取舍）
 4. **会话 30 分钟空闲过期**（security.py `IDLE_MINUTES`）符合等保要求，无需修改。

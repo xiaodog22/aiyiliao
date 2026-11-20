@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 from .. import db, documents, security
-from ..errors import ApiError, not_found
+from ..errors import ApiError, forbidden, not_found
 from ..http_response import RawResponse
+
+# grant 路由级基线权限（遗留问题整改：防线显式化）；
+# charge 例外——医生无 charge.read 但可打印本人接诊患者缴费单，由内部 _authorize_charge 细分。
+_GRANT_BASE_PERM = {
+    "visit": "visit.read", "packet": "visit.read",
+    "prescription": "rx.read", "charge": "charge.read", "lab": "lab.read",
+}
 
 
 def _audit(ctx, kind: str, doc_id: int, fmt: str) -> None:
@@ -53,6 +60,10 @@ def document_pdf(ctx):
 
 def grant(ctx):
     kind = ctx.params["kind"]
+    base_perm = _GRANT_BASE_PERM.get(kind)
+    if base_perm and not security.has_perm(ctx.user, base_perm) \
+            and not (kind == "charge" and ctx.user["role"] == "DOCTOR"):
+        raise forbidden("无该单据查看权限")
     doc_id = int(ctx.params["id"])
     return documents.make_links(kind, doc_id, ctx.user)
 
