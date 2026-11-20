@@ -53,7 +53,7 @@ ROLE_PERMS = {
         "ph.read", "lab.read", "drug.read", "bed.read", "nursing.read",
     },
     "DOCTOR": {
-        "patient.read", "clinical.read", "patient.write", "reg.read", "queue.read",
+        "patient.read", "clinical.read", "patient.write", "reg.read", "queue.read", "queue.call",
         "visit.read", "visit.write", "rx.read", "rx.write",
         "lab.read", "lab.order", "report.view", "ph.read", "drug.read",
         "bed.read", "bed.write", "nursing.read",

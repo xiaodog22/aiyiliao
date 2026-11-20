@@ -138,6 +138,11 @@ def refund_charge(ctx):
             raise not_found("账单不存在")
         if row["status"] != "PAID":
             raise ApiError(400, "STATE_CONFLICT", "仅已收费账单可退费")
+        me = ctx.user.get("staff_id") or ctx.user["id"]
+        if row["cashier_id"] and str(row["cashier_id"]) == str(me) \
+                and not security.has_perm(ctx.user, "charge.void"):
+            raise ApiError(403, "SEPARATION_OF_DUTIES",
+                           "收费员不能退收本人收取的账单，请由其他收费员或主管办理（收退分离）")
         _apply_refund(con, ctx, row, reason)
     return {"id": charge_id, "status": "REFUNDED"}
 

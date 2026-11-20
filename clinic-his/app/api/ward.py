@@ -291,6 +291,9 @@ def execute_nursing_order(ctx):
             raise not_found("医嘱不存在")
         if order["status"] != "PENDING":
             raise ApiError(400, "STATE_CONFLICT", "该医嘱已执行或已取消，不能重复执行")
+        me = ctx.user.get("staff_id") or ctx.user["id"]
+        if str(order["ordered_by"]) == str(me):
+            raise ApiError(403, "SEPARATION_OF_DUTIES", "开立者不能执行本人开立的医嘱，请由其他护士执行（职责分离）")
         now = db.now_str()
         con.execute("UPDATE nursing_orders SET status='DONE', executed_by=?, executed_at=?, remark=? "
                     "WHERE id=?",
