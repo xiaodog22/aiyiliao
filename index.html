@@ -6,14 +6,35 @@
   3) 移除 scroll 回调中的 documentElement.scrollHeight 强制重排，改为 measure/resize 时缓存 docMax；scroll 监听保持 passive。
   4) prefers-reduced-motion 下补齐 transition 覆盖，并保留 .ch 章节可见性与跳转逻辑（章节切换仍可见可用）。
   5) 可访问性：rail 按钮补 aria-label，burger 补 type="button"，所有按钮均为 type="button"；移动端 .rail 隐藏时由菜单内“界面”链接提供等效跳转入口。
+
+  修改说明（2026-11-21）：
+  1) 安全加固：head 增加严格 CSP（default-src 'none' 起步，仅放行内联样式/脚本与 data: 图片）、referrer 策略、format-detection=telephone=no、canonical 规范地址与 OG/Twitter 元数据；页面仍完全自包含（无任何外部请求，与 SITE-10 一致）。
+  2) 反仿冒：新增 #security「安全与隐私」章节——只读演示页声明、零第三方请求、源码公开、唯一官方渠道提示。
+  3) 视觉打磨：eyebrow 胶囊徽章、hero 声明状态圆点、导航滚动阴影、卡片图标微交互、页脚渐变底、滚动条样式；统计数字滚动到位时计数动画（prefers-reduced-motion 下直出终值）。
+  4) 数据校正：主包 21 → 22 页、分包 2 → 8 个（以 miniprogram/app.json 实测为准）。
 -->
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0B6EF8">
-<title>楚大夫 · 医疗健康 AI 微信小程序</title>
+<title>康诊云 · 医疗健康 AI 微信小程序</title>
 <meta name="description" content="面向中老年患者的医疗健康 AI 微信小程序。说一句不舒服，它给出科室、紧急程度和院内路线。开源，MIT 许可。">
+<link rel="canonical" href="https://xiaodog22.github.io/aiyiliao/">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<meta name="format-detection" content="telephone=no">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="康诊云">
+<meta property="og:title" content="康诊云 · 医疗健康 AI 微信小程序">
+<meta property="og:description" content="面向中老年患者的医疗健康 AI 微信小程序。说一句不舒服，它给出科室、紧急程度和院内路线。开源，MIT 许可。">
+<meta property="og:url" content="https://xiaodog22.github.io/aiyiliao/">
+<meta property="og:image" content="https://opengraph.githubassets.com/1/xiaodog22/aiyiliao">
+<meta property="og:image:alt" content="康诊云 · 医疗健康 AI 微信小程序">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="康诊云 · 医疗健康 AI 微信小程序">
+<meta name="twitter:description" content="面向中老年患者的医疗健康 AI 微信小程序。说一句不舒服，它给出科室、紧急程度和院内路线。开源，MIT 许可。">
+<meta name="twitter:image" content="https://opengraph.githubassets.com/1/xiaodog22/aiyiliao">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230B6EF8'/%3E%3Cpath d='M16 8v16M8 16h16' stroke='%23fff' stroke-width='3.4' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
 :root{
@@ -34,7 +55,11 @@
   --ease:cubic-bezier(.22,.61,.36,1);
 }
 *,*::before,*::after{box-sizing:border-box;}
-html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scrollbar-width:thin;scrollbar-color:#C4D2E8 transparent;}
+::-webkit-scrollbar{width:11px;height:11px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:#C4D2E8;border:3px solid #fff;border-radius:99px;}
+::-webkit-scrollbar-thumb:hover{background:#A9BCD8;}
 body{
   margin:0;
   font-family:-apple-system,BlinkMacSystemFont,"SF Pro SC","PingFang SC","HarmonyOS Sans SC","Source Han Sans SC","Microsoft YaHei",sans-serif;
@@ -58,7 +83,7 @@ h1,h2,h3,h4,p{margin:0;}
   border-bottom:1px solid transparent;
   transition:border-color .3s var(--ease),background .3s var(--ease);
 }
-.nav.scrolled{border-bottom-color:rgba(20,38,76,.08);background:rgba(255,255,255,.88);}
+.nav.scrolled{border-bottom-color:rgba(20,38,76,.08);background:rgba(255,255,255,.88);box-shadow:0 12px 30px -24px rgba(14,30,69,.55);}
 .nav-inner{width:100%;max-width:1180px;margin:0 auto;padding:0 var(--pad);display:flex;align-items:center;gap:26px;}
 .brand{display:flex;align-items:center;gap:10px;}
 .brand-mark{width:32px;height:32px;border-radius:10px;background:linear-gradient(140deg,#0B6EF8,#3E8CFF);display:grid;place-items:center;box-shadow:0 6px 14px rgba(11,110,248,.28);}
@@ -108,11 +133,19 @@ h1,h2,h3,h4,p{margin:0;}
   position:absolute;z-index:3;left:var(--pad);top:50%;width:min(560px,46vw);
   transform:translateY(-50%);will-change:opacity,transform;
 }
-.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--blue);}
-.eyebrow::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--blue);box-shadow:0 0 0 4px rgba(11,110,248,.12);}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--blue);padding:7px 15px;border:1px solid rgba(11,110,248,.22);border-radius:999px;background:rgba(11,110,248,.06);}
+.eyebrow::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--blue);box-shadow:0 0 0 4px rgba(11,110,248,.14);}
 h1{font-size:clamp(38px,4.9vw,66px);line-height:1.08;letter-spacing:-.03em;font-weight:700;color:var(--ink);margin-top:20px;text-wrap:balance;}
 h1 .grad{background:linear-gradient(100deg,#0B6EF8 4%,#3E8CFF 56%,#54C8A7 100%);-webkit-background-clip:text;background-clip:text;color:transparent;}
 .hero-lead{font-size:clamp(14.5px,1.25vw,17px);line-height:1.85;color:var(--sub);margin-top:22px;max-width:30em;}
+/* 2026-11-13 合规免责声明：首屏显著位置。沿用现有色板令牌，静态展示，无动画/无交互、不影响滚动渲染。 */
+.hero-notice{
+  display:inline-block;max-width:100%;margin-top:18px;padding:8px 14px;
+  border:1px solid rgba(11,110,248,.22);border-radius:999px;
+  background:var(--bg-soft);color:var(--ink-2);
+  font-size:12.5px;font-weight:600;line-height:1.55;letter-spacing:.01em;
+}
+.hero-notice::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--mint);box-shadow:0 0 0 3px rgba(84,200,167,.25);margin-right:8px;vertical-align:1px;}
 .hero-actions{display:flex;flex-wrap:wrap;gap:11px;margin-top:30px;}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:48px;padding:0 24px;border-radius:999px;font-size:14.5px;font-weight:600;border:1px solid transparent;cursor:pointer;transition:transform .22s var(--ease),box-shadow .22s var(--ease),background .22s var(--ease),border-color .22s var(--ease),color .22s var(--ease);}
 .btn svg{width:16px;height:16px;flex:0 0 auto;}
@@ -181,7 +214,8 @@ h1 .grad{background:linear-gradient(100deg,#0B6EF8 4%,#3E8CFF 56%,#54C8A7 100%);
   transition:transform .3s var(--ease),box-shadow .3s var(--ease),border-color .3s var(--ease);
 }
 .f:hover{transform:translateY(-3px);box-shadow:0 20px 44px rgba(20,38,76,.09);border-color:rgba(11,110,248,.22);}
-.f i{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#EAF3FF;margin-bottom:16px;}
+.f i{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#EAF3FF;margin-bottom:16px;transition:transform .3s var(--ease);}
+.f:hover i{transform:translateY(-2px) rotate(-4deg);}
 .f i svg{width:18px;height:18px;color:var(--blue);stroke:var(--blue);}
 .f i.mint{background:#E7F7F2;} .f i.mint svg{color:var(--mint-text);stroke:var(--mint-text);}
 .f i.deep{background:#E8EEF9;} .f i.deep svg{color:#1E4A80;stroke:#1E4A80;}
@@ -193,7 +227,7 @@ h1 .grad{background:linear-gradient(100deg,#0B6EF8 4%,#3E8CFF 56%,#54C8A7 100%);
 .tech::before{content:"";position:absolute;inset:-40% -20% auto -20%;height:760px;background:radial-gradient(600px 420px at 24% 10%,rgba(11,110,248,.4),transparent 64%),radial-gradient(520px 360px at 84% 2%,rgba(84,200,167,.16),transparent 66%);}
 .tech .wrap{position:relative;z-index:1;}
 .tech .h2{color:#fff;}
-.tech .eyebrow{color:#7FB4FF;}
+.tech .eyebrow{color:#7FB4FF;background:rgba(127,180,255,.1);border-color:rgba(127,180,255,.3);}
 .tech .eyebrow::before{background:#7FB4FF;box-shadow:0 0 0 4px rgba(127,180,255,.16);}
 .tech-row{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-top:46px;border-top:1px solid rgba(255,255,255,.12);}
 .tech-item{padding:26px 22px 4px;border-left:1px solid rgba(255,255,255,.12);}
@@ -219,8 +253,25 @@ h1 .grad{background:linear-gradient(100deg,#0B6EF8 4%,#3E8CFF 56%,#54C8A7 100%);
 .cta-repo{display:flex;align-items:center;gap:7px;font-size:12px;color:rgba(255,255,255,.8);}
 .cta-repo code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}
 
+/* trust / security */
+.trust{position:relative;background:linear-gradient(180deg,#fff 0%,var(--bg-soft) 100%);border-top:1px solid var(--line);}
+.t-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:44px;}
+.t-card{position:relative;background:#fff;border:1px solid var(--line);border-radius:22px;padding:26px 24px 24px;transition:transform .3s var(--ease),box-shadow .3s var(--ease),border-color .3s var(--ease);}
+.t-card:hover{transform:translateY(-3px);box-shadow:0 20px 44px rgba(20,38,76,.09);border-color:rgba(11,110,248,.22);}
+.t-card i{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#EAF3FF;margin-bottom:16px;transition:transform .3s var(--ease);}
+.t-card:hover i{transform:translateY(-2px) rotate(-5deg);}
+.t-card i svg{width:18px;height:18px;color:var(--blue);stroke:var(--blue);}
+.t-card.mint i{background:#E7F7F2;} .t-card.mint i svg{color:var(--mint);stroke:var(--mint);}
+.t-card.deep i{background:#E8EEF9;} .t-card.deep i svg{color:var(--deep);stroke:var(--deep);}
+.t-card b{display:block;font-size:15.5px;letter-spacing:-.01em;color:var(--ink);margin-bottom:8px;}
+.t-card p{font-size:13.5px;line-height:1.75;color:var(--sub);margin:0;}
+.t-note{display:flex;align-items:flex-start;gap:10px;margin-top:26px;padding:16px 20px;background:#fff;border:1px dashed rgba(11,110,248,.35);border-radius:16px;font-size:13px;line-height:1.7;color:var(--sub);}
+.t-note svg{width:17px;height:17px;flex:0 0 auto;color:var(--blue);stroke:var(--blue);margin-top:2px;}
+.t-note b{color:var(--ink);}
+.trust .h2{font-size:clamp(26px,3.4vw,42px);}
+
 /* footer */
-.footer{border-top:1px solid var(--line);padding:44px 0 30px;background:#fff;}
+.footer{border-top:1px solid var(--line);padding:44px 0 30px;background:linear-gradient(180deg,#fff 0%,#F7FAFF 100%);}
 .foot{display:flex;justify-content:space-between;gap:30px;flex-wrap:wrap;align-items:flex-start;}
 .foot-brand p{font-size:13px;line-height:1.75;color:var(--muted);margin-top:12px;max-width:22em;}
 .foot-links{display:flex;gap:40px;}
@@ -253,6 +304,7 @@ h1 .grad{background:linear-gradient(100deg,#0B6EF8 4%,#3E8CFF 56%,#54C8A7 100%);
   .hint{bottom:16px;}
   .features{grid-template-columns:1fr 1fr;}
   .tech-row{grid-template-columns:1fr 1fr;}
+  .t-grid{grid-template-columns:1fr 1fr;}
   .tech-item:nth-child(3){border-left:0;padding-left:0;}
   .tech-item{padding-left:18px;}
   .tech-item:nth-child(3),.tech-item:nth-child(4){margin-top:18px;padding-top:22px;border-top:1px solid rgba(255,255,255,.12);}
@@ -263,7 +315,10 @@ h1 .grad{background:linear-gradient(100deg,#0B6EF8 4%,#3E8CFF 56%,#54C8A7 100%);
   .device{top:62%;border-radius:34px;box-shadow:0 0 0 7px #0b1220,0 0 0 8px rgba(255,255,255,.14),0 40px 70px -20px rgba(14,30,69,.4);}
   .device::after{border-radius:34px;}
   .hero-lead{display:none;}
+  /* 免责声明在窄屏同样保留（不能随 .hero-lead 一起隐藏） */
+  .hero-notice{margin-top:14px;padding:7px 12px;font-size:11.5px;}
   .features{grid-template-columns:1fr;}
+  .t-grid{grid-template-columns:1fr;}
   .tech-row{grid-template-columns:1fr;}
   .tech-item{border-left:0;padding-left:0;}
   .tech-item + .tech-item{margin-top:0;padding-top:22px;border-top:1px solid rgba(255,255,255,.12);}
@@ -301,13 +356,16 @@ h1 .grad{background:linear-gradient(100deg,#0B6EF8 4%,#3E8CFF 56%,#54C8A7 100%);
   <symbol id="menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
   <symbol id="close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></symbol>
   <symbol id="ico-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.4s7-6 7-11.2a7 7 0 1 0-14 0c0 5.2 7 11.2 7 11.2Z"/><circle cx="12" cy="10" r="2.6"/></symbol>
+  <symbol id="shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2 19 6v5.6c0 4.4-2.9 7.6-7 9.2-4.1-1.6-7-4.8-7-9.2V6l7-2.8Z"/><path d="M8.8 12.1l2.3 2.3 4.4-4.6"/></symbol>
+  <symbol id="ban" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M5.9 5.9l12.2 12.2"/></symbol>
+  <symbol id="code" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 8 4.5 12l4 4M15.5 8l4 4-4 4M13.4 5.6l-2.8 12.8"/></symbol>
 </svg>
 
 <header class="nav" id="nav">
   <div class="nav-inner">
-    <a class="brand" href="#top" aria-label="楚大夫 首页">
+    <a class="brand" href="#top" aria-label="康诊云 首页">
       <span class="brand-mark"><svg><use href="#i-plus"/></svg></span>
-      <span class="brand-name">楚大夫</span>
+      <span class="brand-name">康诊云</span>
     </a>
     <nav class="nav-links" aria-label="主导航">
       <a href="#features">功能</a>
@@ -343,6 +401,7 @@ h1 .grad{background:linear-gradient(100deg,#0B6EF8 4%,#3E8CFF 56%,#54C8A7 100%);
       <span class="eyebrow">开源 · 原生微信小程序</span>
       <h1>看病这件事，<br>从<span class="grad">一句话</span>开始。</h1>
       <p class="hero-lead">面向中老年患者的医疗健康 AI 小程序。说一句不舒服，它给出科室、紧急程度和院内路线。</p>
+      <p class="hero-notice" role="note">本页面为开源项目演示，不提供医疗服务，不构成诊断依据</p>
       <div class="hero-actions">
         <a class="btn btn-primary" href="https://github.com/xiaodog22/aiyiliao" target="_blank" rel="noopener noreferrer">
           <svg><use href="#github"/></svg>查看源码
@@ -474,10 +533,47 @@ h1 .grad{background:linear-gradient(100deg,#0B6EF8 4%,#3E8CFF 56%,#54C8A7 100%);
       </div>
     </div>
     <div class="tech-nums reveal">
-      <div class="tech-num"><b>21<em>页</em></b><small>主包页面 + 2 个分包</small></div>
+      <div class="tech-num"><b>22<em>页</em></b><small>主包页面 + 8 个分包</small></div>
       <div class="tech-num"><b>5<em>级</em></b><small>分诊分级</small></div>
       <div class="tech-num"><b>0.2<em>ms</em></b><small>TTS 缓存命中</small></div>
       <div class="tech-num"><b>MIT</b><small>许可，可二次开发</small></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ security / trust ============ -->
+<section class="section trust" id="security">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">安全与隐私</span>
+      <h2 class="h2">把该说清楚的，<br>写在明面上。</h2>
+      <p class="lead">本页是只读的开源项目展示：不登录、不注册、不收集任何个人信息，也不向任何第三方发送数据。</p>
+    </div>
+    <div class="t-grid reveal">
+      <div class="t-card">
+        <i><svg><use href="#shield"/></svg></i>
+        <b>只读展示</b>
+        <p>没有登录框、没有表单、没有账号体系。所有按钮只做两件事：滚动到章节，或打开 GitHub 仓库。</p>
+      </div>
+      <div class="t-card mint">
+        <i><svg><use href="#ban"/></svg></i>
+        <b>零第三方请求</b>
+        <p>样式、脚本、图片全部内联，页面不加载统计、广告、埋点或任何外部资源，断网也能完整打开。</p>
+      </div>
+      <div class="t-card deep">
+        <i><svg><use href="#code"/></svg></i>
+        <b>源码可核验</b>
+        <p>MIT 许可，前端小程序、网关、AI 服务与业务服务全部开源，本页源码就在仓库的 site/ 目录。</p>
+      </div>
+      <div class="t-card">
+        <i><svg><use href="#github"/></svg></i>
+        <b>唯一官方渠道</b>
+        <p>官方站点仅此一处：xiaodog22.github.io/aiyiliao。源码只在 github.com/xiaodog22/aiyiliao 发布。</p>
+      </div>
+    </div>
+    <div class="t-note reveal">
+      <svg><use href="#ico-pin"/></svg>
+      <p><b>关于“危险网站”提示：</b>部分浏览器的安全软件会对含“医疗 / AI”字样的开源演示页误报。本页不含任何登录与支付入口，不请求个人数据；如需核验，请直接比对 GitHub 仓库源码与下方开源许可。</p>
     </div>
   </div>
 </section>
@@ -510,7 +606,7 @@ h1 .grad{background:linear-gradient(100deg,#0B6EF8 4%,#3E8CFF 56%,#54C8A7 100%);
       <div class="foot-brand">
         <a class="brand" href="#top">
           <span class="brand-mark"><svg><use href="#i-plus"/></svg></span>
-          <span class="brand-name">楚大夫</span>
+          <span class="brand-name">康诊云</span>
         </a>
         <p>面向中老年患者的医疗健康 AI 微信小程序。原生开发，适老化优先。</p>
       </div>
@@ -530,7 +626,7 @@ h1 .grad{background:linear-gradient(100deg,#0B6EF8 4%,#3E8CFF 56%,#54C8A7 100%);
       </div>
     </div>
     <div class="foot-bottom">
-      <span>© 2026 楚大夫 · MIT License</span>
+      <span>© 2026 康诊云 · MIT License</span>
       <span class="foot-disc">免责声明：导诊与问诊结果均为演示性质，不构成诊断或用药建议；如有急症请立即就医或拨打 120。</span>
     </div>
   </div>
