@@ -46,6 +46,20 @@ Page({
       wx.showToast({ title: '请输入工号或手机号', icon: 'none' })
       return
     }
+    this._doLogin(account)
+  },
+
+  /**
+   * 演示登录（仅开发构建，2026-11-20）：固定用工号占位派发 dev-user-2 契约 code，
+   * 不展示/不伪造具体医生姓名；服务端按任职关系真实签发会话（未登记仍如实 403）。
+   */
+  onDemoLogin() {
+    if (this.data.submitting) return
+    this._doLogin('doctor01')
+  },
+
+  /** 共用登录链路：手输与演示入口都走这里，错误处理只维护一份 */
+  _doLogin(account) {
     this.setData({ submitting: true })
     wx.showLoading({ title: '登录中...', mask: true })
     doctorService.login(account, '')
@@ -67,7 +81,7 @@ Page({
           return
         }
         if (code === 'BAD_SPEC') {
-          wx.showToast({ title: '当前版本请使用微信一键登录', icon: 'none' })
+          wx.showToast({ title: '当前版本请使用演示登录或联系院方', icon: 'none' })
           return
         }
         const msg = errText(err, '登录失败，请重试')

@@ -74,6 +74,21 @@ inst.onType({ currentTarget: { dataset: { type: 'video' } } })
 check('③ 分类=睡眠 × 视频 → 0 条（不伪造命中）',
   inst.data.list.length === 0, '实得 ' + inst.data.list.length)
 
+// ④ 科普单一事实源（2026-11-21 治理合并）：③ 与入库数据源标题逐字一致
+//    （⑪ ingest_knowledge_kb.py 直接读该导出文件，标题一致即前端=检索结果）
+const fs = require('fs')
+const EXPORT = path.join(__dirname, '..', 'backend', 'ai-service', 'data', 'knowledge-articles.json')
+let exp = null
+try { exp = JSON.parse(fs.readFileSync(EXPORT, 'utf8')) } catch (e) { /* 缺失由下一条 check 报 FAIL */ }
+check('④ 入库数据源存在（缺失则跑 node tools/export-knowledge-kb.js）', !!exp)
+if (exp) {
+  const t3 = KB.ARTICLES.concat(KB.VIDEOS).map((x) => x.id + '|' + x.title).sort()
+  const tj = exp.articles.concat(exp.videos).map((x) => x.id + '|' + x.title).sort()
+  check('④ ③↔数据源标题逐字一致（含 sleep-quality/bp-daily/diabetes-diet 三条历史漂移样例）',
+    JSON.stringify(t3) === JSON.stringify(tj))
+  check('④ 数据源规模 7 图文 + 3 视频', exp.articles.length === 7 && exp.videos.length === 3)
+}
+
 console.log('== test-knowledge-filter ==')
 if (FAIL) {
   console.log('PASS=' + PASS + ' FAIL=' + FAIL)

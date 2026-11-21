@@ -1,0 +1,102 @@
+<view class="page exam-page">
+
+  <view wx:if="{{loading}}" class="card exam-card">
+    <view class="exam-loading">正在读取检查预约…</view>
+  </view>
+
+  <!-- 总回退：未开启时只显示提示，不请求项目/排期 -->
+  <view wx:elif="{{!enabled}}" class="card exam-card">
+    <view class="exam-title">检查预约</view>
+    <view class="exam-disabled">{{disabledMessage}}</view>
+    <view class="exam-hint">线上检查预约暂未开放，不影响挂号、问诊和报告查询。</view>
+    <view wx:if="{{error}}" class="exam-error">{{error}}</view>
+    <view class="btn btn-primary exam-main-btn" bindtap="goHome">返回首页</view>
+  </view>
+
+  <block wx:else>
+    <view class="card exam-head">
+      <view class="exam-title">检查预约</view>
+      <view class="exam-demo">{{demoNotice}}</view>
+      <view class="exam-hint">选择项目和时段后提交；到院请按预约时段到医技科室报到。</view>
+    </view>
+
+    <view wx:if="{{order}}" class="card exam-success">
+      <view class="exam-success-title">预约成功（演示）</view>
+      <view class="exam-success-item">{{order.itemName}} · {{order.fullLabel}}</view>
+      <view class="exam-success-row"><text class="exam-k">申请号</text><text class="exam-v">{{order.requestNo}}</text></view>
+      <view class="exam-success-row"><text class="exam-k">预约号</text><text class="exam-v">{{order.examOrderNo}}</text></view>
+      <view class="exam-success-row"><text class="exam-k">项目价</text><text class="exam-v">¥{{order.priceText}}</text></view>
+      <view class="exam-success-note">演示预约：不代表真实医院排期，也不产生检查费用。</view>
+      <view class="btn btn-outline exam-main-btn" bindtap="goHome">返回首页</view>
+    </view>
+
+    <view class="card exam-card">
+      <view class="exam-step">1. 选择检查项目</view>
+      <view wx:if="{{!items.length}}" class="exam-empty">暂无可预约项目</view>
+      <view
+        wx:for="{{items}}"
+        wx:key="itemCode"
+        class="exam-item {{selectedItem.itemCode === item.itemCode ? 'exam-item-on' : ''}}"
+        data-code="{{item.itemCode}}"
+        bindtap="pickItem"
+      >
+        <view class="exam-item-main">
+          <view class="exam-item-name">{{item.itemName}}</view>
+          <view class="exam-item-sub">{{item.category}} · 演示项目</view>
+        </view>
+        <view class="exam-item-price">¥{{item.priceText}}</view>
+      </view>
+    </view>
+
+    <view wx:if="{{selectedItem}}" class="card exam-card">
+      <view class="exam-step">2. 选择时段</view>
+      <view wx:if="{{!slotGroups.length}}" class="exam-empty">排期加载中…</view>
+      <view wx:for="{{slotGroups}}" wx:key="date" class="exam-slot-group">
+        <view class="exam-slot-date">{{item.label}}（{{item.date}}）</view>
+        <view class="exam-slot-list">
+          <view
+            wx:for="{{item.slots}}"
+            wx:for-item="slot"
+            wx:key="slotKey"
+            class="exam-slot {{slot.available ? '' : 'exam-slot-off'}} {{selectedSlot.slotKey === slot.slotKey ? 'exam-slot-on' : ''}}"
+            data-slot="{{slot}}"
+            bindtap="pickSlot"
+          >
+            {{slot.slotTime}}{{slot.available ? '' : ' 已满'}}
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{!selectedSlot}}" class="exam-hint">灰色时段不可选；同一时段仅保留 1 个演示名额。</view>
+    </view>
+
+    <view wx:if="{{selectedItem && selectedSlot}}" class="card exam-card">
+      <view class="exam-step">3. 确认就诊人</view>
+      <view class="exam-field">
+        <text class="exam-field-label">姓名</text>
+        <input class="exam-input" value="{{patientName}}" placeholder="请输入就诊人姓名" maxlength="50" bindinput="onNameInput" />
+      </view>
+      <view class="exam-summary">{{selectedItem.itemName}} · {{selectedSlot.fullLabel}} · ¥{{selectedItem.priceText}}</view>
+      <view class="exam-disclaimer">演示预约：不调起支付，不产生真实检查费用。</view>
+      <view class="btn btn-primary exam-main-btn {{submitting ? 'btn-disabled' : ''}}" bindtap="submit">
+        {{submitting ? '提交中…' : '确认预约（演示）'}}
+      </view>
+    </view>
+
+    <view wx:if="{{error}}" class="exam-error">{{error}}</view>
+
+    <view wx:if="{{orders.length}}" class="card exam-card">
+      <view class="exam-step">我的检查预约</view>
+      <view wx:for="{{orders}}" wx:key="requestNo" class="exam-order">
+        <view class="exam-order-main">
+          <view class="exam-order-name">{{item.itemName}}</view>
+          <view class="exam-order-sub">{{item.fullLabel}} · {{item.statusText}}</view>
+          <view class="exam-order-no">申请号 {{item.requestNo}}</view>
+        </view>
+        <view wx:if="{{item.status === 'BOOKED'}}" class="exam-cancel" data-no="{{item.requestNo}}" bindtap="cancelOrder">取消</view>
+      </view>
+    </view>
+
+    <view class="exam-footnote">演示排期不代表医院真实号源；正式检查请以到院医技科室安排为准。</view>
+  </block>
+
+</view>

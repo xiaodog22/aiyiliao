@@ -353,9 +353,9 @@ _HIGH = "【高优先级】" + "填" * 14      # 20 字 → 30 tokens
 _MID = "【中优先级】" + "填" * 194      # 200 字 → 300 tokens
 _LOW = "【低优先级】" + "填" * 394      # 400 字 → 600 tokens
 
-# 执行器写死的预算（chat/interpret=400，triage/careplan=300）
-_BIG_BUDGET_SCENARIOS = {"chat", "interpret"}
-_SMALL_BUDGET_SCENARIOS = {"triage", "careplan"}
+# 执行器写死的预算（chat/interpret=400，triage=600（2026-11-21 治理合并：⑦ triage 片段由 ①⑧ 生成扩容），careplan=300）
+_BIG_BUDGET_SCENARIOS = {"chat", "interpret", "triage"}
+_SMALL_BUDGET_SCENARIOS = {"careplan"}
 
 
 def _write_budget_config(path: Path) -> Path:

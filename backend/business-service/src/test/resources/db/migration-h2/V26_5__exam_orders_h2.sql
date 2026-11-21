@@ -1,0 +1,26 @@
+-- H2 单测档等价表（V35 的 MySQL 专有 DDL 不参与 H2；target=26.5）
+CREATE TABLE IF NOT EXISTS exam_orders (
+    id               BIGINT       NOT NULL AUTO_INCREMENT,
+    request_no       VARCHAR(64)  NOT NULL,
+    user_id          VARCHAR(64)  NOT NULL,
+    family_member_id VARCHAR(64)  NULL,
+    patient_name     VARCHAR(50)  NOT NULL,
+    item_code        VARCHAR(32)  NOT NULL,
+    item_name        VARCHAR(80)  NOT NULL,
+    price            DECIMAL(10,2) NOT NULL DEFAULT 0,
+    slot_key         VARCHAR(32)  NOT NULL,
+    slot_date        DATE         NOT NULL,
+    slot_time        VARCHAR(8)   NOT NULL,
+    status           VARCHAR(16)  NOT NULL DEFAULT 'BOOKED',
+    his_order_no     VARCHAR(64)  NULL,
+    source           VARCHAR(16)  NOT NULL DEFAULT 'DEMO',
+    idem_key         VARCHAR(128) NOT NULL,
+    last_error       VARCHAR(255) NULL,
+    created_at       TIMESTAMP(3) NOT NULL,
+    updated_at       TIMESTAMP(3) NOT NULL,
+    cancelled_at     TIMESTAMP(3) NULL,
+    PRIMARY KEY (id),
+    UNIQUE (request_no),
+    UNIQUE (user_id, idem_key),
+    UNIQUE (his_order_no)
+);

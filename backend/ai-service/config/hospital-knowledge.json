@@ -14,7 +14,7 @@
       "院方提供受控信息（模拟脱敏）：医院名称（模拟）、急诊开放时间、门诊号源规则、退号/建档规则、检查报告时效、营养/运动能力边界、LIS 参考区间（模拟口径）",
       "DB wechar_dev.departments（16 条，取 name/location/description）",
       "DB wechar_dev.doctor_schedules（6 条聚合，开发种子数据，待运营排班确认）",
-      "backend/ai-service/config/triage-departments.json v1.0.0（智能导诊科室白名单，6 科室）"
+      "backend/ai-service/config/triage-departments.json v2.0.0（智能导诊科室白名单，16 科室；triage「本院科室」「常见症状科室映射」片段由 tools/gen-hospital-knowledge.js 从该白名单与前端 triage-kb.js 生成，版本与科室数以源文件实测为准）"
     ],
     "reviewScope": [
       "医院名称/电话脱敏模拟",
@@ -49,30 +49,70 @@
   },
   "scenarios": {
     "triage": {
-      "budgetTokens": 300,
+      "budgetTokens": 600,
       "description": "导诊场景：本院科室（白名单口径）、症状→科室映射、科室位置",
       "knowledge": [
         {
           "topic": "本院科室",
-          "content": "本院开设科室：全科医学科、消化内科、呼吸内科、心血管内科、骨科、急诊科。",
+          "content": "本院开设科室：全科医学科、消化内科、呼吸内科、心血管内科、神经内科、内分泌科、耳鼻喉科、眼科、口腔科、皮肤科、骨科、泌尿外科、妇产科、儿科诊区、精神心理科、急诊科。",
           "priority": 10,
-          "departments": ["全科医学科", "消化内科", "呼吸内科", "心血管内科", "骨科", "急诊科"],
-          "source": "config/triage-departments.json + DB departments",
+          "departments": [
+            "全科医学科",
+            "消化内科",
+            "呼吸内科",
+            "心血管内科",
+            "神经内科",
+            "内分泌科",
+            "耳鼻喉科",
+            "眼科",
+            "口腔科",
+            "皮肤科",
+            "骨科",
+            "泌尿外科",
+            "妇产科",
+            "儿科诊区",
+            "精神心理科",
+            "急诊科"
+          ],
+          "source": "generated: config/triage-departments.json v2.0.0（16 科室，tools/gen-hospital-knowledge.js）",
           "status": "verified"
         },
         {
           "topic": "常见症状科室映射",
-          "content": "常见症状对应科室：胃痛/反酸/腹泻→消化内科；咳嗽/气喘→呼吸内科；胸痛/心悸/高血压→心血管内科；骨折/关节痛→骨科；发热/乏力/多症状→全科医学科。",
+          "content": "症状→科室（按主诉权重排序）：儿童/小孩→儿科诊区；胃痛/胃疼→消化内科；咳嗽/咳痰→呼吸内科；心慌/心悸→心血管内科；腰痛/腰疼→骨科；头痛/头疼→神经内科；血糖高/糖尿病→内分泌科；皮疹/湿疹→皮肤科；眼睛红/眼红→眼科；耳痛/耳鸣→耳鼻喉科；尿频/尿急→泌尿外科；月经/例假→妇产科；牙痛/牙疼→口腔科；失眠/睡不着→精神心理科；乏力/没力气→全科医学科。",
           "priority": 8,
-          "departments": ["消化内科", "呼吸内科", "心血管内科", "骨科", "全科医学科"],
-          "source": "config/triage-departments.json description 字段",
+          "departments": [
+            "儿科诊区",
+            "消化内科",
+            "呼吸内科",
+            "心血管内科",
+            "骨科",
+            "神经内科",
+            "内分泌科",
+            "皮肤科",
+            "眼科",
+            "耳鼻喉科",
+            "泌尿外科",
+            "妇产科",
+            "口腔科",
+            "精神心理科",
+            "全科医学科"
+          ],
+          "source": "generated: miniprogram/utils/triage-kb.js SYMPTOM_KB（tools/gen-hospital-knowledge.js）",
           "status": "verified"
         },
         {
           "topic": "科室位置",
           "content": "科室位置：全科医学科 1F 大厅；消化内科、心血管内科 1F 东区；呼吸内科、骨科 1F 西区；急诊科 1F 急诊区。",
           "priority": 6,
-          "departments": ["全科医学科", "消化内科", "心血管内科", "呼吸内科", "骨科", "急诊科"],
+          "departments": [
+            "全科医学科",
+            "消化内科",
+            "心血管内科",
+            "呼吸内科",
+            "骨科",
+            "急诊科"
+          ],
           "source": "DB departments.location（16 条中 6 个白名单科室）",
           "status": "verified"
         }
@@ -93,7 +133,7 @@
           "topic": "禁忌与红线",
           "content": "重要提醒：本 AI 不提供药品名称、剂量与处方，不给诊断结论；出现胸痛、呼吸困难、大出血、意识障碍请立即就医或拨打 120。",
           "priority": 9,
-          "source": "项目红线（AI_CONTEXT RULES / ai-service chat 执行器）",
+          "source": "generated: config/medical-redlines.json consumers.chatFragmentContent",
           "status": "verified"
         },
         {

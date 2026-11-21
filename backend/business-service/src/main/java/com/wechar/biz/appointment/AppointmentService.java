@@ -311,6 +311,10 @@ public class AppointmentService {
         // V21 互通闭环：取消成功 → 号源原子回补（仅 slot 仍 OPEN 且未满时生效；
         // 过期/关闭的号源本就不可再约，不回补）。同一事务，失败整体回滚。
         repository.releaseSlotRemaining(row.slotId());
+        // 2026-11-21（HIS 默认接通）：取消必须联动撤销院内受理单，否则「平台已取消、医院仍有单」。
+        // 撤销失败只记日志（cancelQuietly 语义），不得把已成功的本地取消回滚成失败。
+        hisGateway.cancelQuietly(row.hisOrderNo(),
+                cancelReason == null || cancelReason.isBlank() ? "patient cancelled" : cancelReason);
         return new CancelResult(toData(repository.findViewById(appointmentId).orElseThrow(), null), true);
     }
 

@@ -30,6 +30,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 KB_PATH = REPO / "backend" / "ai-service" / "config" / "hospital-knowledge.json"
 WHITELIST_PATH = REPO / "backend" / "ai-service" / "config" / "triage-departments.json"
+REDLINES_PATH = REPO / "backend" / "ai-service" / "config" / "medical-redlines.json"
+EXEC_DIR = REPO / "backend" / "ai-service" / "app" / "executors"
+INGEST_SCRIPT = REPO / "backend" / "ai-service" / "scripts" / "ingest_knowledge_kb.py"
 
 REQUIRED_SCENARIOS = ("triage", "chat", "careplan", "interpret")
 REQUIRED_METADATA = ("reviewedBy", "reviewedAt", "source")
@@ -190,6 +193,65 @@ def check() -> dict:
         for word in assert_words:
             if word in text:
                 warnings.append(f"{where}: 含强断言词「{word}」，请确认有受控依据")
+
+    # ---- 7. 单一事实源一致性（2026-11-21 治理合并新增，硬性）----
+    whitelist_data = json.loads(WHITELIST_PATH.read_text(encoding="utf-8"))
+    wl_names = [d.get("name") for d in whitelist_data.get("departments", []) if d.get("name")]
+    wl_version = str(whitelist_data.get("version") or "")
+
+    # 7a. metadata.source 对 triage-departments.json 的版本/科室数描述不得漂移
+    for src in metadata.get("source") or []:
+        s = str(src)
+        if "triage-departments.json" in s:
+            m_ver = re.search(r"triage-departments\.json\s+v(\d+\.\d+\.\d+)", s)
+            if m_ver and m_ver.group(1) != wl_version:
+                errors.append(f"metadata.source 写 v{m_ver.group(1)}，但白名单实际 v{wl_version}（文档漂移）")
+            m_cnt = re.search(r"(\d+)\s*科室", s)
+            if m_cnt and int(m_cnt.group(1)) != len(wl_names):
+                errors.append(f"metadata.source 写 {m_cnt.group(1)} 科室，但白名单实际 {len(wl_names)} 科室（文档漂移）")
+
+    # 7b. 安全红线唯一源：⑦ chat「禁忌与红线」必须逐字等于主清单 consumers.chatFragmentContent
+    try:
+        redlines = json.loads(REDLINES_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        redlines = None
+        errors.append("红线主清单缺失：backend/ai-service/config/medical-redlines.json")
+    if redlines:
+        expected_chat = str((redlines.get("consumers") or {}).get("chatFragmentContent") or "")
+        chat_items = (scenarios.get("chat") or {}).get("knowledge") or []
+        hit = [i for i in chat_items if i.get("topic") == "禁忌与红线"]
+        if not expected_chat:
+            errors.append("红线主清单 consumers.chatFragmentContent 为空")
+        elif not hit:
+            errors.append("chat 缺少「禁忌与红线」片段（应由 tools/gen-hospital-knowledge.js 从主清单生成）")
+        elif hit[0].get("content") != expected_chat:
+            errors.append("chat「禁忌与红线」与红线主清单不一致（禁止手改，请重跑生成脚本）")
+
+        # 7c. 执行器场景化红线句式必须逐字存在（防一处删改导致红线丢失）
+        for fname, sentences in (redlines.get("executorVerbatimSentences") or {}).items():
+            if fname.startswith("_"):
+                continue
+            fpath = EXEC_DIR / fname
+            if not fpath.exists():
+                errors.append(f"红线校验：执行器文件不存在 {fname}")
+                continue
+            src_text = fpath.read_text(encoding="utf-8")
+            for sent in sentences:
+                if sent not in src_text:
+                    errors.append(f"{fname}: 缺少主清单登记的红色句式「{sent[:18]}…」（红线被删改？）")
+        # 7d. careplan/triage 的 limitations 必须引用主清单模块（不得回退为散写副本）
+        for fname, marker in (("careplan.py", "from ..medical_redlines import"), ("triage.py", "from ..medical_redlines import")):
+            fpath = EXEC_DIR / fname
+            if fpath.exists() and marker not in fpath.read_text(encoding="utf-8"):
+                errors.append(f"{fname}: 未引用红线主清单模块（app/medical_redlines.py）")
+
+    # 7e. 科普入库脚本不得回退为手抄副本
+    if INGEST_SCRIPT.exists():
+        ingest_src = INGEST_SCRIPT.read_text(encoding="utf-8")
+        if "ARTICLES = [" in ingest_src:
+            errors.append("ingest_knowledge_kb.py 出现手抄 ARTICLES 字面量（应读 data/knowledge-articles.json）")
+        if "knowledge-articles.json" not in ingest_src:
+            errors.append("ingest_knowledge_kb.py 未引用同源数据文件 data/knowledge-articles.json")
 
     return {"errors": errors, "warnings": warnings, **report}
 

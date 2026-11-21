@@ -88,6 +88,10 @@ tags:
     description: AI 问诊会话与消息。权威记录在 MySQL，生成在 FastAPI。
   - name: message
     description: 消息中心（挂号通知/系统通知）。未读数是红点唯一数据源。
+  - name: payment
+    description: 演示支付（P0-1）。仅 DEMO 档，不接微信支付/商户号，不是真实收费凭证。
+  - name: exam
+    description: 检查预约（P0-2）。演示排期，不接真实检查号源，不是实际到院凭证。
   - name: ai-task
     description: AI 任务状态、事件流与取消。断线后一律回到本组查询终态。
   - name: triage
@@ -2054,6 +2058,339 @@ paths:
   # message（消息中心，V21 医生-患者互通）
   # ==========================================================================
 
+  # ---------- 演示支付（P0-1） ----------
+  # 边界：仅 DEMO 档；不调用 wx.requestPayment、不接微信真实/沙箱支付。
+  # 页面文案固定「演示支付成功（未真实扣款）」；enabled=false 时只显示「请到院窗口缴费」。
+
+  /api/v1/payment/config:
+    get:
+      operationId: getPaymentConfig
+      tags: [payment]
+      summary: 支付能力快照
+      description: 页面据此决定显示「演示支付」还是「请到院窗口缴费」。enabled=false 时不创建订单。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 支付能力快照（mode 恒为 DEMO）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkPaymentConfig'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /api/v1/payment/orders:
+    post:
+      operationId: createPaymentOrder
+      tags: [payment]
+      summary: 创建演示支付订单
+      description: |
+        金额只取号源 `doctor_slots.fee`，不接受客户端金额；预约必须属于当前用户。
+        先由 clinic-his 创建演示账单（按 appId+refType+refId 幂等），再落本地订单。
+        同一 `Idempotency-Key` 重复提交返回同一订单；同一预约重复建单返回已有订单。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PaymentOrderCreate'}
+      responses:
+        '200':
+          description: 订单已创建或幂等回放。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkPaymentOrder'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/payment/orders/{orderNo}:
+    get:
+      operationId: getPaymentOrder
+      tags: [payment]
+      summary: 查询演示支付订单
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: orderNo
+          in: path
+          required: true
+          schema: {type: string, maxLength: 32}
+      responses:
+        '200':
+          description: 订单状态（只返回本人订单）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkPaymentOrder'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/v1/payment/orders/{orderNo}/demo-pay:
+    post:
+      operationId: demoPayOrder
+      tags: [payment]
+      summary: 演示支付（未真实扣款）
+      description: |
+        页面显式点击触发，不调用 `wx.requestPayment`。服务端向 clinic-his 标记演示账单已支付，
+        成功后才把本地订单置 PAID；HIS 失败不置 PAID。重复调用按订单状态幂等。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: orderNo
+          in: path
+          required: true
+          schema: {type: string, maxLength: 32}
+      responses:
+        '200':
+          description: 演示支付成功（`status=PAID`），或已是 PAID 的幂等回放。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkPaymentOrder'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/payment/orders/{orderNo}/refund:
+    post:
+      operationId: refundOrder
+      tags: [payment]
+      summary: 演示退费（仅本地状态，不触发真实退款）
+      description: |
+        只有 `status=PAID` 可退；成功置 `REFUNDED`，写 refunded_at/refund_reason/refund_channel=LOCAL_DEMO。
+        不调用微信支付、不触发 clinic-his 退费（其退费接口未在 openapi 暴露）；页面固定标注“演示退费”。
+        重复调用按订单状态幂等。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: orderNo
+          in: path
+          required: true
+          schema: {type: string, maxLength: 32}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason: {type: string, maxLength: 100}
+      responses:
+        '200':
+          description: 退费成功（`status=REFUNDED`），或已是 REFUNDED 的幂等回放。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkPaymentOrder'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/payment/demo/callback:
+    post:
+      operationId: paymentDemoCallback
+      tags: [payment]
+      summary: 本地演示支付回调（HMAC 验签）
+      # 幂等由「订单号 + 验签」保证，不需要 Idempotency-Key 请求头
+      x-idempotency: not-required
+      description: |
+        仅供本地演示/自动化验收，**不是**微信支付回调。必须带 `X-Payment-Signature`、
+        `X-Payment-Timestamp`（±300s）、`X-Payment-Nonce`；签名串见 PaymentDemoSigner。
+        重复回调按订单号幂等：N 次只入账 1 次；验签失败/金额不一致一律拒绝且不改状态。
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: X-Payment-Signature
+          in: header
+          required: true
+          schema: {type: string, maxLength: 128}
+        - name: X-Payment-Timestamp
+          in: header
+          required: true
+          schema: {type: string, maxLength: 20}
+        - name: X-Payment-Nonce
+          in: header
+          required: true
+          schema: {type: string, minLength: 8, maxLength: 64}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PaymentDemoCallback'}
+      responses:
+        '200':
+          description: 已入账或幂等回放。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkPaymentOrder'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  # ===================================================================
+  # 检查预约（P0-2，2026-11-20）
+  # 边界：演示排期，不接真实医院检查号源；source 恒为 DEMO，页面固定标「演示预约」。
+  # 闭环：项目/排期 → 建单（HIS 占位后落本地）→ 查询/取消；HIS 失败不显示成功。
+  # ===================================================================
+
+  /api/v1/exam/config:
+    get:
+      operationId: getExamConfig
+      tags: [exam]
+      summary: 检查预约能力快照
+      description: enabled=false 时页面只显示「检查预约暂未开放，请到院窗口办理」，不请求项目/排期。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 检查预约开关（mode 恒为 DEMO）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkExamConfig'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /api/v1/exam/items:
+    get:
+      operationId: listExamItems
+      tags: [exam]
+      summary: 检查项目列表
+      description: 只读；来自 clinic-his `lab_items`，价格为演示项目价，不产生真实收费。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 检查项目。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkExamItemList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/exam/items/{itemCode}/slots:
+    get:
+      operationId: listExamSlots
+      tags: [exam]
+      summary: 检查项目未来 7 天排期
+      description: 演示生成 08:30/09:30/10:30/14:00/15:00；available=false 表示已被占用，客户端置灰。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: itemCode
+          in: path
+          required: true
+          schema: {type: string, maxLength: 32}
+      responses:
+        '200':
+          description: 排期列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkExamSlots'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/exam/orders:
+    post:
+      operationId: createExamOrder
+      tags: [exam]
+      summary: 创建检查预约
+      description: |
+        金额取 clinic-his 项目价，不接受客户端金额。先向 HIS 占位，成功后才落本地；
+        HIS 失败返回 503 且不生成平台单。同一 `Idempotency-Key` 重复提交返回同一单；
+        同一 requestNo / 同一 item+slot 在 HIS 侧幂等/防重。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ExamOrderCreate'}
+      responses:
+        '200':
+          description: 预约已创建或幂等回放。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkExamOrder'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/exam/orders/me:
+    get:
+      operationId: listMyExamOrders
+      tags: [exam]
+      summary: 我的检查预约
+      description: 当前用户最近 50 条，按创建时间倒序；含已取消。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 检查预约列表。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkExamOrderList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+
+  /api/v1/exam/orders/{requestNo}:
+    get:
+      operationId: getExamOrder
+      tags: [exam]
+      summary: 查询检查预约
+      description: 只返回当前用户的预约；他人单号返回 403。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: requestNo
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+      responses:
+        '200':
+          description: 检查预约状态。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkExamOrder'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+
+  /api/v1/exam/orders/{requestNo}/cancel:
+    post:
+      operationId: cancelExamOrder
+      tags: [exam]
+      summary: 取消检查预约
+      description: |
+        先向 clinic-his 取消，成功后本地置 CANCELLED；HIS 失败返回 503 且本地保持 BOOKED。
+        已取消重复调用按幂等回放；已完成/其它状态 409。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - name: requestNo
+          in: path
+          required: true
+          schema: {type: string, maxLength: 64}
+      responses:
+        '200':
+          description: 已取消或幂等回放。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkExamOrder'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
   /api/v1/messages:
     get:
       operationId: listMessages
@@ -3868,6 +4205,149 @@ components:
     OkAppointmentList:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/Appointment'}}}}]
 
+    # ---------- 演示支付（P0-1） ----------
+
+    PaymentConfig:
+      type: object
+      required: [enabled, mode, source, disabledMessage, successMessage]
+      properties:
+        enabled: {type: boolean, description: 是否开启演示支付；false 时页面只显示「请到院窗口缴费」。}
+        mode: {type: string, enum: [DEMO], description: 唯一启用档；LIVE 配置即启动失败。}
+        source: {type: string, enum: [DEMO, SANDBOX]}
+        disabledMessage: {type: string, maxLength: 80}
+        successMessage: {type: string, maxLength: 80, description: 固定「演示支付成功（未真实扣款）」。}
+      additionalProperties: false
+
+    PaymentOrder:
+      type: object
+      required: [orderNo, appointmentId, chargeNo, amount, currency, status, source, demo, createdAt]
+      properties:
+        orderNo: {type: string, maxLength: 32}
+        appointmentId: {type: string, maxLength: 64}
+        chargeNo: {type: string, maxLength: 64, description: clinic-his 演示账单号（非真实收费凭证）。}
+        amount: {type: number, format: double, minimum: 0, description: 元；服务端按号源费落库。}
+        currency: {type: string, maxLength: 8}
+        status: {type: string, enum: [UNPAID, PAID, REFUNDED, FAILED, CLOSED]}
+        source: {type: string, enum: [DEMO, SANDBOX]}
+        demo: {type: boolean, const: true, description: 恒 true：演示订单，不是真实扣款。}
+        createdAt: {type: string, format: date-time}
+        paidAt: {type: [string, 'null'], format: date-time}
+        refundedAt: {type: [string, 'null'], format: date-time, description: 演示退费时间；仅 status=REFUNDED 时有值。}
+        refundReason: {type: [string, 'null'], maxLength: 255, description: 退费原因（审计回显，不含敏感信息）。}
+      additionalProperties: false
+
+    PaymentOrderCreate:
+      type: object
+      required: [appointmentId]
+      properties:
+        appointmentId: {type: string, minLength: 1, maxLength: 64}
+      additionalProperties: false
+
+    PaymentDemoCallback:
+      type: object
+      required: [orderNo, chargeNo, amount, source]
+      properties:
+        orderNo: {type: string, minLength: 8, maxLength: 32}
+        chargeNo: {type: string, minLength: 8, maxLength: 64}
+        amount: {type: number, format: double, minimum: 0}
+        source: {type: string, enum: [DEMO, SANDBOX]}
+      additionalProperties: false
+
+    OkPaymentConfig:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/PaymentConfig'}}}]
+
+    OkPaymentOrder:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/PaymentOrder'}}}]
+
+    # ---------- 检查预约（P0-2）----------
+
+    ExamConfig:
+      type: object
+      required: [enabled, mode, source, disabledMessage, demoNotice]
+      properties:
+        enabled: {type: boolean, description: 关闭时页面只显示 disabledMessage，不请求项目/排期。}
+        mode: {type: string, enum: [DEMO]}
+        source: {type: string, enum: [DEMO, SANDBOX]}
+        disabledMessage: {type: string, maxLength: 80}
+        demoNotice: {type: string, maxLength: 80, description: 页面固定展示的演示标识。}
+      additionalProperties: false
+
+    ExamItem:
+      type: object
+      required: [itemCode, itemName, category, price, demo]
+      properties:
+        itemCode: {type: string, maxLength: 32}
+        itemName: {type: string, maxLength: 80}
+        category: {type: string, maxLength: 16, description: 检验/检查。}
+        price: {type: number, format: double, minimum: 0, description: 演示项目价，不产生真实收费。}
+        demo: {type: boolean}
+      additionalProperties: false
+
+    ExamSlot:
+      type: object
+      required: [slotKey, slotDate, slotTime, available]
+      properties:
+        slotKey: {type: string, maxLength: 32, description: yyyyMMdd-HHmm}
+        slotDate: {type: string, format: date}
+        slotTime: {type: string, maxLength: 8, description: HH:mm}
+        available: {type: boolean, description: false=已被占用，客户端必须置灰不可选。}
+      additionalProperties: false
+
+    ExamSlots:
+      type: object
+      required: [itemCode, slots]
+      properties:
+        itemCode: {type: string, maxLength: 32}
+        itemName: {type: string, maxLength: 80}
+        slots:
+          type: array
+          items: {$ref: '#/components/schemas/ExamSlot'}
+      additionalProperties: false
+
+    ExamOrderCreate:
+      type: object
+      required: [itemCode, slotKey, patientName]
+      properties:
+        itemCode: {type: string, maxLength: 32}
+        slotKey: {type: string, maxLength: 32}
+        patientName: {type: string, maxLength: 50}
+        familyMemberId: {type: [string, 'null'], maxLength: 64}
+      additionalProperties: false
+
+    ExamOrder:
+      type: object
+      required: [requestNo, examOrderNo, itemCode, itemName, price, slotKey, slotDate,
+                 slotTime, status, source, replayed, createdAt]
+      properties:
+        requestNo: {type: string, maxLength: 64, description: 平台检查申请号（EXR…）。}
+        examOrderNo: {type: string, maxLength: 64, description: clinic-his 检查预约号（EXM…）。}
+        itemCode: {type: string, maxLength: 32}
+        itemName: {type: string, maxLength: 80}
+        price: {type: number, format: double, minimum: 0}
+        slotKey: {type: string, maxLength: 32}
+        slotDate: {type: string, format: date}
+        slotTime: {type: string, maxLength: 8}
+        status: {type: string, enum: [BOOKED, CANCELLED, COMPLETED]}
+        source: {type: string, enum: [DEMO, SANDBOX]}
+        replayed: {type: boolean, description: true=幂等回放，不是本次新建。}
+        createdAt: {type: string, format: date-time}
+      additionalProperties: false
+
+    OkExamConfig:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/ExamConfig'}}}]
+
+    OkExamItemList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/ExamItem'}}}}]
+
+    OkExamSlots:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/ExamSlots'}}}]
+
+    OkExamOrder:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/ExamOrder'}}}]
+
+    OkExamOrderList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/ExamOrder'}}}}]
+
     # ---------- 消息中心（V21 医生-患者互通）----------
 
     MessageCenterItem:
@@ -3875,11 +4355,11 @@ components:
       required: [id, type, title, body, read, createdAt]
       properties:
         id: {type: string}
-        type: {type: string, enum: [APPOINTMENT, SYSTEM], description: APPOINTMENT=挂号状态变更通知 · SYSTEM=系统通知。}
+        type: {type: string, enum: [APPOINTMENT_CREATED, APPOINTMENT_STATUS, CONSULT_REPLY, CONSULT_APPLY, REPORT_READY, SYSTEM_NOTICE], description: APPOINTMENT_CREATED=挂号成功 · APPOINTMENT_STATUS=挂号状态变更 · CONSULT_REPLY=医生回复 · CONSULT_APPLY=患者发起问诊 · REPORT_READY=检查报告已出具 · SYSTEM_NOTICE=系统通知。}
         title: {type: string, maxLength: 80}
-        body: {type: string, maxLength: 500}
+        body: {type: string, maxLength: 300}
         read: {type: boolean, description: 是否已读。}
-        refType: {type: [string, 'null'], maxLength: 32, description: 关联业务类型（如 APPOINTMENT）。}
+        refType: {type: [string, 'null'], maxLength: 24, description: 关联业务类型（appointment/consultation/report）。}
         refId: {type: [string, 'null'], maxLength: 64, description: 关联业务 ID（如 appointmentId），供点击跳转。}
         readAt: {type: [string, 'null'], format: date-time}
         createdAt: {type: string, format: date-time}
@@ -3996,6 +4476,11 @@ components:
         recordedAt: {type: string, format: date-time}
         reportedAt: {type: [string, 'null'], format: date-time}
         abnormalCount: {type: integer, minimum: 0}
+        sourceSystem: {type: [string, 'null'], description: 来源系统（health_report_details.data_origin，如 DEMO/LIS/PACS/HIS）。}
+        externalReportId: {type: [string, 'null'], description: 外部报告号（LIS/PACS 原始报告号；演示数据为空）。}
+        reviewerName: {type: [string, 'null'], description: 报告审核者；未审核为空。}
+        examRequestNo: {type: [string, 'null'], description: 关联检查申请号（P0-2 检查预约链路，可空）。}
+        referenceRangeNote: {type: [string, 'null'], description: 报告级参考区间说明；项目级参考区间以 items 快照为准。}
         isDemo: {type: boolean, description: 演示数据标记；客户端必须显示演示水印。}
       additionalProperties: false
 
@@ -4034,6 +4519,10 @@ components:
         reviewerName: {type: [string, 'null']}
         inspectionMethod: {type: [string, 'null']}
         instrumentModel: {type: [string, 'null']}
+        sourceSystem: {type: [string, 'null'], description: 来源系统（data_origin，如 DEMO/LIS/PACS/HIS）。}
+        externalReportId: {type: [string, 'null'], description: 外部报告号（LIS/PACS 原始报告号；演示数据为空）。}
+        examRequestNo: {type: [string, 'null'], description: 关联检查申请号（P0-2 检查预约链路，可空）。}
+        referenceRangeNote: {type: [string, 'null'], description: 报告级参考区间说明；项目级参考区间以 items 快照为准。}
         findingsText: {type: [string, 'null'], description: 检查所见（影像/描述型报告）。}
         impressionText: {type: [string, 'null'], description: 诊断意见。}
         conclusionText: {type: [string, 'null']}

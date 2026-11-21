@@ -94,16 +94,18 @@
 .act-grid {
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
   margin-bottom: 28rpx;
 }
+/* ⚠️ 不用 flex gap：iOS 14.4 及以下 / 旧内核里 gap 对 flex 无效 → 间距归零，改用子项外边距 */
+.act-grid > .act-row + .act-row { margin-top: 20rpx; }
 
 .act-row {
   display: flex;
   align-items: stretch;
   justify-content: space-between;
-  gap: 20rpx;
 }
+/* gap 兜底：一行两张快捷卡（space-between 定位不变，只补中间缝） */
+.act-row > .act-card + .act-card { margin-left: 20rpx; }
 
 .act-card {
   flex: 0 1 auto;
@@ -403,11 +405,12 @@
 .input-bar {
   display: flex;
   align-items: center;
-  gap: 16rpx;
   padding: 16rpx 0 calc(100rpx + env(safe-area-inset-bottom));
   flex-shrink: 0;
   background: transparent;
 }
+/* gap 兜底：输入条 = 输入框 + 发送按钮 */
+.input-bar > .send-btn { margin-left: 16rpx; }
 
 .input-wrap {
   flex: 1;
@@ -496,8 +499,9 @@
   .hx-bubble::after { left: 17px; bottom: -5px; width: 11px; height: 11px; border-radius: 2px; }
   .hx-mascot { width: 100px; height: 108px; margin-left: 8px; }
 
-  .act-grid { gap: 10px; margin-bottom: 14px; }
-  .act-row { gap: 10px; }
+  .act-grid { margin-bottom: 14px; }
+  .act-grid > .act-row + .act-row { margin-top: 10px; }
+  .act-row > .act-card + .act-card { margin-left: 10px; }
   .act-card { gap: 11px; padding: 10px; }
   .act-card .tile { width: 44px; height: 44px; border-radius: 12px; }
   .act-card .tile-ic { width: 22px; height: 22px; }
@@ -530,7 +534,8 @@
   .plan-lim { margin: 6px 4px 0; }
   .hx-note { margin: 0 0 4px; }
 
-  .input-bar { gap: 8px; padding: 8px 0 calc(50px + env(safe-area-inset-bottom)); }
+  .input-bar { padding: 8px 0 calc(50px + env(safe-area-inset-bottom)); }
+  .input-bar > .send-btn { margin-left: 8px; }
   .input-wrap { padding: 0 6px 0 14px; }
   .voice-btn { width: 32px; height: 32px; }
   .send-btn { padding: 0 18px; border-radius: 12px; }

@@ -95,8 +95,10 @@ function loginByWxCode(code, phoneCode) {
  *    - phoneCode = 'dev-phone-<手机号>'          → dev 档 provider 解出手机号并绑定
  *    - password **不参与校验**（dev 档无密码体系）—— 这正是该入口仅限开发构建的原因。
  * 生产只允许微信一键登录；服务端侧另有网关 legacy 登录开关兜底（默认 404）。
+ *
+ * @param {{timeout?:number}} [opts] 个人主体演示登录用短超时，避免网关不可达时长时间转圈
  */
-function login(phone, password) {
+function login(phone, password, opts) {
   if (!ENV.legacyManualLoginEnabled) {
     return Promise.reject(Object.assign(new Error('当前版本仅支持微信一键登录'), { code: 'BAD_SPEC' }))
   }
@@ -105,8 +107,11 @@ function login(phone, password) {
     return Promise.reject(Object.assign(new Error('联调登录未配置密钥，请联系管理员'), { code: 'BAD_SPEC' }))
   }
   const p = String(phone || '').trim()
+  const o = opts || {}
   return Promise.resolve()
-    .then(() => post(API.USER_WX_LOGIN, loginBody('dev-user-1-manual-' + p, 'dev-phone-' + p)))
+    .then(() => post(API.USER_WX_LOGIN, loginBody('dev-user-1-manual-' + p, 'dev-phone-' + p), {
+      timeout: o.timeout || 15000
+    }))
     .then(applySession)
 }
 

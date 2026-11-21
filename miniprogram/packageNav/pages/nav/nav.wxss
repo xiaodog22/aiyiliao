@@ -481,6 +481,11 @@
 /* ============ 目的地选择弹层 ============ */
 .sheet-mask {
   position: fixed;
+  /* inset 是简写（Chrome 87+ / iOS 14.5+）；老内核不认会导致遮罩不铺满 → 先写四边兜底 */
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   inset: 0;
   z-index: 55;
   background: rgba(20, 38, 76, 0.42);

@@ -300,7 +300,8 @@ async function main() {
   // A7（D-A-P1-01 修复锁）：access 内存为空、refresh 存活 → 先用 refresh 静默换 access 再撤销
   mods.session.clear()
   mods.session.setTokens({ refreshToken: 'rt-2' }) // 无 accessToken → 内存 access 为空
-  const refreshAliveBefore = storage['wb_refresh_token'] === 'rt-2'
+  // 令牌按 secret-store 混淆落盘（M14），不能直接读 storage 明文；按会话读取结果判定
+  const refreshAliveBefore = mods.session.getRefreshToken() === 'rt-2'
   reqCalls.length = 0
   appCfg.logout()
   await sleep(30)

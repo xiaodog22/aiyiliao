@@ -1,14 +1,19 @@
 package com.wechar.biz.dev;
 
+import com.wechar.biz.common.ApiException;
 import com.wechar.biz.common.Envelope;
 import com.wechar.biz.common.RequestIds;
+import com.wechar.biz.patient.HealthReportService;
+import com.wechar.biz.patient.dto.ReportReadyData;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StreamUtils;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -28,6 +33,8 @@ import java.util.Map;
  * 端点（已在 AuthInterceptor 白名单，dev 档免登录）：
  *  - GET  /api/v1/dev/slots/status → 按医生聚合的当前剩余号源状态
  *  - POST /api/v1/dev/slots/reset  → 回补未来 14 天上午/下午多档号源（每档 10 号，扣已约）
+ *  - POST /api/v1/dev/reports/{recordId}/ready → P0-3 演示：把待审核/待出结果报告置 READY
+ *    并写 1 条站内消息（同一报告幂等，最多 1 条）；生产 profile 不装配本 Controller。
  */
 @RestController
 @RequestMapping("/api/v1/dev")
@@ -53,9 +60,27 @@ public class DevAdminController {
     private static final int SEED_DAYS = 14;
 
     private final JdbcTemplate jdbc;
+    private final HealthReportService reports;
 
-    public DevAdminController(JdbcTemplate jdbc) {
+    public DevAdminController(JdbcTemplate jdbc, HealthReportService reports) {
         this.jdbc = jdbc;
+        this.reports = reports;
+    }
+
+    /**
+     * P0-3 演示入口：报告 → READY + 站内消息。
+     * dev 档免登录，recordId 全局唯一；user_id 从库内反查，不信任外部传身份。
+     * 生产档本 Controller 不装配（@Profile("dev")），路径 404。
+     */
+    @PostMapping("/reports/{recordId}/ready")
+    public Envelope<ReportReadyData> publishReport(@PathVariable String recordId) {
+        List<String> owners = jdbc.queryForList(
+                "SELECT user_id FROM health_records WHERE id = ? AND category = 'EXAM'",
+                String.class, recordId);
+        if (owners.isEmpty()) {
+            throw new ApiException("HEALTH_RECORD_NOT_FOUND", HttpStatus.NOT_FOUND, "检查报告不存在");
+        }
+        return Envelope.ok(RequestIds.current(), reports.publishReady(owners.get(0), recordId));
     }
 
     /** 医生号源状态快照：按医生聚合 OPEN 号源数与剩余合计。 */

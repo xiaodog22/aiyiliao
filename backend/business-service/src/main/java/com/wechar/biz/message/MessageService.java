@@ -8,6 +8,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +32,8 @@ public class MessageService {
     public static final String TYPE_CONSULT_REPLY = "CONSULT_REPLY";
     /** V23 患者指定医生发起在线问诊申请（医生消息中心未读红点；refType=consultation，refId=会话 id）。 */
     public static final String TYPE_CONSULT_APPLY = "CONSULT_APPLY";
+    /** P0-3 检查报告 READY 通知（患者消息中心；refType=report，refId=health_records.id）。 */
+    public static final String TYPE_REPORT_READY = "REPORT_READY";
 
     private static final int MAX_LIMIT = 50;
 
@@ -54,7 +57,40 @@ public class MessageService {
             return; // 无接收人或无实质内容 → 不写空消息
         }
         repository.insert(new MessageRow("msg-" + UUID.randomUUID(), userId, type,
-                title, body, refType, refId, null, clock.instant()));
+                title, body, refType, refId, null, null, clock.instant()));
+    }
+
+    /**
+     * 幂等业务事件通知（P0-3 报告 READY）：同 (userId, bizKey) 只写 1 条。
+     *
+     * <p>唯一索引 uq_messages_user_biz 是最终裁决点：先查一次快路径，插入撞唯一键时
+     * 按"已通知过"返回 false，不重复写、不把重复事件当失败。bizKey 为空则退化为
+     * 普通 notify（调用方须显式说明为何无需幂等）。</p>
+     *
+     * @return true = 本次新写入 1 条；false = 已通知过或入参不完整
+     */
+    @Transactional
+    public boolean notifyOnce(String userId, String type, String title, String body,
+                              String refType, String refId, String bizKey) {
+        if (bizKey == null || bizKey.isBlank()) {
+            notify(userId, type, title, body, refType, refId);
+            return true;
+        }
+        if (userId == null || userId.isBlank() || type == null || type.isBlank()
+                || title == null || title.isBlank()) {
+            return false;
+        }
+        if (repository.existsByBizKey(userId, bizKey)) {
+            return false;
+        }
+        try {
+            repository.insert(new MessageRow("msg-" + UUID.randomUUID(), userId, type,
+                    title, body, refType, refId, bizKey, null, clock.instant()));
+            return true;
+        } catch (DuplicateKeyException duplicate) {
+            // 并发下两个请求同时通过 existsByBizKey：唯一索引只放行 1 条，另一条按已通知处理。
+            return false;
+        }
     }
 
     /** 列表（新→旧，cursor 双键分页）：返回 items + nextCursor。 */

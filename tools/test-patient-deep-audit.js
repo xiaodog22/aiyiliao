@@ -2,7 +2,7 @@
  * test-patient-deep-audit.js —— 分片 B2「患者端 9 页」详细版深度审计离线单测
  *
  * 打桩 wx / getApp / Page / storage，node 直接运行，覆盖：
- *   A. P1-03 回归断言：home._route('checkup'/'care') 必须有用户反馈（showModal/toast/跳转）
+ *   A. P1-03/P0-2 回归断言：home._route('checkup') 跳检查预约页，_route('care') 必须有用户反馈（showModal/toast/跳转）
  *      —— 第一轮红：NOT_READY 零引用、default 空分支静默。断言按「修复后应有行为」编写，
  *      实测红/绿如实记录。
  *   B. P1-04 回归断言：consultation._onAiFail 失败气泡不得直出英文错误码/err.code，
@@ -115,7 +115,7 @@ function section(t) { console.log('\n— ' + t + ' —') }
 function readSrc(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8') }
 
 /* ==================== A. P1-03 回归断言 ==================== */
-section('A. P1-03 首页 checkup/care 用户反馈断言')
+section('A. P1-03/P0-2 首页 checkup/care 用户反馈断言')
 {
   const src = readSrc('pages/home/home.js')
   // A1 源级：NOT_READY 不再是死常量（有引用）
@@ -130,7 +130,11 @@ section('A. P1-03 首页 checkup/care 用户反馈断言')
   const fbCheckup = modalCalls.length > 0 || toastCalls.length > 0 || navCalls.length > 0
   check('A2 _route(checkup) 有用户反馈（modal/toast/navigate）', fbCheckup,
     'modal=' + modalCalls.length + ' toast=' + toastCalls.length + ' nav=' + navCalls.length)
-  check('A2b checkup 不做假跳转', navCalls.length === 0, '误跳转 ' + JSON.stringify(navCalls))
+  // P0-2：checkup 已从"筹备中"升级为真实的检查预约页，断言跳到该页而不是误跳其它页
+  const checkupNav = navCalls.length ? String(navCalls[0].url || '') : ''
+  check('A2b checkup 跳检查预约页（不静默/不弹筹备中）',
+    navCalls.length === 1 && checkupNav === '/pages/exam/exam',
+    'nav=' + JSON.stringify(navCalls))
 
   // A3 行为级：_route('care') 同样有反馈
   modalCalls.length = 0

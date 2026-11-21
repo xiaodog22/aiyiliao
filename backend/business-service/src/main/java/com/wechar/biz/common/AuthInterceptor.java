@@ -73,6 +73,9 @@ public class AuthInterceptor implements HandlerInterceptor {
             Map.entry("/api/v1/resources/*", "GET"),
             // 降级开关快照（2026-11-18）：不含用户数据，冷启动/未登录可读；供 WechatSI 兜底判定
             Map.entry("/api/v1/voice/capabilities", "GET"),
+            // P0-1（2026-11-20）：本地演示支付回调，匿名但必须 HMAC 验签（PaymentDemoSigner）；
+            // 无签名/签名不符一律 401，不绕过业务鉴权。
+            Map.entry("/api/v1/payment/demo/callback", "POST"),
             // N17（2026-10-19）：院内导航楼层与路径规划，匿名只读（契约未声明 401）
             Map.entry("/api/v1/indoor-map/floors", "GET"),
             Map.entry("/api/v1/indoor-map/route", "GET"),
@@ -94,6 +97,7 @@ public class AuthInterceptor implements HandlerInterceptor {
             Map.entry("/api/v1/dev/slots/reset", "POST"),
             Map.entry("/api/v1/dev/bed-applications", "GET"),
             Map.entry("/api/v1/dev/bed-applications/*/review", "POST"),
+            Map.entry("/api/v1/dev/reports/*/ready", "POST"),
             Map.entry("/api/v1/dev/admin", "GET"));
 
     private final AuthSessionStore authSessionStore;

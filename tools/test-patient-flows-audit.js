@@ -209,9 +209,9 @@ if (homeDef) {
   navCalls.length = 0
   toastCalls.length = 0
   ctx._route('checkup')
-  // 修复后（P1-03）：NOT_READY 接线，点击弹中文说明（不做假跳转、不静默）
-  check('8宫格-体检服务：弹「体检服务」中文说明（P1-03 已修）',
-    navCalls.length === 0 && toastCalls.indexOf('[modal]体检服务') >= 0,
+  // P0-2：checkup 已升级为真实检查预约页，不再走 NOT_READY 弹窗
+  check('8宫格-检查预约：跳「检查预约」页（P0-2 已接）',
+    navTo('navigateTo', '/pages/exam/exam') === 1 && toastCalls.length === 0,
     'actual=' + JSON.stringify(navCalls) + ' toast=' + JSON.stringify(toastCalls))
 
   navCalls.length = 0

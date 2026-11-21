@@ -54,8 +54,9 @@
   display: flex;
   align-items: flex-end;
   justify-content: flex-start;
-  gap: 48rpx;
 }
+/* ⚠️ 不用 flex gap：iOS 14.4 及以下 / 旧内核里 gap 对 flex 无效 → 间距归零，改用子项外边距 */
+.nav-tabs > .nav-tab + .nav-tab { margin-left: 48rpx; }
 
 /* 复刻文档 §四.4：选中蓝字 + 底部蓝下划线（56rpx × 6rpx，圆角）；未选中灰蓝 */
 .nav-tab {
@@ -480,8 +481,9 @@
   flex-shrink: 0;
   margin-left: 12rpx;
   display: flex;
-  gap: 12rpx;
 }
+/* gap 兜底：缩略反馈按钮（image 子项） */
+.ai-fb > .fb-btn + .fb-btn { margin-left: 12rpx; }
 
 .fb-btn {
   width: 36rpx;
@@ -719,11 +721,12 @@
 .input-bar {
   display: flex;
   align-items: center;
-  gap: 16rpx;
   padding: 16rpx 24rpx calc(100rpx + env(safe-area-inset-bottom));
   background: var(--card);
   flex-shrink: 0;
 }
+/* gap 兜底：输入条只有「输入框 + 发送」两枚子项 */
+.input-bar > .send-fab { margin-left: 16rpx; }
 
 .input-wrap {
   flex: 1;
@@ -927,7 +930,7 @@
   .res-reason { font-size: 13px; }
 
   .nav-bar { padding-left: 12px; padding-right: 12px; padding-bottom: 8px; }
-  .nav-tabs { gap: 24px; }
+  .nav-tabs > .nav-tab + .nav-tab { margin-left: 24px; }
   .nav-tab { padding: 3px 0 6px; }
   .nav-tab-on::after { width: 28px; height: 3px; border-radius: 2px; }
   .nav-clear-ic { width: 16px; height: 16px; margin-left: 4px; }
@@ -968,7 +971,7 @@
   .res-ops { margin-top: 12px; padding-top: 10px; border-top-width: 1px; }
   .res-btn { min-width: 100px; height: 36px; padding: 0 16px; border-width: 1px; }
   .res-foot { margin-top: 11px; padding-top: 9px; border-top-width: 1px; }
-  .ai-fb { gap: 6px; }
+  .ai-fb > .fb-btn + .fb-btn { margin-left: 6px; }
   .fb-btn { width: 18px; height: 18px; padding: 3px 4px; border-radius: 5px; }
 
   .flow-zone { padding: 0 0 12px; }
@@ -997,7 +1000,8 @@
   .safety-ic { width: 18px; height: 18px; margin-right: 6px; }
   .safety-call { margin-left: 8px; min-height: 32px; padding: 0 14px; }
 
-  .input-bar { gap: 8px; padding: 8px 12px calc(50px + env(safe-area-inset-bottom)); }
+  .input-bar { padding: 8px 12px calc(50px + env(safe-area-inset-bottom)); }
+  .input-bar > .send-fab { margin-left: 8px; }
   .input-wrap { padding: 0 6px 0 14px; }
   .voice-btn { width: 40px; height: 40px; }
   .send-fab { border-radius: 12px; }

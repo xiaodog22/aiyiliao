@@ -38,29 +38,25 @@
   </section>
 
   <section id="app" class="app hidden">
-    <aside class="sidebar">
-      <div class="brand"><span class="logo small">康</span><span>社区诊所 HIS</span></div>
-      <nav id="nav"></nav>
-      <div class="sidebar-foot">等保 2.0 二级 · 演示版</div>
-    </aside>
-    <div class="main">
-      <header class="topbar">
-        <div class="topbar-left">
-          <button type="button" id="nav-toggle" class="btn ghost icon-btn" title="收起左侧导航" aria-label="收起左侧导航">«</button>
-          <h2 id="view-title" class="crumb">工作台</h2>
-        </div>
-        <div class="top-actions">
+    <header class="app-head">
+      <div class="head-main">
+        <div class="brand"><span class="logo small">康</span><span>社区诊所 HIS</span></div>
+        <div class="head-crumb"><h2 id="view-title" class="crumb">工作台</h2></div>
+        <div class="head-actions">
           <div class="global-search">
             <input id="global-search" type="search" placeholder="患者姓名 / 病历号" autocomplete="off" aria-label="全局患者搜索">
             <div id="global-search-results" class="search-results hidden"></div>
           </div>
           <span id="whoami" class="role-badge"></span>
+          <span class="head-note">等保 2.0 二级 · 演示版</span>
           <button class="btn ghost" data-action="change-password">修改口令</button>
           <button class="btn ghost" data-action="logout">退出</button>
+          <button type="button" id="nav-toggle" class="btn ghost icon-btn" title="收起导航" aria-label="收起导航">«</button>
         </div>
-      </header>
-      <main id="content"></main>
-    </div>
+      </div>
+      <nav id="nav" class="nav-bar"></nav>
+    </header>
+    <main id="content"></main>
   </section>
 
   <div id="modal-root"></div>

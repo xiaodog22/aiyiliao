@@ -254,6 +254,7 @@ async function testSettingsClearCache() {
     setTheme() {}, logout() {}
   })
   const cfg = loadPage(path.join('pages', 'profile', 'settings', 'settings.js'))
+  const session = require(path.join(ROOT, 'services', 'session.js'))
   const inst = instantiate(cfg)
   inst.onLoad()
   await tick5()
@@ -266,7 +267,9 @@ async function testSettingsClearCache() {
   check('[settings] 清缓存后 wb_theme 保留', storage.wb_theme === 'large')
   check('[settings] 清缓存后 wb_high_contrast 保留', storage.wb_high_contrast === true)
   check('[settings] 清缓存后 wb_voice_read 保留', storage.wb_voice_read === true)
-  check('[settings] 清缓存后 refresh 令牌快照恢复', storage.wb_refresh_token === 'rt-token')
+  // 令牌按 secret-store 混淆落盘（M14），storage 里不再是 rt- 明文；只断言逻辑令牌恢复
+  check('[settings] 清缓存后 refresh 令牌快照恢复', session.getRefreshToken() === 'rt-token',
+    '实得 ' + JSON.stringify(session.getRefreshToken()))
   check('[settings] 无关缓存确被清除', storage.wb_unrelated_cache === undefined)
   // 修复后（P2-11）：音色偏好属于"用户设置"，清缓存后必须保留
   check('[settings] 清缓存后 wb_voice 保留（P2-11 已修）',

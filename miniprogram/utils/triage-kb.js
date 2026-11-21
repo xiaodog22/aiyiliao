@@ -126,9 +126,12 @@ const DEPARTMENT_INFO = {
   '心血管内科': { id: 'cardio', floor: '门诊楼 1F', navigable: true, tag: '心慌 · 血压', intro: '胸闷心悸、高血压、冠心病、心律失常、下肢水肿等' },
   '骨科': { id: 'ortho', floor: '门诊楼 1F', navigable: true, tag: '骨关节 · 创伤', intro: '颈肩腰腿痛、关节痛、扭伤、骨折、骨质增生等' },
   '儿科诊区': { id: 'pediatric', floor: '门诊楼 1F', navigable: true, tag: '儿童诊疗', intro: '儿童常见病、生长发育、发热咳嗽腹泻等' },
-  '放射科': { id: 'radiology', floor: '门诊楼 1F', navigable: true, tag: '检查', intro: 'CT、DR 影像检查（凭医嘱前往）' },
-  '检验科': { id: 'lab', floor: '门诊楼 1F', navigable: true, tag: '检查', intro: '抽血、体液化验、报告打印（凭医嘱前往）' },
-  '药房': { id: 'pharmacy', floor: '门诊楼 1F', navigable: true, tag: '取药', intro: '凭处方取药' },
+  // ⚠️ 以下 3 个是「检查/取药目的地」，不是分诊推荐目标（2026-11-21 治理合并处置：
+  //   保留导航/位置用途，标 recommendable:false 禁止进推荐集合；不在 ⑧ 白名单内，
+  //   tools/gen-hospital-knowledge.js --check 会校验该标记与 ⑧ 口径一致）
+  '放射科': { id: 'radiology', floor: '门诊楼 1F', navigable: true, recommendable: false, tag: '检查', intro: 'CT、DR 影像检查（凭医嘱前往）' },
+  '检验科': { id: 'lab', floor: '门诊楼 1F', navigable: true, recommendable: false, tag: '检查', intro: '抽血、体液化验、报告打印（凭医嘱前往）' },
+  '药房': { id: 'pharmacy', floor: '门诊楼 1F', navigable: true, recommendable: false, tag: '取药', intro: '凭处方取药' },
   // 全科医学科在 1F（门诊大厅内），平面图上已建独立房间 → 直达
   '全科医学科': { id: 'gp', floor: '门诊楼 1F', navigable: true, tag: '综合 · 未分化', intro: '症状不典型、乏力不适、多种症状并存、暂不确定科室时首选' },
   '神经内科': { id: 'neuro', floor: '门诊楼 3F', navigable: true, tag: '头痛 · 眩晕', intro: '头痛头晕、眩晕、手脚麻木、面瘫、失眠（非精神因素）等' },

@@ -13,6 +13,8 @@
  *           → POST /api/v1/doctor/login（services/doctor.js#loginByWxCode）
  *   - 成功后**去向按服务端下发的 user.roles 判定**，不由本页入口参数决定
  *   - 一键登录失败（拒授权/异常）→ 开发构建降级到手输页；生产构建只提示重试
+ *   - 个人主体演示版：患者登录按钮弹出「模拟获取手机号」确认框，用预置演示手机号
+ *     走 dev 登录；后端不可达时落本地演示会话（不调用 getPhoneNumber、不采集真实手机号）
  *
  * ⚠️ 手输登录仅开发构建可用：契约不存在密码端点（详见 services/user.js / doctor.js 注释）。
  * ⚠️ 设计稿只有「欢迎登录 + 两个登录按钮 + 协议行」，故本页不再放辅助入口：
@@ -23,8 +25,14 @@ const app = getApp()
 const userService = require('../../../services/user.js')
 const doctorService = require('../../../services/doctor.js')
 const consent = require('../../../services/consent.js')
+const session = require('../../../services/session.js')
 const ENV = require('../../../config/env.js')
 const resource = require('../../../services/resource.js')
+
+// 个人主体演示登录：必须落在后端 dev 档预置手机号白名单内（13800138001/13900139001），
+// 不采集真实手机号，也不触发 getPhoneNumber。生产构建不会走到这里。
+const DEMO_PHONE = '13800138001'
+const DEMO_PHONE_MASK = '138****8001'
 
 // 登录页主视觉（3D 小安）：默认用包内同版文件，清单到达后换成后端下发的地址。
 // 为什么远端优先：这张图的 alpha 曾整块缺失，改错图不必重新发版审核。
@@ -104,6 +112,89 @@ Page({
       this._pendingArt = ''
       this.setData({ robotArt: ROBOT_ART_LOCAL })
     }
+  },
+
+  /**
+   * 登录按钮点击（开发档/个人主体演示版）：
+   * - 患者：弹出「模拟获取手机号」确认框，确认后走预置演示手机号的 dev 登录；
+   *   取消则进入原账号密码手输页（保留真实降级路径）。
+   * - 医护：仍进入手输页（医生身份由服务端任职关系判定，不在本地模拟）。
+   * 不调用 wx.getPhoneNumber，也不在 WXML 上声明 open-type，避免个人主体编译/运行时 errno 112。
+   */
+  onManualLogin(e) {
+    const intent = e.currentTarget.dataset.role === 'doctor' ? 'doctor' : 'patient'
+    if (!this.data.manualEnabled) {
+      wx.showToast({ title: '当前版本仅支持微信手机号登录', icon: 'none' })
+      return
+    }
+    if (intent === 'doctor') {
+      this._openManual(intent)
+      return
+    }
+    wx.showModal({
+      title: '模拟获取手机号',
+      content: '当前为个人主体演示版，微信手机号授权不可用。将使用演示手机号 ' +
+        DEMO_PHONE_MASK + ' 完成模拟登录，不采集真实手机号。',
+      confirmText: '模拟登录',
+      cancelText: '账号密码',
+      success: (r) => {
+        if (r && r.confirm) this._demoLogin(intent)
+        else if (r && r.cancel) this._openManual(intent)
+      }
+    })
+  },
+
+  /**
+   * 模拟获取手机号并登录：
+   * 优先走契约 dev 登录（真实签发会话，其他业务页可用）；后端不可达/未同意政策时，
+   * 自动落本地演示会话（无 token、不写真实身份），保证个人主体预览也能进入首页。
+   */
+  _demoLogin(intent) {
+    if (this._busy) return
+    this._busy = true
+    wx.showLoading({ title: '模拟登录中...', mask: true })
+    // 复用开发档手输登录：code=dev-user-1-manual-13800138001、phoneCode=dev-phone-...
+    // 后端只认预置手机号白名单；password 不参与校验（仅开发档）。
+    userService.login(DEMO_PHONE, 'demo', { timeout: 6000 })
+      .then((profile) => {
+        this._busy = false
+        wx.hideLoading()
+        this._enter(profile)
+      })
+      .catch(() => {
+        this._busy = false
+        wx.hideLoading()
+        // 本地演示会话：清掉旧令牌，避免把上一个真实账号的 token 继续使用。
+        try { session.clear() } catch (e) {}
+        const profile = {
+          id: 'demo-patient',
+          name: '演示用户',
+          avatarUrl: '',
+          phoneBound: true,
+          roles: ['PATIENT'],
+          role: 'patient',
+          demo: true,
+          demoPhone: DEMO_PHONE_MASK
+        }
+        try { userService.setUser(profile) } catch (e) {}
+        this._enter(profile)
+      })
+  },
+
+  /**
+   * 账号密码手输页。
+   * ⚠️ 入口**不**做同意预检（2026-11-20 修复）：此前未同意政策时直接跳 consent，
+   *    用户以为"点了没反应、登录页打不开"。现改为直达手输页，由提交链路
+   *    （doctor-login / manual-login 的 CONSENT_REQUIRED 分支）拉起同意页，
+   *    同意后按 intent 直达对应登录页——合规不变，但入口可见。
+   */
+  _openManual(intent) {
+    // 不能复用 _goManual：它的 patient 目标是 patient-login，那页主体仍是 getPhoneNumber，
+    // 降级过去会二次触发 errno 112。直达纯手输页才是有效降级。
+    const url = intent === 'doctor'
+      ? '/pages/auth/doctor-login/doctor-login'
+      : '/pages/auth/manual-login/manual-login'
+    wx.navigateTo({ url })
   },
 
   /**
@@ -204,8 +295,9 @@ Page({
   _enter(profile) {
     const roles = (profile && profile.roles) || []
     const isDoctor = roles.indexOf('DOCTOR') >= 0
+    const localDemo = !!(profile && profile.demo)
     app.setLogin(isDoctor ? 'doctor' : 'patient', profile)
-    wx.showToast({ title: '登录成功', icon: 'success' })
+    wx.showToast({ title: localDemo ? '本地演示成功' : '登录成功', icon: 'success' })
     setTimeout(() => {
       if (isDoctor) {
         wx.reLaunch({ url: '/pages/doctor/workbench/workbench' })

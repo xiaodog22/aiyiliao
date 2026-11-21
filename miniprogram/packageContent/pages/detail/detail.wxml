@@ -95,7 +95,7 @@
         <view wx:for="{{related}}" wx:for-item="rel" wx:key="id" class="dp-rel-card pressable"
               data-id="{{rel.id}}" bindtap="goRelated">
           <view class="dp-rel-cover">
-            <image wx:if="{{rel.cover}}" class="dp-rel-img" src="{{rel.cover}}" mode="aspectFill" />
+            <image wx:if="{{rel.cover}}" class="dp-rel-img" src="{{rel.cover}}" mode="aspectFill" lazy-load="{{true}}" />
             <view wx:else class="dp-rel-art"><image class="dp-rel-ic" src="{{rel.iconPath}}" /></view>
           </view>
           <view class="dp-rel-t">{{rel.title}}</view>

@@ -18,7 +18,7 @@
 
 ## 界面
 
-在线浏览：<https://xiaodog22.github.io/aiyiliao/>（页面源码在 `site/index.html`，单文件、无外部依赖）
+在线浏览：<https://xiaodog22.github.io/aiyiliao/>（页面源码在 `site/index.html`，单文件、无外部依赖；2026-11-21 起含严格 CSP、反仿冒「安全与隐私」章节与 OG 元数据，回归见 `tools/test-site-index.js` 16 项）
 
 <table>
   <tr>
@@ -46,10 +46,12 @@
 | 智能导诊 | 一句话描述症状，直接落到科室 | 15 类红旗症状先做急症筛查，18 个科室画像加权匹配，输出五级分级与命中理由；**红旗命中 → 结果页置顶红条 + 一键拨 120**（首页应急条同样可点，不只给文字） |
 | AI 问诊 | 一句话出分诊结论 | 本地规则引擎先出结果，同时并发请求后端大模型融合；急诊信号取并集，任一通道报警即报警 |
 | AI 养生 | 体质辨识 → 三天方案 | 膳食、功法、睡眠各一节，可投屏到电视 |
-| 分步挂号 | 科室 → 医生 → 时段 → 确认 | 四步走完，本地生成预约号，记录页可查 |
+| 分步挂号 | 科室 → 医生 → 时段 → 确认 | 四步走完，由院内模拟系统受理并回传 HIS 单号（`bookingSource=HIS_MOCK`），记录页可查、可取消；取消会联动撤销 HIS 受理单 |
+| 门诊缴费（演示） | 挂号成功后查看演示账单并入账 | 仅 DEMO 档，不调用 `wx.requestPayment`；金额取号源费，clinic-his 演示账单按 `appId+refType+refId` 幂等；成功文案固定「演示支付成功（未真实扣款）」；`PAID` 后可申请**演示退费**（`PAID→REFUNDED`，只改本地状态、不触发真实退款）；`APP_PAYMENT_ENABLED=false` 时仅显示「请到院窗口缴费」，并额外提供 0.01 元**本地模拟收银台**（不写后端） |
+| 检查预约（演示） | 选检查项目/时段，建单并取消 | 仅演示排期，不接真实检查号源；项目/时段读 clinic-his，平台先 HIS 占位再落 V35 `exam_orders`；报告详情已展示 `examRequestNo` 字段（自动写回链路待接）；`APP_EXAM_ENABLED=false` 时只显示「检查预约暂未开放」 |
 | 院内导航 | 1F 平面图 + 路径动画 | 起点是医院大门，14 个目的地，配文字步骤与语音播报 |
 | 在线问诊 | 图文、报告、语音 | 患者端只能从健康档案选图（jpeg/png/webp ≤10MB，含系统推送的 `health.*` 报告图），服务端按 objectKey 归属 / 资源库白名单二次校验；接单前也可继续补充病情与资料；双方 2s 轮询同步，图片由服务端签名 URL 或匿名资源端点下发，医生看到与患者所选档案同一张图 |
-| 消息通知 | 患者端消息中心 | 汇总挂号成功/预约状态、医生回复、系统通知；未读红点取服务端 `unread-count`，点击按 `refType` 进入问诊会话 / 挂号记录 / 报告详情；报告出具、缴费、病历查询类型已留展示映射，需后端事件写入后才出现，前端不伪造 |
+| 消息通知 | 患者端消息中心 | 汇总挂号成功/预约状态、医生回复、系统通知、检查报告出具（READY 事件由后端幂等写入，同一报告仅 1 条，演示报告标题带“（演示）”）；未读红点取服务端 `unread-count`，点击按 `refType` 进入问诊会话 / 挂号记录 / 报告详情；缴费入口由挂号成功页直接跳转（演示），不依赖消息事件；病历查询类型已留展示映射，需后端事件写入后才出现，前端不伪造 |
 | 医生工作台 | 接诊、叫号、床位申请 | 独立配色与鉴权，与患者端区分；床位申请默认从近期接诊患者选择，提交预约 ID 由服务端换取内部患者 ID，手动编号仅作兜底 |
 | 健康科普 | 院内宣教材料 | 随包发布，断网可读 |
 | 断网保护 | 后端不可达时只读、写操作拦截 | 连接状态分在线/降级/离线：已加载内容可继续看，顶部离线条标明“可能不是最新”；预约、问诊、床位申请等写请求统一返回 `OFFLINE`，不清会话、不跳登录；演示数据仅 `local` 档保留且显式标注 |
@@ -76,11 +78,16 @@ flowchart LR
 
 ```
 miniprogram/          原生小程序前端
-  pages/              主包 27 页（首页 / 导诊 / 问诊 / 养生 / 挂号 / 我的 等）
-    doctor/           分包（root=pages/doctor）：医生端 8 页，患者端不预载
+  pages/              主包 22 页（首页 / 问诊 / 养生 / 我的 + 登录 5 页 + 我的子页 11 页）
+    doctor/           分包（root=pages/doctor）：医生端 5 页（2026-11-20 收缩至线上问诊），患者端不预载
+    triage/           分包（root=pages/triage）：导诊 2 页（triage + result），首页 all 网络预载
+    consult/          分包（root=pages/consult）：在线问诊 2 页（consult + picker）
+    exam/             分包（root=pages/exam）：检查预约 1 页
+    payment/          分包（root=pages/payment）：门诊缴费 1 页
+    tv/               分包（root=pages/tv）：投屏 1 页
   packageNav/         分包：院内导航
   packageContent/     分包：健康科普
-                      主包 27 + 3 分包 11 = 全量 **38 页**（以 app.json 实测为准，2026-11-17）
+                      主包 22 + 7 分包 15 = 全量 **37 页**（以 app.json 实测为准，2026-11-20）
   services/           数据访问层，页面不直接发请求
   components/         通用组件（app.json 全局注册，页面可直接用标签）
   utils/              纯逻辑真源；submission-actions.js = 提交完成态操作入口状态机
@@ -115,7 +122,10 @@ archive/              已退出活动链的本地归档（重复副本 / 旧产�
 对外 `/openapi/v1/*` 提供 HMAC 签名、Idempotency-Key 幂等与撤销受理，对应 `HisClient#book/cancel`。
 后端已内置 `HttpHisClient`（`APP_HIS_MODE=http`）直接对接，联调三件套见
 [clinic-his/README.md](clinic-his/README.md) §八；回归：`python clinic-his/scripts/smoke_test.py`（98 项，
-自动使用隔离临时数据目录，可重复运行）。安全上已按审查报告修复越权读病历、过敏开方硬阻断、账号恢复与退费闭环；
+自动使用隔离临时数据目录，可重复运行）。本机 `env.local` 已**默认接通**：
+`APP_HIS_ENABLED=true` + `APP_HIS_MODE=http`（地址/凭据见同文件），挂号回执带 `his_order_no=CLN…`，
+取消预约会联动撤销 HIS 受理单；要回到纯本地演示，把两值改回 `false`/`mock` 并重启 business。
+安全上已按审查报告修复越权读病历、过敏开方硬阻断、账号恢复与退费闭环；
 危急值报告会在工作台与医生站提示，并可一键引用回写病历。
 数据与接口密钥写入 `clinic-his/data/`，已加入 `.gitignore`。
 
@@ -151,6 +161,28 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 
 `env.local` 已在 `.gitignore` 中。仓库里只有模板，不含任何真实密钥。
 
+演示支付默认开启（本机 `backend/deploy/env.local`：`APP_PAYMENT_ENABLED=true` +
+`APP_PAYMENT_DEMO_SECRET=<至少 16 字符>`）。关闭时缴费页只显示「请到院窗口缴费」，并保留 0.01 元
+本地模拟收银台（不写后端）；`APP_PAYMENT_MODE` 只能为 `DEMO`，填 `LIVE` 会启动即失败
+（当前无企业主体/商户号）。退费为**演示态**：订单置 `REFUNDED`，不调用微信退款、不触发
+clinic-his 退费（对端退费接口未在 openapi 暴露），页面固定标注“未发起真实退款”。
+
+**个人主体演示兜底（2026-11-20）**
+
+- 微信手机号：个人主体没有 `getPhoneNumber` 权限。患者登录按钮改为弹「模拟获取手机号」确认框，
+  使用预置演示手机号 `13800138001` 走 dev 登录；全程不调用 `getPhoneNumber`、不在 WXML 声明
+  `open-type`，避免预览/编译 errno 112。后端可达时是真会话；网关不可达时自动落**本地演示会话**
+  （`demo=true`、无 token），可进入首页预览，但受保护业务接口仍会显示离线/错误态。
+- 模拟支付：开发档首页「常用服务」下方有「演示模式 · 模拟支付（本地演示）」入口；支付页在真实支付
+  关闭或订单读取失败时也显示「模拟支付（本地演示）」。点击后弹「模拟收银台」，生成 0.01 元本地演示单，
+  只在页面内把状态置 PAID，**不写后端、不调起 `wx.requestPayment`、不产生真实扣款**。
+- 上述入口均由 `ENV.legacyManualLoginEnabled` 控制，生产构建不渲染。
+- 本地演示会话（`demo=true` 且无服务端 token）不再按 72h 真会话持久化：冷启动自动清理，预约提交前校验 `session.hasSession()`，无 token 时明确引导重新「模拟手机号登录」，避免提交后只看到 401。
+
+检查预约同样默认关闭（`APP_EXAM_ENABLED=false`）。本机要演示，显式加 `APP_EXAM_ENABLED=true`；
+`APP_EXAM_MODE` 也只能为 `DEMO`。项目/时段由 `APP_HIS_MODE=mock` 的进程内演示排期或
+`APP_HIS_MODE=http` 的 clinic-his `/openapi/v1/exam-items` 提供，不接真实医院检查号源。
+
 ## 适老化
 
 - 字号三档，随系统设置切换：40/34/30/24 → 44/36/32/26 → 52/42/38/30 rpx
@@ -172,7 +204,10 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 - 挂号流程用的是本地预约号，未对接医院 HIS；V1.20 只做**受限接入**（`HisClient` 接口 +
   `mock` 适配器，`app.his.enabled` 默认关闭，模拟单号前缀 `HIS-MOCK-`，不接真实凭据、不承诺真实号源），
   预约页与成功页标「演示预约」。另提供 `http` 档（`HttpHisClient`）**仅用于本地 clinic-his 联调**，
-  且 `app.his.http.demo` 默认 true、回执来源仍按 `HIS_MOCK` 下发，不构成真实受理
+  且 `app.his.http.demo` 默认 true、回执来源仍按 `HIS_MOCK` 下发，不构成真实受理。演示期“后端主数据、HIS 辅助”的核对基线与整合顺序见
+  `docs/clinic-his-integration/05_后端主数据整合基线_20261120.md`；当前未物理合库。逻辑整合已落地
+  V36 `his_master_data_map`（仅 2 个科室 CONFIRMED、2 条 CONFLICT，医生 0 条 CONFIRMED），
+  对账用 `python tools/his_reconcile.py`（只读，输出 `artifacts/his-reconcile/latest.md`）
 - 电视投屏为本地模拟，DLNA / 局域网协议尚未接入
 - 院内导航为 1F 示意平面图，不是全院楼层
 - 语音能力按 `AI_DEGRADE_ENABLED` 总开关降级：开启=全链路（TTS：预生成→Qwen3→edge→WechatSI；ASR：本地 FunASR→WechatSI），
@@ -213,7 +248,7 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 
 | 层 | 载体 | 规模 |
 | --- | --- | --- |
-| Java 单元/契约/集成 | `backend/business-service/src/test` | 53 个测试类 / 341 项（`mvnw -o test` 实测，2026-11-16） |
+| Java 单元/契约/集成 | `backend/business-service/src/test` | 63 个测试类 / 401 项（`mvnw -o test` 实测，2026-11-20） |
 | 网关行为 | `backend/edge-gateway/tests` | 134 项 pytest（含全链路 `X-Request-Id` 2 项） |
 | SQL 次数预算（防 N+1） | `DoctorQueryBudgetTest` + `QueryCounter` | 5 项 |
 | 端点级 SQL 画像 | `EndpointSqlProfileTest` | 2 项（逐端点上限 + 与数据量无关） |
@@ -241,7 +276,7 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 | job | 跑什么 |
 | --- | --- |
 | 前端 | `check-readme-links`（README + `docs/INDEX.md`）→ `check-require` / `check-exports` / `check-project` → `test-fe` / `test-triage` → `eval-triage` |
-| Java | `mvnw -B test`（JDK 17 + H2，341 项） |
+| Java | `mvnw -B test`（JDK 17 + H2，401 项） |
 | 网关 | `pip install -r requirements.txt` + `pytest tests`（134 项） |
 | AI | `pip install -r requirements.txt` + `pytest tests`（242 项） |
 
@@ -284,7 +319,7 @@ voice.js:156-158 → 101-104 连锁复位，登记 V1.20 T1-1）；3 项登记�
 - `backend/deploy/REPORT_DELIVERY_20261105.md`（2026-11-05）：电子检查报告体系交付报告（V27/V9010/V9011 迁移、
   4 张新表、3 个演示患者、报告列表/详情页、状态门禁与权限实测、ER 前后对比、备份与未解决问题）。
   阶段 01 审计见 `DB_AUDIT_20261105.md`，结构定稿见 `DB_SCHEMA_DESIGN_20261105.md`。
-  ⚠️ H2 单测档因 V27 含 MySQL 专有 DDL 停在 `spring.flyway.target=26`；真实库已应用 V27/V28/V9010/V9011。
+  ⚠️ H2 单测档因 V27 含 MySQL 专有 DDL 停在 `spring.flyway.target=26.5`（26.x 只补 H2 等价列/表，如 messages.biz_key、payment_orders、exam_orders）；真实库已应用 V27/V28/V33/V34/V35（报告投影、消息幂等键、演示支付订单、检查预约），2026-11-20 新版 business 重启实测 `Schema up to date. No migration necessary`。
 
 ## 文档
 

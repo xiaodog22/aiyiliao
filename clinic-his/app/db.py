@@ -313,6 +313,20 @@ CREATE TABLE IF NOT EXISTS charges (
 );
 CREATE INDEX IF NOT EXISTS idx_charges_status ON charges(status, category);
 
+-- P0-1 演示支付：平台支付动作的幂等审计（appId+Idempotency-Key 只允许对应一笔账单）。
+-- 不保存任何支付凭证/卡号；source 仅 DEMO/SANDBOX，演示账单不是真实收费凭证。
+CREATE TABLE IF NOT EXISTS openapi_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  charge_no TEXT NOT NULL REFERENCES charges(charge_no),
+  app_id TEXT NOT NULL,
+  idem_key TEXT NOT NULL,
+  amount REAL NOT NULL,
+  source TEXT NOT NULL DEFAULT 'DEMO',
+  paid_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(app_id, idem_key)
+);
+
 CREATE TABLE IF NOT EXISTS lab_items (
   code TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -342,6 +356,32 @@ CREATE TABLE IF NOT EXISTS lab_orders (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_lab_status ON lab_orders(status);
+
+-- P0-2 检查预约（演示排期）：平台按 requestNo 建单，HIS 侧按 item+slot 防重复占用。
+-- 只做预约占位，不生成 lab_orders；真实到院后由医技按现有流程建检查单。
+CREATE TABLE IF NOT EXISTS openapi_exam_orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  exam_order_no TEXT NOT NULL UNIQUE,
+  request_no TEXT NOT NULL,
+  app_id TEXT NOT NULL,
+  idem_key TEXT NOT NULL,
+  patient_id INTEGER NOT NULL REFERENCES patients(id),
+  item_code TEXT NOT NULL,
+  item_name TEXT NOT NULL,
+  price REAL NOT NULL DEFAULT 0,
+  slot_key TEXT NOT NULL,
+  slot_date TEXT NOT NULL,
+  slot_time TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'BOOKED',
+  created_at TEXT NOT NULL,
+  cancelled_at TEXT,
+  cancel_reason TEXT NOT NULL DEFAULT '',
+  UNIQUE(app_id, request_no),
+  UNIQUE(app_id, idem_key)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_openapi_exam_slot
+  ON openapi_exam_orders(item_code, slot_key) WHERE status='BOOKED';
+CREATE INDEX IF NOT EXISTS idx_openapi_exam_status ON openapi_exam_orders(status,slot_date);
 
 CREATE TABLE IF NOT EXISTS ph_tasks (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -521,6 +561,9 @@ CHARGE_MIGRATIONS = [
     ("refunded_at", "TEXT NOT NULL DEFAULT ''"),
     ("refund_reason", "TEXT NOT NULL DEFAULT ''"),
     ("refunded_by", "INTEGER"),
+    # P0-1 演示账单归属：只标识由哪个 OpenAPI 应用创建，不改变员工端收费语义
+    ("openapi_app_id", "TEXT"),
+    ("openapi_idem_key", "TEXT"),
 ]
 
 # 危急值阈值（存量库补齐）
@@ -604,6 +647,18 @@ def init_db() -> None:
             ensure_column(con, "drugs", column, ddl)
         for column, ddl in CHARGE_MIGRATIONS:
             ensure_column(con, "charges", column, ddl)
+        # P0-1：OpenAPI 演示账单的幂等防线（存量库补列后建索引；部分唯一索引避免影响员工端历史收费）
+        con.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_charges_openapi_idem "
+            "ON charges(openapi_app_id, openapi_idem_key) "
+            "WHERE openapi_app_id IS NOT NULL AND openapi_idem_key IS NOT NULL"
+        )
+        con.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_charges_openapi_ref "
+            "ON charges(openapi_app_id, ref_type, ref_id) "
+            "WHERE openapi_app_id IS NOT NULL AND ref_id IS NOT NULL "
+            "AND status IN ('UNPAID','PAID')"
+        )
         for column, ddl in LAB_ITEM_MIGRATIONS:
             ensure_column(con, "lab_items", column, ddl)
         for column, ddl in LAB_ORDER_MIGRATIONS:

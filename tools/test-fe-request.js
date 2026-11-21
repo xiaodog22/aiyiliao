@@ -86,6 +86,17 @@ test('RQ-03 核心：无 code 字段的裸数据原样返回', async () => {
   assert.deepStrictEqual(await req.get(API.DEPARTMENT_LIST), { items: [1] })
 })
 
+test('RQ-03b 异常：200 + HTML 字符串 → PARSE_ERROR（不得静默当空数据）', async () => {
+  // 网关/隧道 502 维护页常以 200 + text/html 透传，wx 给的是字符串。
+  // 旧实现直接 unwrap 得到 undefined，页面渲染成“暂无数据”，故障被掩盖。
+  queue.push({ statusCode: 200, data: '<html>502 Bad Gateway</html>' })
+  await assert.rejects(req.get(API.DEPARTMENT_LIST), (e) => {
+    assert.strictEqual(e.code, 'PARSE_ERROR')
+    assert.strictEqual(e.httpCode, 200)
+    return true
+  })
+})
+
 // ==================== ② 错误分类（契约错误语义） ====================
 
 test('RQ-04 异常：业务错误信封 → BIZ_ERROR + httpCode + detail', async () => {
@@ -261,6 +272,7 @@ test('RQ-18 核心：isAnonymous 与后端 AuthInterceptor 同口径', () => {
     ['GET', '/api/v1/doctors/doc-1/slots'],
     ['POST', '/api/v1/auth/wechat/login'],
     ['POST', '/api/v1/auth/refresh'],
+    ['GET', '/api/v1/consent/latest'],
     ['POST', '/api/v1/triage/emergency-checks'],
     ['GET', '/api/v1/contents'],
     ['GET', '/api/v1/contents/c-1'],

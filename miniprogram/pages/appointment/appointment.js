@@ -8,6 +8,7 @@
 const app = getApp()
 const appointmentService = require('../../services/appointment.js')
 const userService = require('../../services/user.js')
+const session = require('../../services/session.js')
 const { withFallback } = require('../../services/request.js')
 const icons = require('../../utils/icons.js')
 const { errText } = require('../../utils/err-text.js')
@@ -169,6 +170,8 @@ Page({
     orderNo: '',
     // 「取号」/「预约单号」：queueNumber 缺失时文案要跟着变，不能把内部单号也叫预约号（D-07）
     orderLabel: '取号',
+    // P0-1：成功页「去缴费（演示）」入口；仅本次会话记住，不写入本地存储
+    lastAptId: '',
     // 加载/错误态
     loadingDept: false,
     deptError: '',
@@ -234,14 +237,15 @@ Page({
 
   /** 成功页退回选科室（终态收口共用），tip 为提示文案 */
   _leaveDone(tip) {
-    this.setData({ step: 'dept', stepIndex: 0, orderNo: '', submitting: false, selTime: '', selSlotId: '', selTimeText: '', showConfirm: false, isDemo: false, bookingSource: '' })
+    this._lastAptId = ''
+    this.setData({ step: 'dept', stepIndex: 0, orderNo: '', submitting: false, selTime: '', selSlotId: '', selTimeText: '', showConfirm: false, isDemo: false, bookingSource: '', lastAptId: '' })
     if (tip) wx.showToast({ title: tip, icon: 'none' })
   },
 
   /** 别处取消了预约：退回选科室 + 刷新当前医生/日期余号 */
   _syncAfterCancel() {
     if (this.data.step === 'done') {
-      this.setData({ step: 'dept', stepIndex: 0, orderNo: '', submitting: false, selTime: '', selSlotId: '', selTimeText: '', showConfirm: false, isDemo: false, bookingSource: '' })
+      this.setData({ step: 'dept', stepIndex: 0, orderNo: '', submitting: false, selTime: '', selSlotId: '', selTimeText: '', showConfirm: false, isDemo: false, bookingSource: '', lastAptId: '' })
       wx.showToast({ title: '预约已取消，可重新选择', icon: 'none' })
     }
     if (this.data.selDoctorId && this.data.selDate) this._loadSlots(this.data.selDate, true)
@@ -450,9 +454,11 @@ Page({
           .filter((s) => s && (s.date > todayStr || (s.date === todayStr && s.time > nowHm)))
           .sort((a, b) => (a.time < b.time ? -1 : 1))
         // 空态文案要能区分「本来没排班」和「今天排的都已经过了」—— 后者是用户最常见的困惑
-        const rawCount = (all || []).length
-        const emptyHint = (!slots.length && rawCount > 0 && date === todayStr)
-          ? '今日号源已过，请选择其他日期'
+        // 2026-11-21：后端 listSlots 已按 start_time > NOW() 过滤，今日过号不会出现在 all 里，
+        // 原判据 rawCount>0 恒为假 → “今日号源已过”永不命中。改为只按日期判定，
+        // 文案合并两种可能（无排班/已过号），不猜测具体原因。
+        const emptyHint = (!slots.length && date === todayStr)
+          ? '今日号源已过或暂无排班，请选择其他日期'
           : '该时段暂无号源，请换一天或切换时段试试。'
         this.setData({ slots, loadingSlots: false, emptyHint }, () => this._applyPeriod())
       })
@@ -623,6 +629,19 @@ Page({
       })
       return
     }
+    // 本地演示登录没有服务端 token：目录可用 mock 浏览，但挂号必须真会话，否则 401 看似“页面坏了”
+    if (!session.hasSession()) {
+      wx.showModal({
+        title: '请先完成有效登录',
+        content: '当前是本地演示登录，未连接后端，无法提交真实挂号。请重新用「模拟手机号登录」获取后端会话后再试。',
+        confirmText: '去登录',
+        cancelText: '稍后',
+        success: (r) => {
+          if (r && r.confirm) wx.reLaunch({ url: '/pages/auth/login/login' })
+        }
+      })
+      return
+    }
     this.setData({ submitting: true })
     // 幂等键与「本次挂号内容」绑定：同内容重试复用同一键 —— 服务端按键去重，
     // 避免"请求超时其实已下单，用户再点一次"产生两笔真实预约；
@@ -654,7 +673,7 @@ Page({
         const bookingSource = (res && res.bookingSource) || 'LOCAL_DEMO'
         // showConfirm 必须一起关：成功页是整屏遮罩，抽屉只是被压在下面；
         // 若不关，取消后退出成功页时抽屉会带着空的「预约时间」露出来。
-        this.setData({ orderNo: orderText, orderLabel, step: 'done', stepIndex: 4, submitting: false, showConfirm: false, bookingSource, isDemo: bookingSource !== 'HIS_LIVE' })
+        this.setData({ orderNo: orderText, orderLabel, step: 'done', stepIndex: 4, submitting: false, showConfirm: false, bookingSource, isDemo: bookingSource !== 'HIS_LIVE', lastAptId: this._lastAptId })
       })
       .catch((err) => {
         this.setData({ submitting: false })
@@ -713,6 +732,12 @@ Page({
       'departmentName=' + encodeURIComponent(this.data.selDept || '')
     ].join('&')
     wx.navigateTo({ url: '/pages/consult/consult?' + q })
+  },
+
+  /** P0-1：挂号成功 → 演示支付页（页面再判支付开关；未开启只显示到院窗口缴费） */
+  goPay() {
+    if (!this.data.lastAptId) return
+    wx.navigateTo({ url: '/pages/payment/payment?appointmentId=' + encodeURIComponent(this.data.lastAptId) })
   },
 
   goHome() {

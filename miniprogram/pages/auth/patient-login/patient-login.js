@@ -96,6 +96,15 @@ Page({
   },
 
   /**
+   * 降级手输入口（个人主体无 getPhoneNumber 权限 errno 112 时用）：
+   * 本页主体按钮已从 getPhoneNumber 降级，点击直达纯手输页 manual-login。
+   * 企业主体+微信认证后，把 wxml 按钮恢复 open-type/bindgetphonenumber 即切回 onWxLogin。
+   */
+  onManualFallback() {
+    wx.navigateTo({ url: '/pages/auth/manual-login/manual-login' })
+  },
+
+  /**
    * 微信一键登录（本页也提供，失败时提示并留在当前页手输）
    * ⚠️ 两个 code 必须分开：`wx.login()` 得 code；`getPhoneNumber` 的 detail.code 作为 phoneCode。
    */

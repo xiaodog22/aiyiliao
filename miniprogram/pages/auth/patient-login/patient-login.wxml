@@ -17,13 +17,14 @@
 
   <!-- 白卡：微信一键登录 + 协议 + 授权说明 -->
   <view class="pl-card">
+    <!-- 个人主体无 getPhoneNumber 权限（errno 112）→ 降级为手输入口，跳真正的手输页 manual-login。
+         企业主体+微信认证后可恢复 open-type="getPhoneNumber" + bindgetphonenumber="onWxLogin"。 -->
     <button
       class="pl-btn-primary"
-      open-type="getPhoneNumber"
-      bindgetphonenumber="onWxLogin"
+      bindtap="onManualFallback"
     >
       <image class="pl-btn-icon" src="/assets/icons/chat_white.png" />
-      <text>微信一键登录</text>
+      <text>手机号登录</text>
     </button>
 
     <!-- 协议行：空心圆勾选（默认不勾）+ 用户协议/隐私政策蓝色链接 -->

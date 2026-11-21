@@ -29,7 +29,9 @@ public class HealthReportRepository {
     public record SummaryRow(String recordId, String reportNo, String title, String reportType,
                              String institutionName, String departmentName, String patientName,
                              String reportStatus, String familyMemberId, Instant recordedAt,
-                             Instant reportedAt, int abnormalCount, boolean isDemo) {
+                             Instant reportedAt, int abnormalCount, String sourceSystem,
+                             String externalReportId, String reviewerName, String examRequestNo,
+                             String referenceRangeNote, boolean isDemo) {
     }
 
     public record DetailRow(String id, String recordId, String userId, String reportNo,
@@ -41,7 +43,9 @@ public class HealthReportRepository {
                             Instant testedAt, Instant reportedAt, String operatorName,
                             String reviewerName, String inspectionMethod, String instrumentModel,
                             String findingsText, String impressionText, String conclusionText,
-                            String recommendationText, boolean isDemo, String demoNotice) {
+                            String recommendationText, String sourceSystem, String externalReportId,
+                            String examRequestNo, String referenceRangeNote, boolean isDemo,
+                            String demoNotice) {
     }
 
     public record SectionRow(String id, String sectionCode, String sectionName, int sortOrder) {
@@ -81,6 +85,8 @@ public class HealthReportRepository {
                        mi.institution_name, d.department_name_snapshot,
                        d.patient_name_snapshot, r.report_status, r.family_member_id,
                        r.recorded_at, d.reported_at, d.is_demo,
+                       d.data_origin, d.external_report_id, d.reviewer_name,
+                       d.exam_request_no, d.reference_range_note,
                        (SELECT COUNT(*) FROM health_report_items i
                          WHERE i.report_detail_id = d.id
                            AND i.abnormal_flag NOT IN ('NORMAL', 'NOT_APPLICABLE')) AS abnormal_count
@@ -120,7 +126,10 @@ public class HealthReportRepository {
                 rs.getString("department_name_snapshot"), rs.getString("patient_name_snapshot"),
                 rs.getString("report_status"), rs.getString("family_member_id"),
                 instant(rs.getTimestamp("recorded_at")), instant(rs.getTimestamp("reported_at")),
-                number(rs.getObject("abnormal_count")), bool(rs.getObject("is_demo"))),
+                number(rs.getObject("abnormal_count")), rs.getString("data_origin"),
+                rs.getString("external_report_id"), rs.getString("reviewer_name"),
+                rs.getString("exam_request_no"), rs.getString("reference_range_note"),
+                bool(rs.getObject("is_demo"))),
                 args.toArray());
     }
 
@@ -135,7 +144,8 @@ public class HealthReportRepository {
                        d.tested_at, d.reported_at, d.operator_name, d.reviewer_name,
                        d.inspection_method, d.instrument_model, d.findings_text,
                        d.impression_text, d.conclusion_text, d.recommendation_text,
-                       d.is_demo, d.demo_notice
+                       d.data_origin, d.external_report_id, d.exam_request_no,
+                       d.reference_range_note, d.is_demo, d.demo_notice
                   FROM health_report_details d
                   LEFT JOIN medical_institutions mi ON mi.id = d.institution_id
                  WHERE d.record_id = ? AND d.user_id = ?
@@ -154,8 +164,36 @@ public class HealthReportRepository {
                 rs.getString("inspection_method"), rs.getString("instrument_model"),
                 rs.getString("findings_text"), rs.getString("impression_text"),
                 rs.getString("conclusion_text"), rs.getString("recommendation_text"),
+                rs.getString("data_origin"), rs.getString("external_report_id"),
+                rs.getString("exam_request_no"), rs.getString("reference_range_note"),
                 bool(rs.getObject("is_demo")), rs.getString("demo_notice")),
                 recordId, userId).stream().findFirst();
+    }
+
+    /**
+     * P0-3 报告发布：仅把 EXAM 且处于 PENDING/REVIEWING 的档案置 READY（幂等：已 READY 不再改）。
+     * 同时把明细的 reported_at 补成同一时刻（已有值不回写，保留真实出具时间）。
+     *
+     * @return true = 本次发生状态变更；false = 不存在/非 EXAM/已 READY/状态不可发布
+     */
+    public boolean markReady(String userId, String recordId, Instant reportedAt) {
+        int updated = jdbc.update("""
+                UPDATE health_records
+                   SET report_status = 'READY',
+                       title = TRIM(REPLACE(REPLACE(title, '（待审核）', ''), '（待出结果）', '')),
+                       version = version + 1, updated_at = ?
+                 WHERE id = ? AND user_id = ? AND category = 'EXAM'
+                   AND report_status IN ('PENDING', 'REVIEWING')
+                """, Timestamp.from(reportedAt), recordId, userId);
+        if (updated == 0) {
+            return false;
+        }
+        jdbc.update("""
+                UPDATE health_report_details
+                   SET reported_at = COALESCE(reported_at, ?), updated_at = ?
+                 WHERE record_id = ? AND user_id = ?
+                """, Timestamp.from(reportedAt), Timestamp.from(reportedAt), recordId, userId);
+        return true;
     }
 
     public List<SectionRow> listSections(String detailId, String userId) {

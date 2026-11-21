@@ -74,6 +74,9 @@ const ANONYMOUS = [
   { method: 'POST', pattern: '/api/v1/auth/wechat/login' },
   { method: 'POST', pattern: '/api/v1/auth/refresh' },
   { method: 'POST', pattern: '/api/v1/doctor/login' },
+  // 隐私政策元数据：未登录时必须能拉取，否则独立同意页（M11）拉不到版本 → 按钮禁用 → 新用户永远登不进去。
+  // 后端 AuthInterceptor.ANONYMOUS 已登记 GET /api/v1/consent/latest，此处同口径补齐（2026-11-20 死锁修复）。
+  { method: 'GET', pattern: '/api/v1/consent/latest' },
   { method: 'GET', pattern: '/api/v1/departments' },
   { method: 'GET', pattern: '/api/v1/departments/*/doctors' },
   // 医生目录：前端用的是 legacy 路径，由网关 compat 翻译到匿名端点 /api/v1/doctors（故仍为匿名）
@@ -757,6 +760,15 @@ function request(options) {
         }
         try {
           if (res.statusCode >= 200 && res.statusCode < 300) {
+            // 契约响应必须是 JSON 对象/数组。网关或隧道返回 HTML 错误页（502/维护页）时，
+            // wx.request 交给我们的是一段字符串；若照常 unwrap，会得到 undefined，
+            // 页面把它当“空列表”渲染 —— 服务故障被伪装成“没有数据”（DEF-20261121-01）。
+            // 这里统一按 PARSE_ERROR 拒绝，由页面走错误态 + 重试入口。
+            if (typeof res.data === 'string') {
+              if (!res.data.trim()) { resolve(null); return }
+              reject(makeError('PARSE_ERROR', '响应格式异常，请稍后重试。', { httpCode: res.statusCode }))
+              return
+            }
             // rawEnvelope：不脱壳，返回完整 { code, message, data, ... } 用于
             // 同级字段共存的极端场景（信封里 data 之外还有并列状态字段）
             const value = rawEnvelope ? res.data : unwrap(res.data)

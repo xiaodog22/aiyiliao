@@ -57,7 +57,7 @@
       <view class="kb-cover">
         <!-- 封面优先级：条目自带 cover（图/视频统一）→ 否则图标底板。
              cover 指向分包内 assets/covers/，本页就在分包里，不会跨包裂图。 -->
-        <image wx:if="{{item.cover}}" class="kb-cover-img" src="{{item.cover}}" mode="aspectFill" />
+        <image wx:if="{{item.cover}}" class="kb-cover-img" src="{{item.cover}}" mode="aspectFill" lazy-load="{{true}}" />
         <view wx:else class="kb-cover-art">
           <image class="kb-cover-ic" src="{{item.iconPath}}" />
         </view>

@@ -141,12 +141,18 @@ function isNegated(text, idx) {
 
 /** 在文本中查找关键词，返回首个未被否定的命中位置（-1 = 未命中） */
 function findKey(text, key) {
+  // 防御：关键词为空 / 非字符串时 indexOf 永远原地命中，from 不再前进 → 死循环（模拟器会整页卡死）
+  const k = typeof key === 'string' ? key : String(key == null ? '' : key)
+  if (!k) return -1
+  const t = typeof text === 'string' ? text : ''
+  if (!t) return -1
   let from = 0
   for (;;) {
-    const idx = text.indexOf(key, from)
+    const idx = t.indexOf(k, from)
     if (idx < 0) return -1
-    if (!isNegated(text, idx)) return idx
-    from = idx + key.length
+    if (!isNegated(t, idx)) return idx
+    from = idx + k.length
+    if (from > t.length) return -1
   }
 }
 

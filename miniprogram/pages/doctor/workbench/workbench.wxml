@@ -23,7 +23,7 @@
         <image class="wb-nav-back-ic" src="{{icons.chevronLeft}}" />
       </view>
 
-      <view class="wb-nav-title">医生工作台</view>
+      <view class="wb-nav-title">问诊工作台</view>
 
       <view class="wb-nav-tools">
         <view class="wb-nav-btn pressable" bindtap="onNotify">
@@ -51,16 +51,13 @@
       </view>
       <view class="wb-rail-nav">
         <view class="wb-rail-item on">
-          <image class="wb-rail-ic" src="{{icons.layoutGrid}}" /><text>工作台</text>
-        </view>
-        <view class="wb-rail-item pressable" data-key="patientQueue" bindtap="onQuick">
-          <image class="wb-rail-ic" src="{{icons.users}}" /><text>患者队列</text>
-        </view>
-        <view class="wb-rail-item pressable" data-key="schedule" bindtap="onQuick">
-          <image class="wb-rail-ic" src="{{icons.calendar}}" /><text>问诊设置</text>
+          <image class="wb-rail-ic" src="{{icons.layoutGrid}}" /><text>问诊台</text>
         </view>
         <view class="wb-rail-item pressable" data-key="consult" bindtap="onQuick">
           <image class="wb-rail-ic" src="{{icons.chat}}" /><text>在线问诊</text>
+        </view>
+        <view class="wb-rail-item pressable" data-key="schedule" bindtap="onQuick">
+          <image class="wb-rail-ic" src="{{icons.calendar}}" /><text>问诊设置</text>
         </view>
         <view class="wb-rail-item pressable" data-key="notify" bindtap="onQuick">
           <image class="wb-rail-ic" src="{{icons.bell}}" /><text>消息通知</text>
@@ -86,47 +83,48 @@
         <image class="wb-hero-avatar" src="{{doctor.avatarUrl || '/assets/img/avatar-default.png'}}" mode="aspectFill" />
       </view>
 
-      <!-- ③ 统计概览：标签在上、数值在下；加载态是灰色骨架条（规范：不显 0） -->
+      <!-- ③ 问诊概览（2026-11-20 医生端收缩：数据源由挂号队列改为线上问诊会话）
+           口径：待接诊 = accepting=false；进行中 = accepting=true；今日新增 = createdAt 今日 -->
       <view class="card wb-stats">
-        <view class="ws-col pressable" data-key="appointments" bindtap="onQuick">
-          <view class="ws-label">待就诊</view>
+        <view class="ws-col pressable" data-key="consult" bindtap="onQuick">
+          <view class="ws-label">待接诊</view>
           <view wx:if="{{loading}}" class="stat-skel ws-skel"></view>
           <view wx:elif="{{error}}" class="ws-err" bindtap="reloadOverview">重试</view>
           <view wx:else class="ws-num">{{overview.waiting}}</view>
         </view>
         <view class="ws-col">
-          <view class="ws-label">就诊中</view>
+          <view class="ws-label">进行中</view>
           <view wx:if="{{loading}}" class="stat-skel ws-skel"></view>
           <view wx:elif="{{error}}" class="ws-err ws-err-mute">—</view>
           <view wx:else class="ws-num">{{overview.inProgress}}</view>
         </view>
         <view class="ws-col">
-          <view class="ws-label">已完成</view>
+          <view class="ws-label">今日新增</view>
           <view wx:if="{{loading}}" class="stat-skel ws-skel"></view>
           <view wx:elif="{{error}}" class="ws-err ws-err-mute">—</view>
           <view wx:else class="ws-num">{{overview.done}}</view>
         </view>
       </view>
 
-      <!-- ④ 今日工作 2×2 -->
+      <!-- ④ 今日工作 2×2（只保留线上问诊相关入口） -->
       <view class="card wb-card wb-card-today">
         <view class="wb-card-title">今日工作</view>
         <view class="tw-grid">
-          <view class="tw-tile pressable" data-key="appointments" bindtap="onQuick">
-            <image class="tw-ic" src="{{icons.calendar}}" />
-            <text class="tw-label">预约管理</text>
-          </view>
-          <view class="tw-tile pressable" data-key="patientQueue" bindtap="onQuick">
-            <image class="tw-ic" src="{{icons.user}}" />
-            <text class="tw-label">患者接诊</text>
-          </view>
           <view class="tw-tile tw-tile-mint pressable" data-key="consult" bindtap="onQuick">
             <image class="tw-ic" src="{{icons.chatMint}}" />
             <text class="tw-label">在线问诊</text>
           </view>
-          <view class="tw-tile pressable" data-key="patientMgmt" bindtap="onQuick">
-            <image class="tw-ic" src="{{icons.users}}" />
-            <text class="tw-label">患者管理</text>
+          <view class="tw-tile pressable" data-key="schedule" bindtap="onQuick">
+            <image class="tw-ic" src="{{icons.calendar}}" />
+            <text class="tw-label">问诊设置</text>
+          </view>
+          <view class="tw-tile pressable" data-key="notify" bindtap="onQuick">
+            <image class="tw-ic" src="{{icons.bell}}" />
+            <text class="tw-label">消息通知</text>
+          </view>
+          <view class="tw-tile pressable" data-key="personal" bindtap="onQuick">
+            <image class="tw-ic" src="{{icons.user}}" />
+            <text class="tw-label">我的</text>
           </view>
         </view>
       </view>
@@ -174,13 +172,13 @@
         </view>
       </view>
 
-      <!-- ⑥ 快捷功能三列 -->
+      <!-- ⑥ 快捷功能三列（床位管理已迁 HIS，改为在线问诊） -->
       <view class="card wb-card">
         <view class="wb-card-title">快捷功能</view>
         <view class="qf-row">
-          <view class="qf-tile pressable" data-key="beds" bindtap="onQuick">
-            <view class="qf-ic-box"><image class="qf-ic" src="{{icons.bed}}" /></view>
-            <text class="qf-label">床位管理</text>
+          <view class="qf-tile pressable" data-key="consult" bindtap="onQuick">
+            <view class="qf-ic-box"><image class="qf-ic" src="{{icons.chat}}" /></view>
+            <text class="qf-label">在线问诊</text>
           </view>
           <view class="qf-tile pressable" data-key="schedule" bindtap="onQuick">
             <view class="qf-ic-box"><image class="qf-ic" src="{{icons.calendar}}" /></view>

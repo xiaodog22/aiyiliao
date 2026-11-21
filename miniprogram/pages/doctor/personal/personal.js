@@ -91,12 +91,11 @@ Page({
     wx.reLaunch({ url: '/pages/doctor/workbench/workbench' })
   },
 
-  // 三个功能入口：线上问诊设置 / 账号安全 / 消息通知（2026-10-24 已补齐对应页面）
+  // 功能入口：线上问诊设置 / 消息通知（账号安全页 2026-11-20 下线，见 wxml 注释）
   onEntry(e) {
     const page = e.currentTarget.dataset.page
     const routes = {
       schedule: '/pages/doctor/schedule/schedule',
-      'account-security': '/pages/doctor/account-security/account-security',
       messages: '/pages/doctor/messages/messages'
     }
     const url = routes[page]

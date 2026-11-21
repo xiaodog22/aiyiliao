@@ -41,20 +41,20 @@
   <view class="lg-card">
     <view class="lg-welcome">欢迎登录</view>
 
-    <!-- 患者登录：wx.login() 的 code + getPhoneNumber 的 phoneCode → POST /api/v1/auth/wechat/login -->
+    <!-- 患者登录：个人主体小程序无 getPhoneNumber 权限（errno 112），点击先弹「模拟获取手机号」确认；
+         确认后用预置演示手机号走 dev 登录（后端不可达则落本地演示会话），取消则进账号密码手输页。
+         全程不调用 getPhoneNumber、不声明 open-type，避免个人主体编译/预览报错。 -->
     <button
       class="btn btn-primary lg-btn"
-      open-type="getPhoneNumber"
+      bindtap="onManualLogin"
       data-role="patient"
-      bindgetphonenumber="onGetPhoneNumber"
     >患者登录</button>
 
-    <!-- 医护登录：同一交互 → POST /api/v1/doctor/login（服务端按任职关系判定，未登记则 403） -->
+    <!-- 医护登录：仍进账号密码手输页（医生身份必须由服务端任职关系判定） -->
     <button
       class="btn btn-outline lg-btn"
-      open-type="getPhoneNumber"
+      bindtap="onManualLogin"
       data-role="doctor"
-      bindgetphonenumber="onGetPhoneNumber"
     >医护登录</button>
 
     <!-- 协议行（设计稿逐字）：说明文字 + 两个蓝色可点链接，跳真实协议页 -->

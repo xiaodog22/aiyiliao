@@ -1,0 +1,79 @@
+<view class="page pay-page">
+
+  <view wx:if="{{loading}}" class="card pay-card">
+    <view class="pay-loading">正在读取支付信息…</view>
+  </view>
+
+  <view wx:elif="{{order}}" class="card pay-card">
+    <view class="pay-head">
+      <view>
+        <view class="pay-title">门诊缴费</view>
+        <view class="pay-sub">{{order.localDemo ? '演示预约（不关联真实挂号）' : '预约单号 ' + order.appointmentId}}</view>
+      </view>
+      <view class="pay-status {{order.status === 'PAID' ? 'is-paid' : (order.status === 'REFUNDED' ? 'is-refunded' : 'is-unpaid')}}">
+        {{order.status === 'PAID' ? '已支付' : (order.status === 'REFUNDED' ? '已退费' : '待支付')}}
+      </view>
+    </view>
+
+    <view class="pay-amount">
+      <text class="pay-amount-symbol">¥</text>{{order.amountText}}
+    </view>
+
+    <view class="pay-rows">
+      <view class="pay-row">
+        <text class="pay-k">支付单号</text>
+        <text class="pay-v">{{order.orderNo}}</text>
+      </view>
+      <view class="pay-row">
+        <text class="pay-k">账单号</text>
+        <text class="pay-v">{{order.chargeNo}}</text>
+      </view>
+      <view class="pay-row">
+        <text class="pay-k">支付方式</text>
+        <text class="pay-v">{{order.localDemo ? '本地模拟（不写后端）' : '演示支付（后端 DEMO 回调）'}}</text>
+      </view>
+    </view>
+
+    <view wx:if="{{order.status === 'PAID'}}" class="pay-success">
+      <view class="pay-success-title">{{order.localDemo ? '模拟支付成功（本地演示，未真实扣款）' : (successMessage || '演示支付成功（未真实扣款）')}}</view>
+      <view class="pay-success-note">{{order.localDemo ? '仅本地页面状态，不写订单、不产生真实扣款。' : '本页未发起微信支付，也未产生任何真实扣款。'}}</view>
+    </view>
+    <view wx:elif="{{order.status === 'REFUNDED'}}" class="pay-refund">
+      <view class="pay-refund-title">已退费（演示）</view>
+      <view class="pay-refund-note">仅本地演示状态，未发起真实退款；实际到账以医院窗口为准。</view>
+    </view>
+
+    <view wx:else class="pay-actions">
+      <view class="pay-disclaimer">{{order.localDemo ? '本地模拟收银台：不写后端、不调起微信支付、不产生真实扣款。' : '演示支付：不会调起微信支付，不会真实扣款。'}}</view>
+      <view class="btn btn-primary pay-btn {{paying ? 'btn-disabled' : ''}}" bindtap="onPay">
+        {{paying ? '处理中…' : (order.localDemo ? '模拟支付（本地演示）' : '演示支付（未真实扣款）')}}
+      </view>
+    </view>
+
+    <view wx:if="{{order.status === 'PAID' && !order.localDemo}}" class="btn btn-outline pay-btn" bindtap="onRefund">{{refunding ? '退费中…' : '申请退费（演示）'}}</view>
+    <view wx:if="{{order.localDemo}}" class="pay-hint">演示金额 0.01 元，不对应真实检查/挂号费用。</view>
+    <view wx:if="{{error}}" class="pay-error">{{error}}</view>
+    <view class="btn btn-outline pay-btn" bindtap="goHome">返回首页</view>
+  </view>
+
+  <!-- 总回退：真实支付未开启。允许开发档进入本地模拟收银台，保证演示可点击、可成功。 -->
+  <view wx:elif="{{!enabled}}" class="card pay-card">
+    <view class="pay-title">门诊缴费</view>
+    <view class="pay-disabled">{{disabledMessage || '请到院窗口缴费'}}</view>
+    <view class="pay-hint">真实支付通道未开启，不影响正常挂号与就诊；可用下方模拟收银台走通演示流程。</view>
+    <view wx:if="{{error}}" class="pay-error">{{error}}</view>
+    <view wx:if="{{demoEnabled}}" class="btn btn-primary pay-btn" bindtap="startLocalDemo">模拟支付（本地演示）</view>
+    <view wx:if="{{demoEnabled}}" class="pay-disclaimer">仅本地演示：不写订单、不调起微信支付、不产生真实扣款。</view>
+    <view class="btn btn-outline pay-btn" bindtap="goHome">返回首页</view>
+  </view>
+
+  <view wx:else class="card pay-card">
+    <view class="pay-title">门诊缴费</view>
+    <view class="pay-disabled">暂时无法读取订单</view>
+    <view wx:if="{{error}}" class="pay-error">{{error}}</view>
+    <view wx:if="{{demoEnabled}}" class="btn btn-primary pay-btn" bindtap="startLocalDemo">模拟支付（本地演示）</view>
+    <view wx:if="{{demoEnabled}}" class="pay-disclaimer">仅本地演示：不写订单、不调起微信支付、不产生真实扣款。</view>
+    <view class="btn btn-outline pay-btn" bindtap="goHome">返回首页</view>
+  </view>
+
+</view>

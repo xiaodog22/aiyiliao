@@ -68,6 +68,15 @@ function errText(err, fallback) {
   if (code === 'INVITATION_NOT_FOUND') return '授权码无效，请重新申请'
   // 在线问诊：先预约、等医生接单后才能继续对话（后端 409 WAITING_ACCEPT）
   if (code === 'WAITING_ACCEPT') return '医生接单后才能继续对话，请耐心等待'
+  // 检查预约（P0-2）：时段被占/项目不存在/状态不可取消一律给人话，不透传 HIS 英文
+  if (code === 'EXAM_DISABLED') return '检查预约暂未开放，请到院窗口办理'
+  if (code === 'EXAM_SLOT_TAKEN') return '该时段已被预约，请换一个时段'
+  if (code === 'EXAM_SLOT_INVALID') return '所选时段已不在排期内，请重新选择'
+  if (code === 'EXAM_ITEM_NOT_FOUND') return '检查项目不存在，请刷新后重试'
+  if (code === 'EXAM_ORDER_NOT_FOUND') return '检查预约不存在'
+  if (code === 'EXAM_ORDER_FORBIDDEN') return '无权查看该检查预约'
+  if (code === 'EXAM_NOT_CANCELLABLE') return '当前检查预约状态不可取消'
+  if (code === 'HIS_UNAVAILABLE') return '院内服务暂时不可用，请稍后重试'
 
   // ② 业务错误 / 无 code：仅当 message 是中文才展示
   if (readable(raw)) return raw

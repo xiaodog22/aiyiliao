@@ -131,7 +131,8 @@ app:
       app-secret: ${APP_HIS_HTTP_APP_SECRET:}
       timeout-ms: ${APP_HIS_HTTP_TIMEOUT_MS:3000}
       demo: ${APP_HIS_HTTP_DEMO:true}
-      # 主数据映射：主项目 dep-*/doc-* 与诊所 QK/D001 不同源，诊所返回 NOT_FOUND 时用这两个值重试一次
+      # 主数据映射：真实档必须先查 V36 his_master_data_map 的 CONFIRMED 映射；
+      # 下面两个 fallback 只在 demo=true 的演示联调允许使用，demo=false 不得回落。
       fallback-doctor-id: ${APP_HIS_HTTP_FALLBACK_DOCTOR_ID:D001}
       fallback-department-id: ${APP_HIS_HTTP_FALLBACK_DEPARTMENT_ID:QK}
   # 护士站终端令牌（2026-11-19）：仅用于床位申请审批端点，不携带患者身份。
@@ -156,6 +157,30 @@ app:
   # 不记录请求/响应正文（天然不含健康内容）；关闭用 APP_AUDIT_ENABLED=false。
   audit:
     enabled: ${APP_AUDIT_ENABLED:true}
+  # P0-3 报告 READY 站内提醒（2026-11-20）：关闭后仍可发布报告状态，只是不写消息；
+  # 报告查询/门禁不受影响。幂等键 REPORT_READY:{recordId}，同一报告最多 1 条。
+  report:
+    notify-enabled: ${APP_REPORT_NOTIFY_ENABLED:true}
+  # 演示支付（P0-1，2026-11-20）：无企业主体/商户号，唯一启用档 DEMO。
+  #   · enabled=false 是总回退：页面只显示「请到院窗口缴费」，不创建订单；
+  #   · mode=LIVE 或任何非 DEMO 值 → 启动即失败（禁止把演示支付伪装成真实支付）；
+  #   · enabled=true 时 demo-secret 至少 16 字符，否则启动失败（回调验签用）；
+  #   · source 只允许 DEMO/SANDBOX，与订单表约束一致。
+  payment:
+    enabled: ${APP_PAYMENT_ENABLED:false}
+    mode: ${APP_PAYMENT_MODE:DEMO}
+    source: ${APP_PAYMENT_SOURCE:DEMO}
+    demo-secret: ${APP_PAYMENT_DEMO_SECRET:}
+    callback-ttl-seconds: ${APP_PAYMENT_CALLBACK_TTL_SECONDS:300}
+    reconcile-interval-ms: ${APP_PAYMENT_RECONCILE_INTERVAL_MS:300000}
+  # 检查预约（P0-2，2026-11-20）：演示排期，不接真实检查号源。
+  #   · enabled=false 是总回退：页面只显示「请到院窗口办理」，不发起 HIS 调用；
+  #   · mode/source 只允许 DEMO（SANDBOX 兼容），其它值启动即失败。
+  exam:
+    enabled: ${APP_EXAM_ENABLED:false}
+    mode: ${APP_EXAM_MODE:DEMO}
+    source: ${APP_EXAM_SOURCE:DEMO}
+    reconcile-initial-delay-ms: ${APP_PAYMENT_RECONCILE_INITIAL_DELAY_MS:60000}
   # 限流（M4，docs/v4/03 §145）：仅覆盖契约声明 429 的路径（登录/刷新、短信下发、账号登录、
   # 预约/邀请/会话与消息/AI 提交/导诊急症/care-plan/ASR/TTS/音色预览）。
   # 键：登录类=IP，提交类=认证主体；429 信封与网关口径一致（RATE_LIMITED + Retry-After）。

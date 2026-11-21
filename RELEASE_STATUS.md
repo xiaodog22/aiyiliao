@@ -7,8 +7,8 @@
 
 - **正式名**：康诊云（唯一对外品牌名，覆盖页面标题 / 导航栏 / 登录页 / 介绍站 / 交付文档）。
   旧版设计稿残留的其他品牌名属历史归档，不得复用——`check-project` ⑧ 会拦截运行时回归。
-- **页面数**：37（主包 26 + 分包 11：`pages/doctor` 8 + `packageNav` 1 + `packageContent` 2），以 `miniprogram/app.json` 实测为准。
-- **库表数**：40（Flyway `db/migration` 下 30 个迁移文件的唯一 `CREATE TABLE` 统计，2026-11-16 实测）；历史文档的 33 / 36 / 39 为旧口径。
+- **页面数**：40（主包 29 + 分包 11：`pages/doctor` 8 + `packageNav` 1 + `packageContent` 2），以 `miniprogram/app.json` 实测为准。
+- **库表数**：43（Flyway `db/migration` 下 36 个迁移文件的唯一 `CREATE TABLE` 统计，2026-11-20 实测）；历史文档的 33 / 36 / 39 / 40 / 41 / 42 为旧口径。
 - **版本**：V1.19（当前运行时）；V1.20 为部分执行（REQ-14 HIS 受限接入、演示边界标识、门禁收口已完成；版本 bump 仍未执行）。
 - **V1.20 受控基线（2026-11-16 入库，PR-1 交付）**：`REQUIREMENTS_BASELINE_V1.20.md`（A16 必达 / B8 登记 V1.21 / C4 长期）、
   `PRODUCTION_GATE.md`（PG9 + SC8，清单化不要求本轮全绿）、`V1.20_EXECUTION_PLAN.md`（PR-1~7，仅 PR-6 涉及业务代码）。
@@ -41,7 +41,7 @@
 | 11 | 健康科普 | **部分** | 开发 | 前端本地 KB 兜底；后端 `health_articles` 0 条 | 待指派 | 2026-11-15 | 服务端优先 + 本地降级方案待批准（B3-03） |
 | 12 | 音色管理（edge-tts） | 已实现 | 联调 | 音色设置页 + 云端偏好 | 待指派 | 2026-11-17 | **B1-01 已修竞态**（代次守卫 + 远端可见全集）；内置男女音色已分离映射；高频句预生成默认开启（23 条/男女音色）；`stopSpeak` 播报代次防退出补播；`test-voice-local` 25/25、`test-profile-deep-audit` 27/27 |
 | 13 | 家庭成员协助 | 部分 | 开发 | `family_members` / `family_invitations` 表 + 页面 | 待指派 | 2026-11-13 | "本人接受邀请"流程待完善（B2-05） |
-| 14 | 消息通知 | 已实现 | 联调 | `/messages/unread-count` 契约快照覆盖；患者端消息中心已接真实列表/已读接口 | 待指派 | 2026-11-17 | 报告出具/缴费/病历查询三类事件后端暂无写入点，前端已预留类型映射 |
+| 14 | 消息通知 | 已实现 | 联调 | `/messages/unread-count` 契约快照覆盖；患者端消息中心已接真实列表/已读接口 | 待指派 | 2026-11-20 | 报告出具（REPORT_READY）由 P0-3 后端幂等写入；缴费由支付页直接承接、不写消息；病历查询类型仍预留 |
 | 15 | 适老化（大字三档/高对比） | 部分 | 联调 | 真机 T15/T39 PASS；超大字档线条/配色已修（`test-a11y-touch` F05 共 22 项） | 待指派 | 2026-11-16 | **T33 代码层已修**（B1-02：4 项含预约挂号；找不到映射时清除高亮），**待真机复测截图**；超大字档仍需真机视觉复核（门禁绿≠能看）；手机触控 88rpx=44px，Pad 档 48px，未全量 48px |
 | 16 | 完整语音交互（说症状→播报结果） | 规划 | — | — | 待指派 | — | 评审 7-5；范围大，列 B2 之后 |
 | 17 | 微信隐私保护授权 | 部分 | 联调 | `miniprogram/utils/privacy.js` + `app.json` `__usePrivacyCheck__` + `services/speech.js` 前置校验；`privacy.test.js` 6 项 | 待指派 | 2026-11-17 | 代码侧已接入；小程序后台《隐私保护指引》与 `scope.record` 文案仍需人工配置 |
@@ -53,6 +53,9 @@
 | 23 | HIS 受限接入（REQ-14） | 部分 | 联调 | `HisBooking*ContractTest` 3 项（关闭/成功/失败不落单）+ Flyway V31 success=1 + 真实库列已验 | 待指派 | 2026-11-16 | **只做 Mock 受理，不接真实凭据/号源**；开关默认关闭；真实 HIS 闭环仍为 #19 阻塞 |
 | 24 | 真机 adb 测试器（device-test） | 已实现 | 联调 | `tools/device-test/`（adb 探测/用例执行/断言/报告）+ 2 用例 + skill | 待指派 | 2026-11-16 | 无设备/无 token 一律 SKIP（exit 2）；不伪造 PASS |
 | 25 | AI 任务事件流（SSE 增量） | **部分** | 联调 | ai-service `/internal/v1/tasks/{id}/stream` + business `/api/v1/ai/tasks/{id}/events`；Python SSE 15 项 + Java 流 6 项；终态以权威全文校验，不一致下发 `replace:true` 整段 | 待指派 | 2026-11-18 | **前端下一批接入**：`services/stream.js` / `sse.js` / `AI_TASK_EVENTS` 已就绪且有 10 项单测，但业务页面零引用，问诊页仍为 2s 轮询（修复任务书 M-02 选型②）。服务端可作为增量通道上线，客户端接入前不得对外称"流式问答已可用" |
+| 26 | 门诊缴费（演示支付，P0-1） | **模拟** | 联调 | `PaymentServiceTest` 7 条 + V34 落库 + 临时 8099/8310 实测：回调 12 次仅 1 笔入账、篡改签名 401 | 待指派 | 2026-11-20 | **仅 DEMO 档，不调用 `wx.requestPayment`，不接微信真实/沙箱支付**；金额取号源费，clinic-his 演示账单幂等；`APP_PAYMENT_ENABLED=false` 时显示「请到院窗口缴费」，并提供 0.01 元本地模拟收银台（不写后端、不产生真实扣款）；真实支付待 D1 企业主体/商户号补齐后解锁 |
+| 27 | 检查预约（演示排期，P0-2） | **模拟** | 联调 | `ExamServiceTest` 10 条 + V35 落库 + clinic-his `/openapi/v1/exam-*` 5 路由探针 + 8099/8310 端到端：同幂等键回放、时段占用 409、取消释放 | 待指派 | 2026-11-20 | **仅演示排期，不接真实医院检查号源**；项目/时段读 clinic-his，先 HIS 占位再落本地；`APP_EXAM_ENABLED=false` 只显示「检查预约暂未开放」；报告详情已展示 `examRequestNo` 字段（自动写回链路待接）；到院检查以医技科室安排为准 |
+| 28 | 个人主体演示兜底（模拟手机号 + 本地模拟收银台） | **模拟** | 联调 | `test-demo-fallback` 15/0 + 8088 dev 登录实测 + 无 `requestPayment`/无 `open-type=getPhoneNumber` 源码守卫 | 待指派 | 2026-11-20 | 仅开发档（`ENV.legacyManualLoginEnabled`）渲染；本地演示会话无 token，受保护业务接口仍为离线态；真实手机号/支付待企业主体认证与商户号 |
 
 ## 2. 发布前强制门禁（评审 6.1；🚫 = 本期阻塞，不允许以"演示环境"冒充生产）
 

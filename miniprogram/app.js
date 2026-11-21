@@ -23,13 +23,13 @@ const SESSION_TTL_MS = 72 * 60 * 60 * 1000
  * 这样不依赖每个页面手写守卫，也不会把本地 wb_role 当权限依据。
  * 本地角色仍保留为路由提示，但通过服务端返回的 roles 覆盖。
  */
-if (typeof Page === 'function') {
+if (typeof Page === 'function' && !Page.__wbDoctorGate) {
   const nativePage = Page
   // eslint-disable-next-line no-global-assign
   Page = function (options) {
-    const originalOnLoad = options && options.onLoad
-    const originalOnShow = options && options.onShow
-    options = options || {}
+    if (!options) return nativePage(options)
+    const originalOnLoad = options.onLoad
+    const originalOnShow = options.onShow
 
     const ensureDoctor = (page) => {
       if (page._doctorGate) return page._doctorGate
@@ -75,6 +75,9 @@ if (typeof Page === 'function') {
 
     return nativePage(options)
   }
+  // 热重载守卫：热重载会重新执行本文件，若每次都再包一层 Page，onShow/onLoad 会叠成 N 层
+  // 中间件（每层一次 verifyDoctorRole 往返），表现为越改越卡甚至「模拟器长时间没有响应」
+  Page.__wbDoctorGate = true
 }
 
 App({
@@ -94,7 +97,10 @@ App({
     // 会话超过有效期则清除登录态，强制重新登录。
     // ⚠️ loginAt 缺失但 role 仍在（历史脏数据 / 手工写 storage）同样视为失效：
     //    原实现对 `!loginAt` 返回"未过期"，会让 72h 会话在缺时间戳时永久有效（审查 AUTH-25）。
-    if (role && (!loginAt || this._isSessionExpired(loginAt))) {
+    // ⚠️ 2026-11-20：本地演示会话（user.demo=true）没有任何服务端令牌，不能按 72h 真会话持久化，
+    //    否则下次冷启动会绕过登录页、挂号等受保护接口全部 401（"突然无法挂号"）。
+    const demoWithoutToken = !!(user && user.demo === true && !session.hasSession())
+    if (role && (!loginAt || this._isSessionExpired(loginAt) || demoWithoutToken)) {
       this.logout()
     } else {
       this.globalData.role = role
@@ -133,6 +139,8 @@ App({
   // 当前是否有有效登录态（未登录或已过期均返回 false，过期会自动清除）
   isLoggedIn() {
     if (!this.globalData.role) return false
+    // 本地演示会话没有 token，不算可提交真实业务的可恢复登录态
+    if (this.globalData.user && this.globalData.user.demo === true && !session.hasSession()) return false
     const loginAt = wx.getStorageSync('wb_login_at') || 0
     // 无时间戳 = 无法证明在 72h 内 → 按失效处理（与 onLaunch 同口径）
     if (!loginAt || this._isSessionExpired(loginAt)) {

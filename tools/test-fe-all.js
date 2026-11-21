@@ -27,7 +27,9 @@ const NEW_TESTS = [
   // 2026-11-12 缺陷 DEF-09：纯标点输入被当有效症状送进模型（导诊/问诊三处输入框）
   'test-fe-input-guard.js',
   // 2026-11-13 站点合规：首屏免责声明 + 禁止手机号/验证码演示控件 + 原有结构/交互回归
-  'test-site-index.js'
+  'test-site-index.js',
+  // 2026-11-20 兼容性整改：InnerAudioContext 监听不叠加 + 临时音频回收 + 老基础库无 off* 兜底
+  'test-fe-speech-audio.js'
 ].map((f) => path.join('tools', f))
 
 // ② 既有门禁回归（与 2026-10-18 基线一致的口径）
@@ -46,6 +48,8 @@ const GATES = [
   { cmd: 'test-pages-paginate.js', known: false },
   { cmd: 'test-resource-links.js', known: false },
   { cmd: 'test-detail-video.js', known: false },
+  // 2026-11-20 个人主体演示兜底：模拟手机号登录 + 本地模拟收银台（不接真实授权/支付）
+  { cmd: 'test-demo-fallback.js', known: false },
   // 2026-10-29 全量前端测试的分片回归（此前只在分片报告里手工跑，未进一键入口）
   { cmd: 'test-login-auth-audit.js', known: false },
   { cmd: 'test-patient-flows-audit.js', known: false },

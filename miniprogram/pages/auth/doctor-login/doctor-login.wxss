@@ -121,6 +121,36 @@ page {
 
 .dl-btn-primary::after { border: none; }
 
+/* 演示登录（仅开发构建）：描边胶囊 + 说明小字，视觉权重低于主按钮 */
+.dl-demo {
+  margin-top: 28rpx;
+}
+
+.dl-btn-demo {
+  width: 100%;
+  height: 84rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--primary);
+  font-size: calc(var(--font-body) + 0rpx);
+  font-weight: 500;
+  border-radius: 999rpx;
+  border: 1rpx solid var(--primary);
+  padding: 0;
+  margin: 0;
+}
+
+.dl-btn-demo::after { border: none; }
+
+.dl-demo-tip {
+  margin-top: 12rpx;
+  text-align: center;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
 /* 协议小字行（设计图 03：登录即代表同意 用户协议 隐私政策） */
 .dl-agree {
   margin-top: 36rpx;
@@ -156,5 +186,8 @@ page {
   .dl-field-input, .dl-field-ph { font-size: 15px; }
   .dl-divider { margin: 18px 0 22px; }
   .dl-btn-primary { height: 48px; font-size: 16px; }
+  .dl-demo { margin-top: 14px; }
+  .dl-btn-demo { height: 42px; font-size: 15px; border-width: 1px; }
+  .dl-demo-tip { margin-top: 6px; font-size: 12px; }
   .dl-agree-text, .dl-agree-link { font-size: 12px; }
 }

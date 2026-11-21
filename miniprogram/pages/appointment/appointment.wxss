@@ -69,9 +69,10 @@
 /* ============ ② 筛选胶囊（白底 + 图标 + 文字 + 下拉箭头 + 选中圆点） ============ */
 .ap-filters {
   display: flex;
-  gap: 16rpx;
   margin-bottom: 30rpx;
 }
+/* ⚠️ 不用 flex gap：iOS 14.4 及以下 / 旧内核里 gap 对 flex 无效 → 间距归零，改用子项外边距 */
+.ap-filters > .ap-filter + .ap-filter { margin-left: 16rpx; }
 
 .ap-filter {
   position: relative;
@@ -167,7 +168,9 @@
   margin-bottom: 24rpx;
 }
 
-.ap-depts-in { display: inline-flex; gap: 16rpx; }
+.ap-depts-in { display: inline-flex; }
+/* gap 兜底：横滑科室胶囊（骨架项同用 .ap-dept 类） */
+.ap-depts-in > .ap-dept + .ap-dept { margin-left: 16rpx; }
 
 .ap-dept {
   display: inline-flex;
@@ -687,7 +690,8 @@
   .ap-search-btn { padding: 4px 0 4px 2px; }
 
   /* 筛选胶囊 */
-  .ap-filters { gap: 8px; margin-bottom: 15px; }
+  .ap-filters { margin-bottom: 15px; }
+  .ap-filters > .ap-filter + .ap-filter { margin-left: 8px; }
   .ap-filter { height: 32px; padding: 0 11px; }
   .ap-filter-ic { width: 15px; height: 15px; margin-right: 6px; }
   .ap-filter-caret { width: 12px; height: 12px; margin-left: 4px; }
@@ -701,7 +705,7 @@
 
   /* 科室 chip */
   .ap-depts { margin-bottom: 12px; }
-  .ap-depts-in { gap: 8px; }
+  .ap-depts-in > .ap-dept + .ap-dept { margin-left: 8px; }
   .ap-dept { height: 32px; padding: 0 14px; }
   .ap-dept-skel { width: 75px; }
 

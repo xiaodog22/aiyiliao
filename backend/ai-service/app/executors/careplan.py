@@ -32,6 +32,7 @@ import httpx
 
 from ..config import Settings
 from ..knowledge import get_knowledge_loader
+from ..medical_redlines import CAREPLAN_LIMITATIONS
 from ..tasks import TaskContext, TaskFailure
 from ._llm import (
     PROVENANCE_AI,
@@ -52,7 +53,8 @@ logger = logging.getLogger("ai-service.executors.careplan")
 PROMPT_TEMPLATE_VERSION = "care-plan-v2"
 
 # 业务侧按 containsString("不构成处方") 做红线断言，此文案为契约外事实约定，改动需与 M 侧同步。
-LIMITATIONS = "以上为生活方式与膳食参考，不构成处方、治疗方案或用药指导；出现不适请及时就医。"
+# 2026-11-21 治理合并：文案唯一源在 config/medical-redlines.json（经 app/medical_redlines.py 加载）。
+LIMITATIONS = CAREPLAN_LIMITATIONS
 
 _SYSTEM_PROMPT = (
     "你是社区医院健康管理助手，为居民给出生活方式与膳食方面的参考建议。要求："

@@ -197,6 +197,13 @@
           </view>
         </view>
       </view>
+
+      <!-- 开发/演示档专用：真实支付未开通时的模拟收银台入口；生产构建 demoEnabled=false 不渲染 -->
+      <view wx:if="{{demoEnabled}}" class="hm-demo-entry pressable" bindtap="goDemoPay">
+        <text class="hm-demo-label">演示模式</text>
+        <text class="hm-demo-action">模拟支付（本地演示）</text>
+        <image class="hm-demo-arrow" src="{{icons.chevronRightGray}}" />
+      </view>
       </view>
 
       <!-- ============================================================

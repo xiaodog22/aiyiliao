@@ -1,0 +1,41 @@
+{
+  "version": "medical-redlines-v1",
+  "description": "医疗安全红线主清单（2026-11-21 治理合并，唯一事实源）。消费方：⑩ 执行器（app/medical_redlines.py 导入）、⑦ chat「禁忌与红线」片段（tools/gen-hospital-knowledge.js 生成）、⑬ 门禁（tools/check-knowledge-base.py 校验唯一性与引用）。禁止在其他文件散写本清单的复制品。",
+  "redlines": [
+    {
+      "id": "triage_only",
+      "text": "只做分诊建议，不做诊断，不给具体药物名称、剂量与处方",
+      "scope": ["triage", "chat", "careplan", "interpret"]
+    },
+    {
+      "id": "red_flag_emergency",
+      "text": "红旗急症一律引导线下急救或拨打 120，绝不建议在家观察",
+      "scope": ["triage", "chat"]
+    },
+    {
+      "id": "special_population",
+      "text": "儿童、孕产妇、老年人单列提示（人群风险不同）",
+      "scope": ["triage"]
+    },
+    {
+      "id": "doctor_final",
+      "text": "所有建议以医生面诊为准",
+      "scope": ["triage", "chat", "careplan", "interpret"]
+    }
+  ],
+  "consumers": {
+    "chatFragmentContent": "重要提醒：本 AI 不提供药品名称、剂量与处方，不给诊断结论；出现胸痛、呼吸困难、大出血、意识障碍请立即就医或拨打 120。",
+    "careplanLimitations": "以上为生活方式与膳食参考，不构成处方、治疗方案或用药指导；出现不适请及时就医。",
+    "triageLimitations": "AI 补充建议，不构成诊断；就诊科室以院内分诊规则与医生面诊为准。"
+  },
+  "executorVerbatimSentences": {
+    "_note": "chat/interpret 的场景化红线句式内嵌于调优后的 system prompt，不拆分改写；门禁校验执行器源码必须逐字包含以下句式，防止一处删改导致红线丢失。",
+    "chat.py": [
+      "严禁出现任何疾病名称、药品名称、剂量",
+      "若出现急症信号（持续胸痛、呼吸困难、意识改变、大出血），提示立即拨打 120"
+    ],
+    "interpret.py": [
+      "不给出确诊结论，不推荐任何药物名称、剂量或处方，不预测病程"
+    ]
+  }
+}

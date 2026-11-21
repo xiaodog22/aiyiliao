@@ -3,6 +3,8 @@ package com.wechar.biz.appointment.his;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,6 +17,7 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -69,7 +72,7 @@ class HttpHisClientTest {
         });
 
         HttpHisClient client = new HttpHisClient(mapper, "http://127.0.0.1:" + server.getAddress().getPort() + "/",
-                APP_ID, SECRET, 2000, true, "D001", "QK");
+                APP_ID, SECRET, 2000, true, "D001", "QK", null);
 
         HisClient.HisBookingResult result = client.book(new HisClient.HisBookingCommand(
                 "ap-4f0c5c62-1111-2222-3333-444455556666", "slot-future-1", "演示患者", "doc-gp-1", "dep-gp"));
@@ -96,11 +99,54 @@ class HttpHisClientTest {
             respond(exchange, 500, "{\"code\":\"INTERNAL_ERROR\",\"message\":\"系统繁忙\"}");
         });
         HttpHisClient client = new HttpHisClient(mapper, "http://127.0.0.1:" + server.getAddress().getPort(),
-                APP_ID, SECRET, 2000, true, "D001", "QK");
+                APP_ID, SECRET, 2000, true, "D001", "QK", null);
 
         RuntimeException error = assertThrows(RuntimeException.class, () -> client.book(
                 new HisClient.HisBookingCommand("ap-x", "slot-1", "演示患者", "D001", "QK")));
         assertTrue(error.getMessage().contains("INTERNAL_ERROR"), "异常应携带院方错误码，实际: " + error.getMessage());
+    }
+
+    @Test
+    void 受理前使用已确认主数据映射() throws Exception {
+        List<String> bodies = new CopyOnWriteArrayList<>();
+        HttpServer server = start(exchange -> {
+            bodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            respond(exchange, 201, "{\"code\":\"OK\",\"data\":{\"hisOrderNo\":\"CLN20261120-000007\","
+                    + "\"status\":\"ACCEPTED\",\"replayed\":false}}");
+        });
+        HisMasterDataRepository mappings = mock(HisMasterDataRepository.class);
+        when(mappings.resolveConfirmed("DOCTOR", "doc-gp-1")).thenReturn(Optional.of("D001"));
+        when(mappings.resolveConfirmed("DEPARTMENT", "dep-gp")).thenReturn(Optional.of("QK"));
+
+        HttpHisClient client = new HttpHisClient(mapper, "http://127.0.0.1:" + server.getAddress().getPort(),
+                APP_ID, SECRET, 2000, false, "", "", mappings);
+
+        HisClient.HisBookingResult result = client.book(new HisClient.HisBookingCommand(
+                "ap-map-1", "slot-future-1", "演示患者", "doc-gp-1", "dep-gp"));
+
+        assertEquals("CLN20261120-000007", result.hisOrderNo());
+        assertEquals("HIS_LIVE", result.source());
+        assertEquals(1, bodies.size());
+        assertTrue(bodies.get(0).contains("\"doctorId\":\"D001\""));
+        assertTrue(bodies.get(0).contains("\"departmentId\":\"QK\""));
+    }
+
+    @Test
+    void 真实档主数据不一致不得回落演示映射() throws Exception {
+        List<String> bodies = new CopyOnWriteArrayList<>();
+        HttpServer server = start(exchange -> {
+            bodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            respond(exchange, 404, "{\"code\":\"NOT_FOUND\",\"message\":\"科室不存在\"}");
+        });
+        HttpHisClient client = new HttpHisClient(mapper, "http://127.0.0.1:" + server.getAddress().getPort(),
+                APP_ID, SECRET, 2000, false, "D001", "QK", null);
+
+        RuntimeException error = assertThrows(RuntimeException.class, () -> client.book(
+                new HisClient.HisBookingCommand("ap-real-1", "slot-1", "演示患者", "doc-unknown", "dep-unknown")));
+
+        assertTrue(error.getMessage().contains("NOT_FOUND"), "真实档应直接失败，实际: " + error.getMessage());
+        assertEquals(1, bodies.size(), "demo=false 时不得用 D001/QK 重试");
+        assertTrue(bodies.get(0).contains("doc-unknown") && bodies.get(0).contains("dep-unknown"));
     }
 
     @Test
@@ -112,7 +158,7 @@ class HttpHisClientTest {
             respond(exchange, 200, "{\"code\":\"OK\",\"data\":{\"status\":\"CANCELLED\",\"idempotent\":true}}");
         });
         HttpHisClient client = new HttpHisClient(mapper, "http://127.0.0.1:" + server.getAddress().getPort(),
-                APP_ID, SECRET, 2000, true, "D001", "QK");
+                APP_ID, SECRET, 2000, true, "D001", "QK", null);
 
         client.cancel("CLN20261119-000001", "患者取消");
 

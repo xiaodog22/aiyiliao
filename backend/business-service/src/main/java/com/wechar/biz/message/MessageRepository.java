@@ -15,7 +15,8 @@ import org.springframework.stereotype.Component;
 public class MessageRepository {
 
     public record MessageRow(String id, String userId, String type, String title, String body,
-                             String refType, String refId, Instant readAt, Instant createdAt) {
+                             String refType, String refId, String bizKey, Instant readAt,
+                             Instant createdAt) {
     }
 
     private final JdbcTemplate jdbc;
@@ -29,21 +30,30 @@ public class MessageRepository {
         Timestamp created = rs.getTimestamp("created_at");
         return new MessageRow(rs.getString("id"), rs.getString("user_id"), rs.getString("type"),
                 rs.getString("title"), rs.getString("body"), rs.getString("ref_type"),
-                rs.getString("ref_id"), read == null ? null : read.toInstant(),
+                rs.getString("ref_id"), rs.getString("biz_key"),
+                read == null ? null : read.toInstant(),
                 created == null ? null : created.toInstant());
     }
 
     public void insert(MessageRow row) {
-        jdbc.update("INSERT INTO messages (id, user_id, type, title, body, ref_type, ref_id, read_at, created_at) "
-                + "VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)",
+        jdbc.update("INSERT INTO messages (id, user_id, type, title, body, ref_type, ref_id, biz_key, read_at, created_at) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)",
                 row.id(), row.userId(), row.type(), row.title(), row.body(), row.refType(), row.refId(),
-                Timestamp.from(row.createdAt()));
+                row.bizKey(), Timestamp.from(row.createdAt()));
+    }
+
+    /** 业务事件幂等键是否已写过（唯一索引 uq_messages_user_biz 的读侧快路径）。 */
+    public boolean existsByBizKey(String userId, String bizKey) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM messages WHERE user_id = ? AND biz_key = ?",
+                Integer.class, userId, bizKey);
+        return n != null && n > 0;
     }
 
     /** 当前用户消息列表（新→旧）；cursor 为 (createdAt, id) 双键，与全局 Cursors 一致。 */
     public List<MessageRow> listByUser(String userId, Instant cursorTime, String cursorId, int limit) {
         StringBuilder sql = new StringBuilder("SELECT id, user_id, type, title, body, ref_type, ref_id, "
-                + "read_at, created_at FROM messages WHERE user_id = ?");
+                + "biz_key, read_at, created_at FROM messages WHERE user_id = ?");
         List<Object> args = new java.util.ArrayList<>(List.of(userId));
         if (cursorTime != null) {
             sql.append(" AND (created_at < ? OR (created_at = ? AND id < ?))");

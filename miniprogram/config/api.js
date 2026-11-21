@@ -51,6 +51,21 @@ const APPOINT_LIST        = { base: 'java', path: '/api/v1/appointments/me' }
 const APPOINT_BY_KEY      = { base: 'java', path: '/api/v1/appointments/by-idempotency-key/{key}' }
 // 患者取消预约（契约已实现：POST /api/v1/appointments/{id}/cancel，Idempotency-Key 必填）
 const APPOINT_CANCEL      = { base: 'java', path: '/api/v1/appointments/{appointmentId}/cancel' }
+// 演示支付（P0-1）：仅 DEMO 档，不接微信支付；页面固定标注「未真实扣款」
+const PAY_CONFIG          = { base: 'java', path: '/api/v1/payment/config' }
+const PAY_ORDER_CREATE    = { base: 'java', path: '/api/v1/payment/orders' }
+const PAY_ORDER_GET       = { base: 'java', path: '/api/v1/payment/orders/{orderNo}' }
+const PAY_DEMO_PAY        = { base: 'java', path: '/api/v1/payment/orders/{orderNo}/demo-pay' }
+// 演示退费（2026-11-21）：仅本地状态流转，不触发真实退款
+const PAY_ORDER_REFUND    = { base: 'java', path: '/api/v1/payment/orders/{orderNo}/refund' }
+// 检查预约（P0-2）：演示排期，不接真实检查号源；页面固定标注「演示预约」
+const EXAM_CONFIG         = { base: 'java', path: '/api/v1/exam/config' }
+const EXAM_ITEMS          = { base: 'java', path: '/api/v1/exam/items' }
+const EXAM_SLOTS          = { base: 'java', path: '/api/v1/exam/items/{itemCode}/slots' }
+const EXAM_ORDER_CREATE   = { base: 'java', path: '/api/v1/exam/orders' }
+const EXAM_ORDER_LIST     = { base: 'java', path: '/api/v1/exam/orders/me' }
+const EXAM_ORDER_GET      = { base: 'java', path: '/api/v1/exam/orders/{requestNo}' }
+const EXAM_ORDER_CANCEL   = { base: 'java', path: '/api/v1/exam/orders/{requestNo}/cancel' }
 // ⚠️ 遗留路径：网关 compat 为 pending（501 COMPAT_PENDING）。**仅保留迁移台账**
 //    （check-v4-contracts 要求 x-migration 的 legacy 仍登记在 api.js），页面不得再调用。
 const APPOINT_UPDATE      = { base: 'java', path: '/api/appoint/updateStatus' }
@@ -167,6 +182,8 @@ module.exports = {
   DOCTOR_LOGIN, DOCTOR_WX_LOGIN, DOCTOR_LIST, DOCTOR_BY_DEPT,
   DEPARTMENT_LIST, DEPARTMENT_DOCTORS, DOCTOR_SLOTS,
   APPOINT_SUBMIT, APPOINT_LIST, APPOINT_BY_KEY, APPOINT_UPDATE, APPOINT_CANCEL,
+  PAY_CONFIG, PAY_ORDER_CREATE, PAY_ORDER_GET, PAY_DEMO_PAY, PAY_ORDER_REFUND,
+  EXAM_CONFIG, EXAM_ITEMS, EXAM_SLOTS, EXAM_ORDER_CREATE, EXAM_ORDER_LIST, EXAM_ORDER_GET, EXAM_ORDER_CANCEL,
   DOCTOR_APPOINTMENTS, DOCTOR_APPTS_STATUS, DOCTOR_TODOS,
   DOCTOR_CONSULTATIONS, DOCTOR_CONSULT_MESSAGES, DOCTOR_ACCEPT, DOCTOR_CONSULT_CLOSE, DOCTOR_REPLY,
   DOCTOR_SCHEDULE, DOCTOR_ONLINE_STATUS, DOCTOR_AVAILABILITY,

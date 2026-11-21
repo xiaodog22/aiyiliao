@@ -48,14 +48,23 @@
       <view class="pd-row-text">线上问诊设置</view>
     </view>
 
-    <view class="row pd-row row-arrow pressable" data-page="account-security" bindtap="onEntry">
-      <image class="pd-row-ic" src="{{icons.lock}}" />
-      <view class="pd-row-text">账号安全</view>
-    </view>
+    <!-- 账号安全页 2026-11-20 下线：仅展示脱敏手机号/姓名，无实际可修改能力，
+         信息已在本页头部展示，入口冗余。账号相关诉求请走院方 HIS。 -->
 
     <view class="row pd-row row-arrow pressable" data-page="messages" bindtap="onEntry">
       <image class="pd-row-ic" src="{{icons.bell}}" />
       <view class="pd-row-text">消息通知</view>
+    </view>
+  </view>
+
+  <!-- 院内业务（2026-11-20 医生端收缩说明）：挂号队列/床位/病历处方已由 clinic-his 承接，
+       小程序医生端只保留线上问诊。HIS 为院内内网地址（:8310），手机端不可直达，
+       故此处只做指引，不伪造跳转入口。 -->
+  <view class="card group-card pd-group">
+    <view class="group-head">院内业务</view>
+    <view class="row pd-row">
+      <image class="pd-row-ic" src="{{icons.hospital}}" />
+      <view class="pd-row-text">挂号、床位、病历与处方请使用院内 HIS 工作站办理</view>
     </view>
   </view>
 

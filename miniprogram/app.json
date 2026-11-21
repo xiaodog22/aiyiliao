@@ -9,12 +9,7 @@
     "pages/consultation/consultation",
     "pages/health/health",
     "pages/profile/profile",
-    "pages/tv/cast/cast",
-    "pages/triage/triage",
-    "pages/triage/result/result",
     "pages/appointment/appointment",
-    "pages/consult/consult",
-    "pages/consult/picker/picker",
     "pages/profile/records/records",
     "pages/profile/health-records/health-records",
     "pages/profile/reports/reports",
@@ -34,13 +29,47 @@
       "name": "doctor",
       "pages": [
         "workbench/workbench",
-        "appointments/appointments",
-        "beds/beds",
         "personal/personal",
         "consult/consult",
         "schedule/schedule",
-        "account-security/account-security",
         "messages/messages"
+      ]
+    },
+    {
+      "root": "pages/triage",
+      "name": "triage",
+      "pages": [
+        "triage",
+        "result/result"
+      ]
+    },
+    {
+      "root": "pages/consult",
+      "name": "consult",
+      "pages": [
+        "consult",
+        "picker/picker"
+      ]
+    },
+    {
+      "root": "pages/exam",
+      "name": "exam",
+      "pages": [
+        "exam"
+      ]
+    },
+    {
+      "root": "pages/payment",
+      "name": "payment",
+      "pages": [
+        "payment"
+      ]
+    },
+    {
+      "root": "pages/tv",
+      "name": "tv",
+      "pages": [
+        "cast/cast"
       ]
     },
     {
@@ -61,6 +90,12 @@
   ],
   "preloadRule": {
     "pages/home/home": {
+      "network": "all",
+      "packages": [
+        "triage"
+      ]
+    },
+    "pages/health/health": {
       "network": "wifi",
       "packages": [
         "packageContent",
@@ -111,12 +146,6 @@
   },
   "style": "v2",
   "__usePrivacyCheck__": true,
-  "plugins": {
-    "WechatSI": {
-      "version": "0.3.10",
-      "provider": "wx069ba97219f66d99"
-    }
-  },
   "resizable": true,
   "usingComponents": {
     "submission-actions": "/components/submission-actions/submission-actions",

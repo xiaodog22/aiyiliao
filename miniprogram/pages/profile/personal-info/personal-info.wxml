@@ -98,7 +98,7 @@
       <view class="pi-row-label">
         <view class="pi-row-t">医保绑定</view>
         <view wx:if="{{insBound}}" class="pi-row-s">{{insType}}（{{insMasked}}）</view>
-        <view wx:else class="pi-row-s">绑定后就诊结算更便捷</view>
+        <view wx:else class="pi-row-s">仅登记医保信息，暂不支持线上医保结算</view>
       </view>
       <view wx:if="{{insBound}}" class="pi-badge pi-badge-ok">已绑定</view>
       <view wx:else class="pi-link" bindtap="toggleInsForm">{{showInsForm ? '收起' : '去绑定'}}</view>
@@ -123,6 +123,6 @@
 
   <!-- ⑤ 隐私说明 -->
   <view class="pi-privacy">
-    身份证号与医保号加密存储，页面仅显示部分号码；信息仅用于医疗服务身份核验。
+    身份证号与医保号加密存储，页面仅显示部分号码；信息仅用于医疗服务身份核验。线上医保结算暂未开通，缴费请到院窗口。
   </view>
 </view>

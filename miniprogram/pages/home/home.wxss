@@ -223,8 +223,9 @@
 .hm-ask-btns {
   display: none;
   align-items: center;
-  gap: var(--h-s3);
 }
+/* ⚠️ 不用 flex gap：iOS 14.4 及以下 / 旧内核里 gap 对 flex 无效 → 间距归零，改用子项外边距 */
+.hm-ask-btns > .hm-ask-voice { margin-left: var(--h-s3); }
 
 /* 语音输入按钮：仅适老化大字模式展示（设计效果图 08） */
 .hm-ask-voice {
@@ -232,7 +233,6 @@
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  gap: var(--h-s2);
   height: var(--btn-height);
   padding: 0 var(--h-s5);
   box-sizing: border-box;
@@ -243,6 +243,8 @@
   font-size: var(--font-body);
   font-weight: 600;
 }
+/* gap 兜底：语音按钮内「图标 + 文字」 */
+.hm-ask-voice > text { margin-left: var(--h-s2); }
 
 /* 症状快选词：浅蓝实底胶囊（参考图形态）。高度 ≥72rpx 保证触控达标。 */
 .hm-quick { margin-top: var(--h-s4); }
@@ -293,12 +295,14 @@
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: var(--h-s2);                    /* 12rpx：给右侧 8 字说明留出单行宽度 */
   padding: var(--h-s5) var(--h-s3);    /* 左右 16rpx：与参考图「图标贴近卡边」一致 */
   border-radius: var(--radius-lg);
   background: var(--card);
   box-shadow: var(--shadow-card);
 }
+
+/* 兼容兜底：旧内核 flex gap 失效，用相邻兄弟 margin 代替（12rpx，给右侧 8 字说明留出单行宽度） */
+.hm-quad-card > .hm-quad-body { margin-left: var(--h-s2); }
 
 /* 图标底板：参考图为圆角方形 + 单一浅蓝（色相差异只留在图标本身） */
 .hm-tile {
@@ -789,14 +793,14 @@
   .theme-large .hm-sub, .theme-xlarge .hm-sub { margin-top: 6px; }
   .theme-large .hm-ask-row, .theme-xlarge .hm-ask-row { margin-top: 12px; }
   .theme-large .hm-ask { padding: 16px 16px 0; }
-  .theme-large .hm-ask-btns, .theme-xlarge .hm-ask-btns { gap: 16px; margin-top: 16px; }
+  .theme-large .hm-ask-btns, .theme-xlarge .hm-ask-btns { margin-top: 16px; }
+  .theme-large .hm-ask-btns > .hm-ask-voice, .theme-xlarge .hm-ask-btns > .hm-ask-voice { margin-left: 16px; }
   .theme-large .hm-ask-btns .hm-ask-send, .theme-xlarge .hm-ask-btns .hm-ask-send { padding: 0 8px; }
-  .theme-large .hm-ask-voice, .theme-xlarge .hm-ask-voice { gap: 6px; }
+  .theme-large .hm-ask-voice > text, .theme-xlarge .hm-ask-voice > text { margin-left: 6px; }
   .theme-large .hm-ask-mic-ic, .theme-xlarge .hm-ask-mic-ic { width: 18px; height: 18px; }
   .theme-large .hm-quad-card, .theme-xlarge .hm-quad-card {
     flex-basis: calc(50% - var(--h-s2));
     width: calc(50% - var(--h-s2));
-    gap: 12px;
     padding: 14px 8px;
     margin-bottom: 10px;
   }
@@ -1005,9 +1009,12 @@
 .theme-xlarge .hm-ask-btns {
   display: flex;
   flex-direction: row;
-  gap: 32rpx;
   margin-top: 32rpx;
 }
+
+/* 兼容：旧内核 flex gap 失效，改用相邻兄弟 margin（顺序 = 发送, 语音） */
+.theme-large .hm-ask-btns > .hm-ask-voice,
+.theme-xlarge .hm-ask-btns > .hm-ask-voice { margin-left: 32rpx; }
 
 .theme-large .hm-ask-btns .hm-ask-send,
 .theme-xlarge .hm-ask-btns .hm-ask-send {
@@ -1024,9 +1031,11 @@
   display: flex;
   flex: 1;
   height: var(--btn-height);
-  gap: 12rpx;
   font-size: var(--h-btn-label);
 }
+
+.theme-large .hm-ask-voice > text,
+.theme-xlarge .hm-ask-voice > text { margin-left: 12rpx; }
 
 .theme-large .hm-ask-mic-ic,
 .theme-xlarge .hm-ask-mic-ic {
@@ -1044,10 +1053,13 @@
 .theme-large .hm-quad-card,
 .theme-xlarge .hm-quad-card {
   flex-direction: column;
-  gap: 24rpx;
   padding: 28rpx 16rpx;
   text-align: center;
 }
+
+/* 纵向排列时由 margin-left 改为 margin-top，等量还原 24rpx 间距 */
+.theme-large .hm-quad-card > .hm-quad-body,
+.theme-xlarge .hm-quad-card > .hm-quad-body { margin-left: 0; margin-top: 24rpx; }
 
 .theme-large .hm-tile,
 .theme-xlarge .hm-tile {
@@ -1113,3 +1125,34 @@
 .theme-xlarge .home-guard,
 .theme-large .home-wave,
 .theme-xlarge .home-wave { display: none; }
+
+/* 开发/演示档：模拟支付直达入口（生产 demoEnabled=false 不渲染） */
+.hm-demo-entry {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  min-height: 88rpx;
+  margin-top: 16rpx;
+  padding: 0 24rpx;
+  border-radius: 16rpx;
+  background: var(--accent-soft, #eaf3ff);
+}
+.hm-demo-label {
+  flex: none;
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--primary-dark);
+  background: #fff;
+}
+.hm-demo-action {
+  flex: 1;
+  font-size: 28rpx;
+  color: var(--text-main);
+}
+.hm-demo-arrow {
+  flex: none;
+  width: 28rpx;
+  height: 28rpx;
+}

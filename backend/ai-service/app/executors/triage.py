@@ -33,6 +33,7 @@ import httpx
 from ..config import Settings
 from ..tasks import TaskContext, TaskFailure
 from ..knowledge import get_knowledge_loader
+from ..medical_redlines import TRIAGE_LIMITATIONS
 from ..providers import chain
 from ._llm import (
     USER_DATA_GUARD,
@@ -216,7 +217,7 @@ def build_triage_executor(
         await ctx.set_phase("generation")
         
         # 注入院内知识库（2026-10-22 知识库注入层）
-        hospital_knowledge = knowledge_loader.get_knowledge("triage", budget_tokens=300)
+        hospital_knowledge = knowledge_loader.get_knowledge("triage", budget_tokens=600)
         if hospital_knowledge:
             system_prompt = f"{_SYSTEM_PROMPT}\n\n院内知识库：\n{hospital_knowledge}"
             logger.info("TRIAGE 任务注入院内知识库 | task=%s | knowledge_version=%s", task.get("taskId"), knowledge_loader.version)
@@ -297,7 +298,7 @@ def build_triage_executor(
                 "recommendedDepartments": filtered_departments,
                 "provenance": "AI_GENERATED",
                 "llmSource": current_dependency(),  # ollama | deepseek
-                "limitations": "AI 补充建议，不构成诊断；就诊科室以院内分诊规则与医生面诊为准。",
+                "limitations": TRIAGE_LIMITATIONS,  # 唯一源 config/medical-redlines.json（2026-11-21 治理合并）
                 "promptTemplateVersion": PROMPT_TEMPLATE_VERSION,
             },
             "model": {

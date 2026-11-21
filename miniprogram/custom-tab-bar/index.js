@@ -5,7 +5,14 @@
  *   · large/xlarge（适老化）→ 3 项：首页 / 就医 / 我的
  * 每个 tab 页面 onShow 时调用 this.getTabBar().setData({ selected: N }) 高亮当前项。
  */
-const app = getApp()
+/**
+ * ⚠️ 不要在模块顶层写 `const app = getApp()`：组件模块可能在 App() 尚未执行时就被加载
+ *    （预加载 / 分包懒注入），此时取到的是 undefined，attached 里一读 globalData 就崩。
+ *    改为每次进方法时现取，App 已就绪时才有意义。
+ */
+function appInstance() {
+  try { return getApp() || null } catch (e) { return null }
+}
 
 // 标准模式 4 项配置
 const TABS_STANDARD = [
@@ -45,7 +52,8 @@ Component({
     },
 
     _syncTheme() {
-      const theme = app.globalData.theme || 'standard'
+      const app = appInstance()
+      const theme = (app && app.globalData && app.globalData.theme) || 'standard'
       const isElder = theme === 'large' || theme === 'xlarge'
       const list = isElder ? TABS_ELDER : TABS_STANDARD
       this.setData({ theme, list })

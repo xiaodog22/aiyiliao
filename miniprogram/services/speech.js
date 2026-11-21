@@ -40,16 +40,19 @@ function voiceLocale(voice) {
   return /^yue-/i.test(String(voice || '')) ? 'zh-HK' : 'zh-CN'
 }
 
-/** 取 WechatSI 插件；后端快照否决（仅本地）、未声明/未授权/低版本一律返回 null。 */
+/**
+ * 取 WechatSI 插件。
+ *
+ * 2026-11-20：插件已从 app.json 移除，本函数恒返回 null（语音全部走后端 FunASR + edge TTS）。
+ * 原因：「41002 appid missing」由插件进程内部抛出（插件加载时拿不到宿主 appid），
+ *      前端 try/catch 抓不到、代码层无法消除；只有移除 app.json 的 plugins 声明才能终止。
+ * 影响：粤语/四川话端侧识别与普通话端侧朗读不可用；主流程（普通话 ASR/TTS）不受影响。
+ * 恢复：企业主体 + 微信认证 + 后台添加插件后：
+ *   ① app.json 加回 "plugins": { "WechatSI": { "version": "latest", "provider": "wx069ba97219f66d99" } }
+ *   ② 本函数恢复为：allowed 判定 → try { return requirePlugin('WechatSI') || null } catch { return null }
+ */
 function _wechatSI() {
-  // WechatSI 是腾讯云端能力，属"云端供应商"：以后端 capabilities 快照为准，一票否决。
-  if (!capabilities.allowed('wechatSi')) return null
-  try {
-    // eslint-disable-next-line no-undef
-    return requirePlugin('WechatSI') || null
-  } catch (e) {
-    return null
-  }
+  return null
 }
 
 /** 端侧插件可承接的方言 locale：粤语、四川话（普通话仍走本地 FunASR）。 */
@@ -103,6 +106,54 @@ function _getAudio() {
     _audio.autoplay = true
   }
   return _audio
+}
+
+/**
+ * 播放器监听器重置（兼容性 + 内存）。
+ *
+ * 为什么必须解绑：InnerAudioContext 的 onEnded / onError / onCanplay 是**追加监听**语义，
+ * 不是"替换上一次"。同一个实例反复播报时若只 on 不 off，回调会随播放次数线性堆叠：
+ * 一次 30 句的对话下来就有 90 个旧闭包常驻，每次播放结束全部触发一遍（旧 Promise 也永不
+ * settle）——低端机上是实打实的内存与 CPU 增长。
+ *
+ * 兼容处理：
+ *   · offEnded / offError / offCanplay 自基础库 2.2.1 起提供，更老的库没有 → 跳过解绑，
+ *     保持原"只 on 不 off"的行为，绝不能因为解绑失败让播报直接不可用；
+ *   · 解绑时传**当时注册的那个函数**（按回调精确移除），不依赖"不传参是否清空全部"的库间差异。
+ *   · 播放器是模块级单例，所以上一轮的处理函数记在模块变量里即可。
+ */
+let _audioBound = null
+function _rebindAudio(audio, handlers) {
+  const h = handlers || {}
+  const prev = _audioBound
+  if (prev) {
+    try { if (prev.ended && typeof audio.offEnded === 'function') audio.offEnded(prev.ended) } catch (e) {}
+    try { if (prev.error && typeof audio.offError === 'function') audio.offError(prev.error) } catch (e) {}
+    try { if (prev.canplay && typeof audio.offCanplay === 'function') audio.offCanplay(prev.canplay) } catch (e) {}
+  }
+  _audioBound = h
+  if (h.ended) audio.onEnded(h.ended)
+  if (h.error) audio.onError(h.error)
+  if (h.canplay) audio.onCanplay(h.canplay)
+}
+
+/**
+ * 回收上一份临时音频文件。
+ * 背景：每次播报都会往 USER_DATA_PATH 写一个 tts_*.wav，历史实现只写不删；
+ * 长时间使用后该目录持续膨胀，最终会因配额写失败让 TTS 静默变哑。
+ * unlink 是异步的，且可能因"文件仍被占用"失败 —— 一律静默，绝不阻断新播报。
+ */
+let _lastTmpPath = ''
+function _recycleTmpAudio() {
+  const p = _lastTmpPath
+  _lastTmpPath = ''
+  if (!p) return
+  try {
+    const fsm = wx.getFileSystemManager()
+    if (fsm && typeof fsm.unlink === 'function') {
+      fsm.unlink({ filePath: p, success() {}, fail() {} })
+    }
+  } catch (e) {}
 }
 
 function _stopAudio() {
@@ -194,6 +245,8 @@ function playArrayBuffer(data, opts) {
     // ⚠️ 文件名加自增序号：同一毫秒内连续播报会用 Date.now() 撞名，后一次覆盖前一次的文件
     _ttsSeq += 1
     const tmpPath = wx.env.USER_DATA_PATH + '/tts_' + Date.now() + '_' + _ttsSeq + '.' + _extOf(buf)
+    // 写新文件前回收上一份（已 stop 过，可安全删除；失败静默）
+    _recycleTmpAudio()
     // ⚠️ data 是 ArrayBuffer 时**不要传 encoding**（encoding 只对 string 有意义；
     //    个别基础库会把 ArrayBuffer 当字符串处理 → 写出的音频文件损坏、播放无声）
     fsm.writeFile({
@@ -212,21 +265,24 @@ function playArrayBuffer(data, opts) {
           if (_isCurrentPlay(o.token) && o.onEnd) o.onEnd()
           resolve(ok)
         }
-        audio.onEnded(() => finish(true))
-        audio.onError((e) => {
-          console.warn('[speech] 音频播放出错，已跳过（不影响主流程）' + JSON.stringify(e || {}))
-          if (_isCurrentPlay(o.token) && o.onError) o.onError('音频播放失败')
-          finish(false)
-        })
         // ⚠️ 只赋值 src 后立刻 play()，在部分机型上是空操作（资源尚未就绪）。
         //    所以：赋值后**立即试播一次**，并在 onCanplay 里**再播一次**（重复调用幂等）。
-        audio.onCanplay(() => {
-          if (!_isCurrentPlay(o.token)) return
-          _applyPlaybackRate(audio, o)
-          try { audio.play() } catch (e) {}
+        _rebindAudio(audio, {
+          ended: () => finish(true),
+          error: (e) => {
+            console.warn('[speech] 音频播放出错，已跳过（不影响主流程）' + JSON.stringify(e || {}))
+            if (_isCurrentPlay(o.token) && o.onError) o.onError('音频播放失败')
+            finish(false)
+          },
+          canplay: () => {
+            if (!_isCurrentPlay(o.token)) return
+            _applyPlaybackRate(audio, o)
+            try { audio.play() } catch (e) {}
+          }
         })
         audio.src = tmpPath
         try { audio.play() } catch (e) {}
+        _lastTmpPath = tmpPath
       },
       fail: (e) => {
         console.warn('[speech] 音频写入失败，已跳过（不影响主流程）' + JSON.stringify(e || {}))
@@ -265,16 +321,18 @@ function playFilePath(filePath, opts) {
       if (_isCurrentPlay(o.token) && o.onEnd) o.onEnd()
       resolve(ok)
     }
-    audio.onEnded(() => finish(true))
-    audio.onError((e) => {
-      console.warn('[speech] 端侧音频播放出错，已跳过' + JSON.stringify(e || {}))
-      if (_isCurrentPlay(o.token) && o.onError) o.onError('音频播放失败')
-      finish(false)
-    })
-    audio.onCanplay(() => {
-      if (!_isCurrentPlay(o.token)) return
-      _applyPlaybackRate(audio, o)
-      try { audio.play() } catch (e) {}
+    _rebindAudio(audio, {
+      ended: () => finish(true),
+      error: (e) => {
+        console.warn('[speech] 端侧音频播放出错，已跳过' + JSON.stringify(e || {}))
+        if (_isCurrentPlay(o.token) && o.onError) o.onError('音频播放失败')
+        finish(false)
+      },
+      canplay: () => {
+        if (!_isCurrentPlay(o.token)) return
+        _applyPlaybackRate(audio, o)
+        try { audio.play() } catch (e) {}
+      }
     })
     audio.src = filePath
     try { audio.play() } catch (e) {}
@@ -551,7 +609,7 @@ function _startWechatSIRecord(h, locale) {
   }
   const plugin = _wechatSI()
   if (!plugin || typeof plugin.getRecordRecognitionManager !== 'function') {
-    if (h.onError) h.onError('当前微信版本不支持端侧粤语识别，请改用文字输入')
+    if (h.onError) h.onError('方言语音识别暂不可用，请改用文字输入')
     if (h.onEnd) h.onEnd()
     return
   }

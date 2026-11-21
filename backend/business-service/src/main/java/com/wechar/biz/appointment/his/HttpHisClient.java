@@ -3,6 +3,7 @@ package com.wechar.biz.appointment.his;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -15,6 +16,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import javax.crypto.Mac;
@@ -37,7 +39,8 @@ import org.springframework.stereotype.Component;
  * </ul>
  *
  * <p>主数据映射：主项目科室/医生（{@code dep-*} / {@code doc-*}）与诊所（{@code QK} / {@code D001}）
- * 不同源，首次受理返回 NOT_FOUND 时用 {@code fallback-*} 重试一次（仅演示联调，日志留痕）。
+ * 不同源。仅 {@code demo=true} 的演示联调在首次受理返回 NOT_FOUND 时用 {@code fallback-*} 重试一次；
+ * 真实档必须失败（HIS_UNAVAILABLE），禁止把患者静默挂到默认医生/科室。
  *
  * <p>日志只记 ID 级信息，不写患者姓名等敏感字段（医疗日志脱敏口径）。
  */
@@ -60,6 +63,7 @@ public class HttpHisClient implements HisClient {
     private final boolean demo;
     private final String fallbackDoctorId;
     private final String fallbackDepartmentId;
+    private final HisMasterDataRepository mappingRepository;
 
     public HttpHisClient(
             ObjectMapper objectMapper,
@@ -69,7 +73,8 @@ public class HttpHisClient implements HisClient {
             @Value("${app.his.http.timeout-ms:3000}") long timeoutMs,
             @Value("${app.his.http.demo:true}") boolean demo,
             @Value("${app.his.http.fallback-doctor-id:D001}") String fallbackDoctorId,
-            @Value("${app.his.http.fallback-department-id:QK}") String fallbackDepartmentId) {
+            @Value("${app.his.http.fallback-department-id:QK}") String fallbackDepartmentId,
+            HisMasterDataRepository mappingRepository) {
         // fail-fast：没有密钥就无法签名，宁可启动失败也不要运行时逐笔 401
         if (appSecret == null || appSecret.isBlank()) {
             throw new IllegalStateException(
@@ -84,6 +89,7 @@ public class HttpHisClient implements HisClient {
         this.demo = demo;
         this.fallbackDoctorId = fallbackDoctorId;
         this.fallbackDepartmentId = fallbackDepartmentId;
+        this.mappingRepository = mappingRepository;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofMillis(this.timeoutMs))
                 .build();
@@ -91,6 +97,14 @@ public class HttpHisClient implements HisClient {
 
     @Override
     public HisBookingResult book(HisBookingCommand command) {
+        String doctorId = command.doctorId();
+        String departmentId = command.departmentId();
+        // 只使用 CONFIRMED 映射；CONFLICT / UNMAPPED 保持原平台 ID，让 HIS 明确拒绝，
+        // 不在真实档静默落到 D001/QK。
+        if (mappingRepository != null) {
+            doctorId = mappingRepository.resolveConfirmed("DOCTOR", doctorId).orElse(doctorId);
+            departmentId = mappingRepository.resolveConfirmed("DEPARTMENT", departmentId).orElse(departmentId);
+        }
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("appointmentId", command.appointmentId());
         if (hasText(command.slotId())) {
@@ -99,15 +113,17 @@ public class HttpHisClient implements HisClient {
         if (hasText(command.patientName())) {
             payload.put("patientName", truncate(command.patientName(), 50));
         }
-        payload.put("doctorId", command.doctorId());
-        payload.put("departmentId", command.departmentId());
+        payload.put("doctorId", doctorId);
+        payload.put("departmentId", departmentId);
 
         String idempotencyKey = idempotencyKey(command.appointmentId());
         JsonNode data;
         try {
             data = post("/openapi/v1/appointments", payload, idempotencyKey);
         } catch (HisHttpException e) {
-            if (!"NOT_FOUND".equals(e.code()) || !hasText(fallbackDoctorId) || !hasText(fallbackDepartmentId)) {
+            // 仅 demo=true 允许回落演示映射。真实档（demo=false）主数据不一致必须失败，
+            // 否则会把患者挂到 D001/QK 的“默认医生/科室”，产生错误院内单。
+            if (!demo || !"NOT_FOUND".equals(e.code()) || !hasText(fallbackDoctorId) || !hasText(fallbackDepartmentId)) {
                 throw e;
             }
             // 演示映射：主项目与诊所主数据不同源（dep-gp/doc-gp-1 ↔ QK/D001），重试一次并留痕
@@ -142,6 +158,154 @@ public class HttpHisClient implements HisClient {
         log.info("clinic-his cancel orderNo={} reason={}", hisOrderNo, truncate(reason, 50));
     }
 
+    // ------------------------------------------------------------ 演示账单（P0-1）
+
+    @Override
+    public HisChargeResult createDemoCharge(HisChargeCommand command) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("patientName", truncate(command.patientName(), 50));
+        payload.put("amount", command.amount());
+        payload.put("description", truncate(command.description(), 100));
+        payload.put("refType", command.refType());
+        payload.put("refId", command.refId());
+        JsonNode data = post("/openapi/v1/demo/charges", payload, idempotencyKey(command.idempotencyKey()));
+        HisChargeResult result = parseCharge(data);
+        log.info("clinic-his demo charge created ref={}/{} chargeNo={} amount={} replayed={}",
+                command.refType(), command.refId(), result.chargeNo(), result.amount(), result.replayed());
+        return result;
+    }
+
+    @Override
+    public HisChargeResult queryDemoCharge(String chargeNo) {
+        requireChargeNo(chargeNo);
+        return parseCharge(get("/openapi/v1/charges/" + chargeNo));
+    }
+
+    @Override
+    public HisChargeResult payDemoCharge(String chargeNo, BigDecimal amount, String idempotencyKey) {
+        requireChargeNo(chargeNo);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("amount", amount);
+        payload.put("source", "DEMO");
+        JsonNode data = post("/openapi/v1/charges/" + chargeNo + "/pay", payload,
+                idempotencyKey(idempotencyKey));
+        HisChargeResult result = parseCharge(data);
+        log.info("clinic-his demo charge paid chargeNo={} amount={} replayed={}",
+                chargeNo, amount, result.replayed());
+        return result;
+    }
+
+    private HisChargeResult parseCharge(JsonNode data) {
+        String chargeNo = data.path("chargeNo").asText("");
+        if (chargeNo.isBlank()) {
+            throw new IllegalStateException("clinic-his 回执缺少 chargeNo");
+        }
+        BigDecimal amount = data.hasNonNull("amount") ? data.get("amount").decimalValue() : BigDecimal.ZERO;
+        return new HisChargeResult(chargeNo, amount, data.path("status").asText("UNPAID"),
+                data.path("replayed").asBoolean(false), demo);
+    }
+
+    private void requireChargeNo(String chargeNo) {
+        if (chargeNo == null || !chargeNo.matches("[A-Za-z0-9-]{1,64}")) {
+            throw new IllegalArgumentException("非法的演示账单号: " + chargeNo);
+        }
+    }
+
+    // ------------------------------------------------------------ 检查预约（P0-2）
+
+    @Override
+    public List<HisExamItem> listExamItems() {
+        JsonNode data = get("/openapi/v1/exam-items");
+        if (!data.isArray()) {
+            throw new IllegalStateException("clinic-his 检查项目回执不是数组");
+        }
+        List<HisExamItem> items = new java.util.ArrayList<>();
+        for (JsonNode node : data) {
+            items.add(new HisExamItem(node.path("itemCode").asText(""),
+                    node.path("itemName").asText(""), node.path("category").asText(""),
+                    node.hasNonNull("price") ? node.get("price").decimalValue() : BigDecimal.ZERO));
+        }
+        return items;
+    }
+
+    @Override
+    public List<HisExamSlot> listExamSlots(String itemCode) {
+        requireExamItemCode(itemCode);
+        JsonNode data = get("/openapi/v1/exam-items/" + itemCode + "/slots");
+        JsonNode slotsNode = data.path("slots");
+        if (!slotsNode.isArray()) {
+            throw new IllegalStateException("clinic-his 检查排期回执缺少 slots");
+        }
+        List<HisExamSlot> slots = new java.util.ArrayList<>();
+        for (JsonNode node : slotsNode) {
+            slots.add(new HisExamSlot(node.path("slotKey").asText(""),
+                    node.path("slotDate").asText(""), node.path("slotTime").asText(""),
+                    node.path("available").asBoolean(false)));
+        }
+        return slots;
+    }
+
+    @Override
+    public HisExamBookingResult bookExam(HisExamBookingCommand command) {
+        requireExamItemCode(command.itemCode());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("requestNo", command.requestNo());
+        payload.put("itemCode", command.itemCode());
+        payload.put("slotKey", command.slotKey());
+        payload.put("patientName", truncate(command.patientName(), 50));
+        JsonNode data = post("/openapi/v1/exam-orders", payload,
+                idempotencyKey(command.idempotencyKey()));
+        HisExamBookingResult result = parseExam(data);
+        log.info("clinic-his exam booked requestNo={} examOrderNo={} item={} slot={} replayed={}",
+                command.requestNo(), result.examOrderNo(), command.itemCode(),
+                command.slotKey(), result.replayed());
+        return result;
+    }
+
+    @Override
+    public HisExamBookingResult getExam(String examOrderNo) {
+        requireExamOrderNo(examOrderNo);
+        return parseExam(get("/openapi/v1/exam-orders/" + examOrderNo));
+    }
+
+    @Override
+    public void cancelExam(String examOrderNo, String reason) {
+        requireExamOrderNo(examOrderNo);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (hasText(reason)) {
+            payload.put("reason", truncate(reason, 200));
+        }
+        post("/openapi/v1/exam-orders/" + examOrderNo + "/cancel", payload,
+                idempotencyKey("cancel-exam-" + examOrderNo));
+        log.info("clinic-his exam cancelled examOrderNo={} reason={}", examOrderNo, truncate(reason, 50));
+    }
+
+    private HisExamBookingResult parseExam(JsonNode data) {
+        String examOrderNo = data.path("examOrderNo").asText("");
+        if (examOrderNo.isBlank()) {
+            throw new IllegalStateException("clinic-his 检查预约回执缺少 examOrderNo");
+        }
+        return new HisExamBookingResult(
+                examOrderNo, data.path("requestNo").asText(""), data.path("itemCode").asText(""),
+                data.path("itemName").asText(""),
+                data.hasNonNull("price") ? data.get("price").decimalValue() : BigDecimal.ZERO,
+                data.path("slotKey").asText(""), data.path("slotDate").asText(""),
+                data.path("slotTime").asText(""), data.path("status").asText("BOOKED"),
+                data.path("replayed").asBoolean(false));
+    }
+
+    private void requireExamItemCode(String itemCode) {
+        if (itemCode == null || !itemCode.matches("[A-Za-z0-9-]{1,32}")) {
+            throw new IllegalArgumentException("非法的检查项目编码: " + itemCode);
+        }
+    }
+
+    private void requireExamOrderNo(String examOrderNo) {
+        if (examOrderNo == null || !examOrderNo.matches("[A-Za-z0-9-]{1,64}")) {
+            throw new IllegalArgumentException("非法的检查预约单号: " + examOrderNo);
+        }
+    }
+
     // ------------------------------------------------------------ 传输与签名
 
     private JsonNode post(String path, Map<String, Object> payload, String idempotencyKey) {
@@ -151,20 +315,31 @@ public class HttpHisClient implements HisClient {
         } catch (IOException e) {
             throw new IllegalStateException("clinic-his 请求序列化失败", e);
         }
+        return request("POST", path, body, idempotencyKey);
+    }
+
+    private JsonNode get(String path) {
+        return request("GET", path, new byte[0], null);
+    }
+
+    private JsonNode request(String method, String path, byte[] body, String idempotencyKey) {
         String timestamp = String.valueOf(Instant.now().getEpochSecond());
         String nonce = UUID.randomUUID().toString().replace("-", "");
-        String signature = sign("POST", path, timestamp, nonce, body);
+        String signature = sign(method, path, timestamp, nonce, body);
 
-        HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + path))
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(baseUrl + path))
                 .timeout(Duration.ofMillis(timeoutMs))
                 .header("Content-Type", "application/json; charset=utf-8")
                 .header("X-App-Id", appId)
                 .header("X-Timestamp", timestamp)
                 .header("X-Nonce", nonce)
-                .header("X-Signature", signature)
-                .header("Idempotency-Key", idempotencyKey)
-                .POST(HttpRequest.BodyPublishers.ofByteArray(body))
-                .build();
+                .header("X-Signature", signature);
+        if (idempotencyKey != null) {
+            builder.header("Idempotency-Key", idempotencyKey);
+        }
+        HttpRequest request = "GET".equals(method)
+                ? builder.GET().build()
+                : builder.method(method, HttpRequest.BodyPublishers.ofByteArray(body)).build();
 
         HttpResponse<byte[]> response;
         try {

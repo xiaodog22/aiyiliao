@@ -51,7 +51,7 @@ const SERVICES = [
   { key: 'doctor', name: '找医生' },
   { key: 'dept', name: '找科室' },
   { key: 'archive', name: '健康档案' },
-  { key: 'checkup', name: '体检服务' },
+  { key: 'checkup', name: '检查预约' },
   { key: 'care', name: '居家护理' },
   { key: 'advice', name: '健康咨询' },
   { key: 'more', name: '更多服务' }
@@ -87,7 +87,7 @@ const MORE_MENU = ['智能导诊', '预约挂号', '院内导航', '健康科普
 const MORE_ROUTE = ['triage', 'appoint', 'nav', 'knowledge', 'consult', 'health']
 
 /* 后端/页面都还没有的服务 → 给中文说明，不做假跳转（内容红线：不许伪造） */
-const NOT_READY = { checkup: '体检服务', care: '居家护理' }
+const NOT_READY = { care: '居家护理' }
 
 /** 把配置里的图标键解析成真实 PNG 路径（WXML 里不能写 icons[item.icon]） */
 function withIcon(list) {
@@ -117,6 +117,8 @@ Page({
     quad: withIcon(QUAD),
     services: SERVICES,
     quickSymptoms: QUICK_SYMPTOMS,
+    // 开发/演示档：常用服务下方露出「模拟支付」直达，生产构建不渲染
+    demoEnabled: ENV.legacyManualLoginEnabled,
     tip: null,
     kbVideos: [],
     icons,
@@ -386,12 +388,14 @@ Page({
         wx.navigateTo({ url: '/pages/profile/health-records/health-records' })
         break
       case 'checkup':
+        // 检查预约（P0-2）：演示排期，页面内明确标注；关闭态由后端 config 统一提示。
+        wx.navigateTo({ url: '/pages/exam/exam' })
+        break
       case 'care':
-        // 后端与页面都还没有这两项服务 → 给中文说明，不做假跳转。
-        // ⚠️ NOT_READY 此前定义了却零引用，两个入口落进 default 静默无反应（审查 P1-03）。
+        // 后端与页面都还没有居家护理 → 给中文说明，不做假跳转。
         wx.showModal({
           title: NOT_READY[key],
-          content: '该服务正在筹备中，敬请期待。如需体检或居家护理咨询，可先到「健康咨询」留言。',
+          content: '该服务正在筹备中，敬请期待。如需居家护理咨询，可先到「健康咨询」留言。',
           showCancel: false,
           confirmText: '知道了'
         })
@@ -470,6 +474,11 @@ Page({
   },
 
   /* ==================== 侧栏（预约动态 / 短视频 / 导航 / 科普）==================== */
+  // 开发/演示档直达模拟收银台：无真实支付/预约也能验证支付页交互（生产构建不渲染入口）
+  goDemoPay() {
+    wx.navigateTo({ url: '/pages/payment/payment' })
+  },
+
   goRecords() {
     wx.navigateTo({ url: '/pages/profile/records/records' })
   },

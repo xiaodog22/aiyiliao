@@ -13,10 +13,12 @@ app:
 # 2026-11-05：与 application-itest.yml 同理，H2 档迁移停在 V26（V27 为 MySQL 专有 DDL）。
 # 2026-11-16（REQ-14）：补 V26.1（db/migration-h2，仅 his_order_no / booking_source 两列），
 # 与 itest 保持同一 H2 schema 口径；生产仍由 V31 落库。
+# 2026-11-20（P0-3）：补 V26.3（messages.biz_key），对齐生产 V33。
+# 2026-11-20（P0-1）：补 V26.4（payment_orders），对齐生产 V34；target 调高到 26.4。
 spring:
   flyway:
     locations: classpath:db/migration,classpath:db/migration-h2
-    target: 26.2
+    target: 26.5
 
 # 2026-11-18（审计 C3）：单测不连真实 ai-service，显式关闭服务间令牌启动自检；
 # 生产/联调档仍为 true（缺 AI_SERVICE_TOKEN 即拒绝启动）。

@@ -109,6 +109,9 @@ def main() -> int:
                 "title": chunk["title"],
                 "source": chunk["source"],
                 "publishedAt": chunk["publishedAt"],
+                # 入库口径可追溯（2026-11-21 治理合并，与 ingest_knowledge_kb.py 同字段名）
+                "embeddingModel": args.model,
+                "kbSource": "config/hospital-knowledge.json",
             }
             client.set(args.prefix + "vec:" + chunk["chunkId"], json.dumps(doc, ensure_ascii=False))
             client.sadd(args.prefix + "index", chunk["chunkId"])

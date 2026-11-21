@@ -44,6 +44,13 @@ function todayStr() {
   return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
 }
 
+function dateShift(dateStr, offset) {
+  const d = new Date(`${dateStr}T00:00:00`);
+  d.setDate(d.getDate() + offset);
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 const STATUS = {
   BOOKED: ['已预约', 'info'], CHECKED_IN: ['已签到', 'warn'], IN_PROGRESS: ['就诊中', 'info'],
   FINISHED: ['已完成', 'ok'], CANCELLED: ['已取消', 'danger'],
@@ -272,7 +279,8 @@ const VIEWS = [
   { key: 'doctor', name: '医生工作站', group: '门诊业务', perm: 'visit.write', render: viewDoctor },
   { key: 'beds', name: '留观床位', group: '住院留观', perm: 'bed.read', render: viewBeds },
   { key: 'nursing', name: '护理执行', group: '住院留观', perm: 'nursing.read', render: viewNursing },
-  { key: 'pharmacy', name: '药房管理', group: '药事管理', perm: 'rx.read', render: viewPharmacy },
+  { key: 'pharmacy', name: '处方审方', group: '药事管理', perm: 'rx.read', render: viewPharmacy },
+  { key: 'drugs', name: '药品库存', group: '药事管理', perm: 'drug.read', render: viewDrugs },
   { key: 'charge', name: '收费管理', group: '门诊业务', perm: 'charge.read', render: viewCharge },
   { key: 'patients', name: '患者档案', group: '医技与公卫', perm: 'patient.read', render: viewPatients },
   { key: 'lab', name: '医技检查', group: '医技与公卫', perm: 'lab.read', render: viewLab },
@@ -289,14 +297,15 @@ function navHidden() {
   return localStorage.getItem(NAV_HIDDEN_KEY) === '1';
 }
 
-/* 整体隐藏/展开左侧导航（状态存 localStorage） */
+/* 整体隐藏/展开顶部导航（状态存 localStorage） */
 function applyNavHidden() {
   const hidden = navHidden();
   $('#app').classList.toggle('nav-hidden', hidden);
   const btn = $('#nav-toggle');
   if (btn) {
     btn.textContent = hidden ? '☰' : '«';
-    btn.title = hidden ? '展开左侧导航' : '收起左侧导航';
+    btn.title = hidden ? '展开导航' : '收起导航';
+    btn.setAttribute('aria-label', btn.title);
   }
 }
 
@@ -382,8 +391,11 @@ async function viewDashboard() {
       ${card('待收费', d.charges.unpaidCount, money(d.charges.unpaidAmount))}
       ${card('今日收入', money(d.revenue.todayPaid), '已收费金额')}
       ${card('公卫任务', d.ph.open, `逾期 ${d.ph.overdue} 项`)}
-      ${card('库存预警', d.drugs.lowStock, '低于预警线药品')}
-      ${card('今日完成就诊', d.visits.finished, `就诊中 ${d.visits.inProgress}`)}
+    </div>
+    <div class="stat-line" style="margin-top:10px">
+      <span>库存预警 <strong>${d.drugs.lowStock}</strong> 种</span>
+      <span>今日完成就诊 <strong>${d.visits.finished}</strong></span>
+      <span>就诊中 <strong>${d.visits.inProgress}</strong></span>
     </div>`;
   content.innerHTML = `
     <div class="section-title">我的待办 · ${esc(wb.roleName)}${wb.deptName ? ' · ' + esc(wb.deptName) : ''}</div>
@@ -391,17 +403,15 @@ async function viewDashboard() {
     ${todos}
     <div class="section-title">运营概览</div>
     ${costs}
-    <div class="panel" style="margin-top:18px">
-      <div class="panel-head"><h3>使用提示</h3></div>
-      <div class="panel-body">
-        <p class="hint" style="font-size:13px;line-height:2">
-          演示流程：挂号登记 → 收费处缴费 → 分诊签到取号 → 护士叫号 → 医生接诊/诊断/开方/开检查 →
-          药师审方 → 收费处缴药费 → 药房发药 → 医技出报告。</p>
-        <p class="hint" style="font-size:13px;line-height:2">
-          系统内置 8 名医师、14 名护士（含 3 名公卫岗）、6 名行政与 2 名医技；所有操作写入审计哈希链，
-          可在「系统管理」核验。对外 <code>/openapi/v1/*</code> 为模拟 HIS 受理接口，支持 HMAC 签名、幂等与撤销。</p>
-      </div>
-    </div>`;
+    <details class="fold" style="margin-top:18px">
+      <summary>使用提示与演示流程</summary>
+      <p class="hint" style="font-size:13px;line-height:2">
+        演示流程：挂号登记 → 收费处缴费 → 分诊签到取号 → 护士叫号 → 医生接诊/诊断/开方/开检查 →
+        药师审方 → 收费处缴药费 → 药房发药 → 医技出报告。</p>
+      <p class="hint" style="font-size:13px;line-height:2">
+        系统内置 8 名医师、14 名护士（含 3 名公卫岗）、6 名行政与 2 名医技；所有操作写入审计哈希链，
+        可在「系统管理」核验。对外 <code>/openapi/v1/*</code> 为模拟 HIS 受理接口，支持 HMAC 签名、幂等与撤销。</p>
+    </details>`;
   content.onclick = e => {
     const el = e.target.closest('[data-goto]');
     if (el) location.hash = '#/' + el.dataset.goto;
@@ -519,18 +529,31 @@ async function viewRegistration() {
   await ensureDepts();
   content.innerHTML = `
     <div class="panel">
-      <div class="panel-head"><h3>现场挂号</h3></div>
+      <div class="panel-head"><h3>现场挂号</h3><span class="hint">① 选患者 → ② 选号源 → ③ 提交</span></div>
       <div class="panel-body">
-        <div class="filter-bar">
-          <label>就诊日期<input type="date" id="reg-date" value="${todayStr()}"></label>
-          <label>科室<input id="reg-dept" placeholder="如 nk" style="min-width:150px" autocomplete="off"></label>
-          <label>患者检索<input id="reg-patient-q" placeholder="姓名 / 病历号 / 手机尾号" style="min-width:170px" autocomplete="off"></label>
-          <button class="btn" id="reg-patient-search">搜索</button>
-          <label style="min-width:230px">选择患者<select id="reg-patient"><option value="">加载中…</option></select></label>
-          <label style="min-width:300px">号源<select id="reg-slot"><option value="">加载中…</option></select></label>
-          <button class="btn primary" id="reg-submit" ${can('reg.write') ? '' : 'disabled'}>挂 号</button>
+        <div class="reg-grid">
+          <div class="reg-step">
+            <div class="step-no">1</div>
+            <label>就诊日期<input type="date" id="reg-date" value="${todayStr()}"></label>
+            <label>患者检索
+              <span class="inline-search">
+                <input id="reg-patient-q" placeholder="姓名 / 病历号 / 手机尾号" autocomplete="off">
+                <button type="button" class="btn small" id="reg-patient-search">搜索</button>
+              </span>
+            </label>
+            <label>已选患者<select id="reg-patient"><option value="">加载中…</option></select></label>
+          </div>
+          <div class="reg-step">
+            <div class="step-no">2</div>
+            <label>科室<input id="reg-dept" placeholder="如 nk" autocomplete="off"></label>
+            <label>号源<select id="reg-slot"><option value="">加载中…</option></select></label>
+          </div>
+          <div class="reg-step reg-confirm">
+            <div class="step-no">3</div>
+            <p class="hint">挂号成功后生成挂号费账单；患者需在收费处缴费后方可签到取号。</p>
+            <button class="btn primary block" id="reg-submit" ${can('reg.write') ? '' : 'disabled'}>挂 号</button>
+          </div>
         </div>
-        <p class="hint">挂号成功后生成挂号费账单；患者需在收费处缴费后方可签到取号。</p>
       </div>
     </div>
 
@@ -578,7 +601,7 @@ async function viewRegistration() {
     const status = formVal('reg-status');
     const rows = await api('GET', `/api/v1/registrations?date=${date}${status ? '&status=' + status : ''}`);
     $('#reg-table').innerHTML = table(
-      ['挂号号', '患者', '科室', '医生', '来源', '状态', '费用', '队列号', '操作'],
+      ['挂号号', '患者', '科室 / 医生', '状态 / 费用', '队列号', '操作'],
       rows.map(r => {
         const actions = [];
         if (r.status === 'BOOKED' && can('reg.checkin')) actions.push(`<button class="btn small" data-checkin="${r.id}">签到</button>`);
@@ -586,11 +609,8 @@ async function viewRegistration() {
         return `<tr>
           <td>${esc(r.regNo)}</td>
           <td>${patientCell(r.patientId, r.patientName, r.patientMrn)}</td>
-          <td>${esc(r.deptName)}</td>
-          <td>${esc(r.doctorName)}</td>
-          <td>${r.source === 'ONSITE' ? '现场' : '小程序'}</td>
-          <td>${badge(r.status)}</td>
-          <td>${badge(r.feeStatus)}</td>
+          <td>${esc(r.deptName)}<br><span class="hint">${esc(r.doctorName)} · ${r.source === 'ONSITE' ? '现场' : '小程序'}</span></td>
+          <td>${badge(r.status)} ${badge(r.feeStatus)}</td>
           <td>${esc(r.queueNo || '—')}</td>
           <td>${actions.join(' ') || '—'}</td>
         </tr>`;
@@ -708,17 +728,20 @@ async function viewQueue() {
     const deptId = formVal('q-dept');
     const rows = await api('GET', `/api/v1/queue?date=${date}${deptId ? '&deptId=' + deptId : ''}`);
     $('#q-table').innerHTML = table(
-      ['队列号', '患者', '科室', '状态', '叫号时间', '完成时间', '操作'],
-      rows.map(r => `<tr>
+      ['队列号', '患者', '科室', '状态', '叫号 / 完成', '操作'],
+      rows.map(r => {
+        const callT = r.calledAt ? esc(String(r.calledAt).slice(11, 16)) : '—';
+        const doneT = r.doneAt ? esc(String(r.doneAt).slice(11, 16)) : '—';
+        return `<tr>
         <td><strong>${esc(r.ticketNo)}</strong></td>
         <td>${patientCell(r.patientId, r.patientName, r.patientMrn)}</td>
         <td>${esc(r.deptName)}</td>
         <td>${badge(r.status)}</td>
-        <td>${esc(r.calledAt || '—')}</td>
-        <td>${esc(r.doneAt || '—')}</td>
+        <td>${callT}${r.doneAt ? ' / ' + doneT : ''}</td>
         <td>${can('queue.call') && ['WAITING', 'CALLED'].includes(r.status)
           ? `<button class="btn small" data-skip="${r.id}">过号</button>` : '—'}</td>
-      </tr>`),
+      </tr>`;
+      }),
       '当日暂无候诊'
     );
   };
@@ -841,24 +864,61 @@ function bindVitalsButton(v) {
   if (btn) btn.onclick = () => openVitalsModal(v);
 }
 
+async function doctorMeHtml(me) {
+  const days = [];
+  for (let i = 0; i < 7; i++) days.push(dateShift(todayStr(), i));
+  const lists = await Promise.all(
+    days.map(d => api('GET', `/api/v1/schedules?date=${d}`).catch(() => []))
+  );
+  const rows = days.map((d, i) => {
+    const mine = (lists[i] || []).filter(s => s.doctorName === me.name && s.deptName === me.deptName);
+    const cell = period => {
+      const s = mine.find(x => x.period === period);
+      const label = period === 'AM' ? '上午' : '下午';
+      if (!s) return `<span class="hint">${label} 未排班</span>`;
+      return `${label} ${esc(s.startTime)}–${esc(s.endTime)} · 余 <strong>${s.remaining}</strong>/${s.capacity}`;
+    };
+    return `<div class="me-slot${i === 0 ? ' today' : ''}">
+        <div class="me-date">${esc(d.slice(5))}${i === 0 ? ' <span class="hint">今天</span>' : ''}</div>
+        <div>${cell('AM')}</div>
+        <div>${cell('PM')}</div>
+      </div>`;
+  }).join('');
+  return `
+    <div class="kv me-kv">
+      <div><span>姓名</span>${esc(me.name)}</div>
+      <div><span>工号</span>${esc(me.staffNo || '—')}</div>
+      <div><span>科室</span>${esc(me.deptName || '—')}</div>
+      <div><span>职称</span>${esc(me.title || '—')}</div>
+      <div><span>角色</span>${esc(me.roleName)}</div>
+      <div><span>账号</span>${esc(me.username)}</div>
+    </div>
+    <div class="section-title" style="margin-top:14px">近 7 日号源（本人）</div>
+    <div class="me-slots">${rows}</div>
+    <p class="hint" style="margin-top:10px">号源由排班生成，挂号与预约均占用此处余量；调整排班请联系医务科。</p>`;
+}
+
 async function viewDoctor() {
   content.innerHTML = `
     <div id="doc-alerts"></div>
     <div class="cols3">
       <div>
         <div class="panel">
-          <div class="panel-head"><h3>待接诊（已签到）</h3><button class="btn small" id="doc-refresh">刷新</button></div>
-          <div class="panel-body" id="doc-pending"><p class="empty">加载中…</p></div>
-        </div>
-        <div class="panel">
-          <div class="panel-head"><h3>今日就诊</h3></div>
-          <div class="panel-body" id="doc-visits"><p class="empty">加载中…</p></div>
+          <div class="panel-head"><h3>就诊队列</h3><button class="btn small" id="doc-refresh">刷新</button></div>
+          <div class="panel-body">
+            <div class="seg" id="doc-list-seg">
+              <button type="button" class="seg-btn active" data-dlist="pending">待接诊</button>
+              <button type="button" class="seg-btn" data-dlist="visits">今日就诊</button>
+            </div>
+            <div id="doc-pending" style="margin-top:12px"><p class="empty">加载中…</p></div>
+            <div id="doc-visits" class="hidden"><p class="empty">加载中…</p></div>
+          </div>
         </div>
       </div>
       <div>
         <div class="panel">
           <div class="panel-head"><h3>病历工作站</h3></div>
-          <div class="panel-body" id="doc-detail"><p class="empty">从左侧点击「接诊」或「查看」</p></div>
+          <div class="panel-body" id="doc-detail"><p class="empty">从上方就诊队列点击「接诊」或「查看」</p></div>
         </div>
       </div>
       <div id="doc-side">
@@ -867,13 +927,39 @@ async function viewDoctor() {
           <div class="panel-body"><p class="empty">选择就诊后显示诊断、处方与操作</p></div>
         </div>
       </div>
-    </div>`;
+    </div>
+    <details class="fold" id="doc-me">
+      <summary>我的资料与近 7 日排班</summary>
+      <div class="me-body" id="doc-me-body"><p class="hint">展开后加载</p></div>
+    </details>`;
   state.dirty = false;
   state.visit = null;
   state.lastVisits = [];
 
+  $('#doc-me').addEventListener('toggle', async () => {
+    const fold = $('#doc-me');
+    const body = $('#doc-me-body');
+    if (!fold.open || body.dataset.loaded === '1') return;
+    body.innerHTML = '<p class="hint">加载中…</p>';
+    try {
+      const me = await api('GET', '/api/v1/auth/me');
+      body.innerHTML = await doctorMeHtml(me);
+      body.dataset.loaded = '1';
+    } catch (err) {
+      body.innerHTML = `<p class="hint">${esc(err.message)}</p>`;
+    }
+  });
+
+  const setTabCount = (key, n) => {
+    const b = document.querySelector(`#doc-list-seg [data-dlist="${key}"]`);
+    if (b) {
+      b.innerHTML = `${key === 'pending' ? '待接诊' : '今日就诊'} <span class="seg-count">${n}</span>`;
+    }
+  };
+
   const loadPending = async () => {
     const rows = await api('GET', `/api/v1/registrations?date=${todayStr()}&status=CHECKED_IN`);
+    setTabCount('pending', rows.length);
     $('#doc-pending').innerHTML = rows.length
       ? rows.map(r => `<div class="mini-row">
           <div class="mini-main"><strong>${esc(r.queueNo || '—')}</strong> <span class="link-patient" data-patient="${r.patientId}">${esc(r.patientName)}</span></div>
@@ -885,6 +971,7 @@ async function viewDoctor() {
 
   const loadVisits = async () => {
     const rows = await api('GET', `/api/v1/visits?date=${todayStr()}`);
+    setTabCount('visits', rows.length);
     $('#doc-visits').innerHTML = rows.length
       ? rows.map(r => `<div class="mini-row" data-open="${r.id}">
           <div class="mini-main"><span class="link-patient" data-patient="${r.patientId}">${esc(r.patientName)}</span> ${badge(r.status)}</div>
@@ -902,6 +989,13 @@ async function viewDoctor() {
   };
 
   $('#doc-refresh').onclick = () => reloadLists().catch(err => toast(err.message, 'error'));
+  $('#doc-list-seg').onclick = e => {
+    const b = e.target.closest('[data-dlist]');
+    if (!b) return;
+    $$('#doc-list-seg [data-dlist]').forEach(x => x.classList.toggle('active', x === b));
+    $('#doc-pending').classList.toggle('hidden', b.dataset.dlist !== 'pending');
+    $('#doc-visits').classList.toggle('hidden', b.dataset.dlist !== 'visits');
+  };
   $('#doc-pending').onclick = e => {
     const btn = e.target.closest('button');
     if (!btn || !btn.dataset.start) return;
@@ -1028,8 +1122,10 @@ function renderVisitEditor(v) {
       <span class="hint">${esc(r.conclusion || '')}</span>
       ${editable ? `<button class="btn small" data-quote-report="${r.id}">引用结论</button>` : ''}
     </div>`).join('');
-  const reportSection = `<div class="section-title">检查报告</div>
-    <div id="v-reports" class="panel-body">${reportRows || '<p class="hint">暂无已出报告</p>'}</div>`;
+  const reportSection = `<details class="fold">
+      <summary>检查报告（${reports.filter(r => r.status === 'REPORTED').length} 份已出，异常 ${reports.filter(r => r.abnormal || r.critical).length}）</summary>
+      <div id="v-reports" class="panel-body">${reportRows || '<p class="hint">暂无已出报告</p>'}</div>
+    </details>`;
 
   box.innerHTML = `
     <div class="patient-strip">
@@ -1205,38 +1301,41 @@ function renderVisitSide(v) {
       </div>
     </div>
 
-    <div class="panel">
-      <div class="panel-head"><h3>留观开立</h3></div>
-      <div class="panel-body">
-        ${stayInfo}
-        ${can('bed.write') && !stay ? `
-          <div class="form-grid">
-            <label class="full">床位<select id="stay-bed">${bedOptions}</select></label>
-            <label>护理级别<select id="stay-level"><option>一级护理</option><option selected>二级护理</option><option>三级护理</option></select></label>
-            <label>饮食<select id="stay-diet"><option>普食</option><option>半流质</option><option>禁食</option><option>糖尿病饮食</option></select></label>
-            <label class="full">留观诊断<input id="stay-diag" maxlength="200" value="${esc(primaryName)}"></label>
-          </div>
-          <div class="form-actions"><button class="btn primary" id="stay-submit" ${freeBeds.length ? '' : 'disabled'}>开立留观</button></div>`
-          : (!stay && can('bed.read') ? '<p class="hint">无开立留观权限</p>' : '')}
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head"><h3>单据与打印</h3></div>
-      <div class="panel-body">
-        <div class="form-actions col-actions">
-          <button class="btn small" data-doc="visit" data-id="${v.id}">打印病历</button>
-          <button class="btn small" data-doc="packet" data-id="${v.id}">打印单据包</button>
-          <button class="btn small" data-doc="visit" data-id="${v.id}" data-fmt="pdf">病历 PDF</button>
-          <button class="btn small" data-doc="packet" data-id="${v.id}" data-fmt="pdf">单据包 PDF</button>
+    <details class="fold panel-fold">
+      <summary>更多操作：留观 / 单据 / 质控</summary>
+      <div class="panel">
+        <div class="panel-head"><h3>留观开立</h3></div>
+        <div class="panel-body">
+          ${stayInfo}
+          ${can('bed.write') && !stay ? `
+            <div class="form-grid">
+              <label class="full">床位<select id="stay-bed">${bedOptions}</select></label>
+              <label>护理级别<select id="stay-level"><option>一级护理</option><option selected>二级护理</option><option>三级护理</option></select></label>
+              <label>饮食<select id="stay-diet"><option>普食</option><option>半流质</option><option>禁食</option><option>糖尿病饮食</option></select></label>
+              <label class="full">留观诊断<input id="stay-diag" maxlength="200" value="${esc(primaryName)}"></label>
+            </div>
+            <div class="form-actions"><button class="btn primary" id="stay-submit" ${freeBeds.length ? '' : 'disabled'}>开立留观</button></div>`
+            : (!stay && can('bed.read') ? '<p class="hint">无开立留观权限</p>' : '')}
         </div>
       </div>
-    </div>
 
-    <div class="panel">
-      <div class="panel-head"><h3>质控提示</h3></div>
-      <div class="panel-body" id="qc-box"><p class="hint">加载中…</p></div>
-    </div>
+      <div class="panel">
+        <div class="panel-head"><h3>单据与打印</h3></div>
+        <div class="panel-body">
+          <div class="form-actions col-actions">
+            <button class="btn small" data-doc="visit" data-id="${v.id}">打印病历</button>
+            <button class="btn small" data-doc="packet" data-id="${v.id}">打印单据包</button>
+            <button class="btn small" data-doc="visit" data-id="${v.id}" data-fmt="pdf">病历 PDF</button>
+            <button class="btn small" data-doc="packet" data-id="${v.id}" data-fmt="pdf">单据包 PDF</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>质控提示</h3></div>
+        <div class="panel-body" id="qc-box"><p class="hint">加载中…</p></div>
+      </div>
+    </details>
 
     <div class="panel">
       <div class="panel-head"><h3>病历操作</h3></div>
@@ -1735,7 +1834,7 @@ async function viewNursing() {
       </div>
       <div class="panel">
         <div class="panel-head"><h3>护理记录</h3></div>
-        <div class="panel-body" id="nur-records"><p class="empty">选择左侧在床患者查看护理记录</p></div>
+        <div class="panel-body" id="nur-records"><p class="empty">选择上方在床患者查看护理记录</p></div>
       </div>
     </div>`;
 
@@ -1860,196 +1959,401 @@ function openNursingRecordModal(patientId, stayId) {
 async function viewPharmacy() {
   content.innerHTML = `
     <div class="panel">
-      <div class="panel-head"><h3>处方业务</h3>
-        <div>
-          <button class="btn small" data-ptab="SUBMITTED">待审核</button>
-          <button class="btn small" data-ptab="APPROVED">待发药</button>
-          <button class="btn small" data-ptab="DISPENSED">已发药</button>
+      <div class="panel-head">
+        <h3>处方审方</h3>
+        <div class="seg" id="rx-tabs">
+          <button type="button" class="seg-btn" data-ptab="SUBMITTED">待审方</button>
+          <button type="button" class="seg-btn" data-ptab="APPROVED">待发药</button>
+          <button type="button" class="seg-btn" data-ptab="DISPENSED">已发药</button>
         </div>
       </div>
-      <div class="panel-body"><div id="rx-table"></div></div>
-    </div>
-    <div class="panel">
-      <div class="panel-head"><h3>药品库存</h3><button class="btn small" id="drug-refresh">刷新</button></div>
-      <div class="panel-body"><div id="drug-table"></div></div>
+      <div class="panel-body">
+        <div class="filter-bar">
+          <label class="grow">查找<input id="rx-q" placeholder="处方号 / 患者 / 病历号"></label>
+          <button type="button" class="btn small" id="rx-refresh">刷新</button>
+        </div>
+        <div id="rx-summary" class="stat-line"></div>
+        <div id="rx-list"></div>
+      </div>
     </div>`;
 
-  const loadRx = async (status) => {
-    state.pharmacyTab = status;
-    const rows = await api('GET', `/api/v1/prescriptions?status=${status}`);
-    $('#rx-table').innerHTML = table(
-      ['处方号', '患者', '医生', '金额', '状态', '明细', '操作'],
-      rows.map(r => {
-        const items = r.items.map(i => `${i.drugName}×${i.quantity}`).join('、');
-        const actions = [];
-        if (status === 'SUBMITTED' && can('rx.review')) {
-          actions.push(`<button class="btn small primary" data-approve="${r.id}">通过</button>`);
-          actions.push(`<button class="btn small danger" data-reject="${r.id}">驳回</button>`);
-        }
-        if (status === 'APPROVED' && can('rx.dispense')) {
-          actions.push(`<button class="btn small primary" data-dispense="${r.id}">发药</button>`);
-        }
-        actions.push(`<button class="btn small" data-doc="prescription" data-id="${r.id}">打印</button>`);
-        return `<tr>
-          <td>${esc(r.rxNo)}</td>
-          <td>${patientCell(r.patientId, r.patientName, r.patientMrn)}</td>
-          <td>${esc(r.doctorName)}</td>
-          <td>${money(r.totalAmount)}</td>
-          <td>${badge(r.status)}</td>
-          <td style="max-width:300px;white-space:normal">${esc(items)}</td>
-          <td>${actions.join(' ') || '—'}</td>
-        </tr>`;
-      }),
-      '暂无处方'
-    );
+  state.rxQuery = '';
+  const paint = () => {
+    const q = (state.rxQuery || '').trim().toLowerCase();
+    const all = state.rxRows || [];
+    const rows = all.filter(r => !q
+      || `${r.rxNo} ${r.patientName} ${r.patientMrn} ${r.doctorName}`.toLowerCase().includes(q));
+    const sum = all.reduce((s, r) => s + Number(r.totalAmount || 0), 0);
+    $('#rx-summary').innerHTML = `<span>本页 <strong>${all.length}</strong> 张</span>`
+      + `<span>合计 <strong>${money(sum)}</strong></span>`
+      + (state.rxTab === 'SUBMITTED' ? '<span>点击任一行看明细后再审方</span>' : '');
+    $('#rx-list').innerHTML = rows.length
+      ? `<div class="task-list">${rows.map(rxRowHtml).join('')}</div>`
+      : '<p class="empty">暂无处方</p>';
+  };
+  const load = async (tab) => {
+    state.rxTab = tab;
+    $$('#rx-tabs [data-ptab]').forEach(b => b.classList.toggle('active', b.dataset.ptab === tab));
+    state.rxRows = await api('GET', `/api/v1/prescriptions?status=${tab}`);
+    paint();
   };
 
-  const loadDrugs = async () => {
-    const rows = await api('GET', '/api/v1/drugs');
-    state.drugs = rows;
-    $('#drug-table').innerHTML = table(
-      ['编码', '名称', '规格', '单价', '库存', '预警线', '属性', '操作'],
-      rows.map(d => `<tr>
-        <td>${esc(d.code)}</td>
-        <td>${esc(d.name)}</td>
-        <td>${esc(d.spec)}</td>
-        <td>${money(d.price)}</td>
-        <td>${d.lowStock ? `<span class="badge danger">${d.stock}</span>` : d.stock}</td>
-        <td>${d.alertStock}</td>
-        <td>${d.controlled ? '<span class="badge danger">管制</span>' : ''}${d.antibioticLevel ? `<span class="badge warn">${esc(d.antibioticLevel)}级抗菌</span>` : ''}</td>
-        <td>${can('drug.stock') ? `<button class="btn small" data-stock="${d.id}">入库</button>` : '—'}</td>
-      </tr>`),
-      '暂无药品'
-    );
-  };
-
-  $$('[data-ptab]').forEach(btn => {
-    btn.onclick = () => loadRx(btn.dataset.ptab).catch(err => toast(err.message, 'error'));
+  $$('#rx-tabs [data-ptab]').forEach(btn => {
+    btn.onclick = () => load(btn.dataset.ptab).catch(err => toast(err.message, 'error'));
   });
-  $('#rx-table').onclick = e => {
-    const btn = e.target.closest('button');
-    if (!btn) return;
-    if (btn.dataset.approve) reviewRx(Number(btn.dataset.approve), 'APPROVE').then(() => loadRx(state.pharmacyTab)).catch(err => toast(err.message, 'error'));
-    if (btn.dataset.reject) reviewRx(Number(btn.dataset.reject), 'REJECT').then(() => loadRx(state.pharmacyTab)).catch(err => toast(err.message, 'error'));
-    if (btn.dataset.dispense) {
-      confirmAction('确认发药？将原子扣减库存，且药品费必须已缴。', async () => {
-        await api('POST', `/api/v1/prescriptions/${btn.dataset.dispense}/dispense`);
-        toast('已发药');
-        await loadRx(state.pharmacyTab);
-      });
-    }
+  $('#rx-refresh').onclick = () => load(state.rxTab).catch(err => toast(err.message, 'error'));
+  $('#rx-q').oninput = e => { state.rxQuery = e.target.value; paint(); };
+  $('#rx-list').onclick = e => {
+    const row = e.target.closest('[data-rx]');
+    if (row) openRxDrawer(Number(row.dataset.rx));
   };
-  $('#drug-table').onclick = e => {
-    const btn = e.target.closest('button');
-    if (btn && btn.dataset.stock) {
-      openModal({
-        title: '药品入库',
-        okText: '入库',
-        body: `<label>入库数量<input id="si-qty" type="number" min="1" max="100000" value="100"></label>
-               <label>备注<input id="si-note" maxlength="100" placeholder="如 供应商到货"></label>`,
-        onOk: async () => {
-          const quantity = formNum('si-qty');
-          if (!quantity) throw new Error('请填写入库数量');
-          await api('POST', `/api/v1/drugs/${btn.dataset.stock}/stock-in`, { quantity, note: formVal('si-note') });
-          toast('入库成功');
-          await loadDrugs();
-        },
-      });
-    }
-  };
-  $('#drug-refresh').onclick = () => loadDrugs().catch(err => toast(err.message, 'error'));
 
-  await Promise.all([loadRx('SUBMITTED'), loadDrugs()]);
+  await load(state.rxTab || 'SUBMITTED');
 }
 
-function reviewRx(rxId, decision) {
-  return new Promise((resolve, reject) => {
-    openModal({
-      title: decision === 'APPROVE' ? '审核通过处方' : '驳回处方',
-      okText: decision === 'APPROVE' ? '通过' : '驳回',
-      body: `<label>审方意见${decision === 'REJECT' ? '（驳回必填）' : '（可选）'}<textarea id="rv-comment" maxlength="200"></textarea></label>`,
-      onOk: async () => {
-        await api('POST', `/api/v1/prescriptions/${rxId}/review`, {
-          decision, comment: formVal('rv-comment'),
+function rxRowHtml(r) {
+  const items = r.items || [];
+  const head = items[0] ? `${items[0].drugName}×${items[0].quantity}` : '—';
+  const extra = items.length > 1 ? ` 等 ${items.length} 种` : '';
+  const act = r.status === 'SUBMITTED'
+    ? (can('rx.review') ? '审方' : '查看')
+    : r.status === 'APPROVED' ? (can('rx.dispense') ? '发药' : '查看') : '查看';
+  return `<button type="button" class="task-row" data-rx="${r.id}">
+      <span class="task-main">
+        <span class="task-title">${esc(r.patientName)} <span class="hint">${esc(r.patientMrn)}</span></span>
+        <span class="task-sub">${esc(r.rxNo)} · ${esc(r.doctorName)} · ${esc(head)}${esc(extra)}</span>
+      </span>
+      <span class="task-amount">${money(r.totalAmount)}</span>
+      <span class="task-due">${badge(r.status)}</span>
+      <span class="task-go">${act}</span>
+    </button>`;
+}
+
+async function openRxDrawer(rxId) {
+  const rx = (state.rxRows || []).find(r => r.id === rxId);
+  if (!rx) return;
+  const root = $('#drawer-root');
+  root.innerHTML = '<div class="drawer-mask"><aside class="drawer"><p class="empty">加载处方与患者信息…</p></aside></div>';
+  let patient = null;
+  try {
+    const ov = await api('GET', `/api/v1/patients/${rx.patientId}/overview`);
+    patient = ov.patient;
+  } catch (err) {
+    patient = null;
+  }
+
+  const items = rx.items || [];
+  const itemRows = items.map(i => `<tr>
+      <td><strong>${esc(i.drugName)}</strong><br><span class="hint">${esc(i.spec || '')}</span></td>
+      <td>${esc(i.dosage || '—')}<br><span class="hint">${esc(i.frequency || '')}${i.days ? ' · ' + esc(i.days) + ' 天' : ''}</span></td>
+      <td>${esc(String(i.quantity))}</td>
+      <td>${money(i.amount)}</td>
+    </tr>`).join('');
+  const allergy = patient && (patient.allergy || '').trim();
+  const allergyHtml = allergy && allergy !== '无'
+    ? `<div class="alert-line">过敏史：${esc(allergy)}</div>`
+    : '<p class="hint">过敏史：无记录</p>';
+  const chronic = ((patient && patient.chronicTags) || [])
+    .map(t => `<span class="badge info">${esc(t)}</span>`).join(' ');
+  const reviewable = rx.status === 'SUBMITTED' && can('rx.review');
+  const dispensable = rx.status === 'APPROVED' && can('rx.dispense');
+  const actions = [];
+  if (reviewable) {
+    actions.push('<button type="button" class="btn danger" id="rx-reject">驳回</button>');
+    actions.push('<button type="button" class="btn primary" id="rx-approve">通过并计费</button>');
+  }
+  if (dispensable) {
+    actions.push('<button type="button" class="btn primary" id="rx-dispense">确认发药</button>');
+  }
+  actions.push(`<button type="button" class="btn small" data-doc="prescription" data-id="${rx.id}">打印处方</button>`);
+  actions.push('<button type="button" class="btn ghost" data-drawer-close>关闭</button>');
+
+  root.innerHTML = `<div class="drawer-mask">
+    <aside class="drawer" role="dialog" aria-label="处方审方">
+      <div class="drawer-head">
+        <h3>${esc(rx.rxNo)} ${badge(rx.status)}</h3>
+        <button type="button" class="btn ghost" data-drawer-close>关闭</button>
+      </div>
+      <div class="kv drawer-kv">
+        <div><span>患者</span><span class="link-patient" data-patient="${rx.patientId}">${esc(rx.patientName)}</span></div>
+        <div><span>病历号</span>${esc(rx.patientMrn)}</div>
+        <div><span>性别/年龄</span>${esc((patient && patient.gender) || '—')} / ${patient && patient.birthDate ? esc(ageFromBirth(patient.birthDate)) : '—'}</div>
+        <div><span>开方医生</span>${esc(rx.doctorName)}</div>
+        <div><span>开方时间</span>${esc(rx.createdAt)}</div>
+        <div><span>合计金额</span><strong>${money(rx.totalAmount)}</strong></div>
+      </div>
+      ${allergyHtml}
+      ${chronic ? `<div style="margin:6px 0 2px">${chronic}</div>` : ''}
+      <div class="section-title">处方明细（${items.length} 项）</div>
+      <table class="detail-table">
+        <thead><tr><th>药品</th><th>用法用量</th><th>数量</th><th>金额</th></tr></thead>
+        <tbody>${itemRows}</tbody>
+      </table>
+      ${rx.reviewComment ? `<p class="hint">审方意见：${esc(rx.reviewComment)}</p>` : ''}
+      ${reviewable ? `<div class="section-title">审方意见（驳回必填）</div>
+        <div class="chips" id="rx-phrases">
+          <button type="button" data-phrase="用法用量不适宜，请调整">用法用量不适宜</button>
+          <button type="button" data-phrase="诊断与用药不符，请确认">用药与诊断不符</button>
+          <button type="button" data-phrase="存在配伍禁忌/相互作用，请复核">配伍禁忌</button>
+          <button type="button" data-phrase="抗菌药物使用需越级审批">抗菌药物越级</button>
+        </div>
+        <textarea id="rx-comment" maxlength="200" placeholder="通过可不填；驳回必须写明理由（不少于 2 字）"></textarea>` : ''}
+      <div class="drawer-foot">${actions.join('')}</div>
+    </aside>
+  </div>`;
+
+  root.querySelectorAll('[data-drawer-close]').forEach(b => { b.onclick = closeDrawer; });
+  root.querySelector('.drawer-mask').addEventListener('click', e => {
+    if (e.target.classList.contains('drawer-mask')) closeDrawer();
+  });
+  root.querySelectorAll('[data-phrase]').forEach(b => {
+    b.onclick = () => {
+      const ta = root.querySelector('#rx-comment');
+      if (ta) ta.value = b.dataset.phrase;
+    };
+  });
+
+  const refresh = () => viewPharmacy().catch(err => toast(err.message, 'error'));
+  const approve = root.querySelector('#rx-approve');
+  if (approve) {
+    approve.onclick = async () => {
+      approve.disabled = true;
+      try {
+        await api('POST', `/api/v1/prescriptions/${rx.id}/review`, {
+          decision: 'APPROVE', comment: formVal('rx-comment'),
         });
-        toast(decision === 'APPROVE' ? '处方已通过，已生成药品费账单' : '处方已驳回');
-        resolve();
+        toast('处方已通过，已生成药品费账单');
+        closeDrawer();
+        await refresh();
+      } catch (err) {
+        toast(err.message, 'error');
+        approve.disabled = false;
+      }
+    };
+  }
+  const reject = root.querySelector('#rx-reject');
+  if (reject) {
+    reject.onclick = async () => {
+      const comment = formVal('rx-comment');
+      if (comment.length < 2) {
+        toast('驳回必须填写理由（不少于 2 字）', 'error');
+        return;
+      }
+      reject.disabled = true;
+      try {
+        await api('POST', `/api/v1/prescriptions/${rx.id}/review`, { decision: 'REJECT', comment });
+        toast('处方已驳回');
+        closeDrawer();
+        await refresh();
+      } catch (err) {
+        toast(err.message, 'error');
+        reject.disabled = false;
+      }
+    };
+  }
+  const dispense = root.querySelector('#rx-dispense');
+  if (dispense) {
+    dispense.onclick = () => {
+      confirmAction('确认发药？将原子扣减库存，且药品费必须已缴。', async () => {
+        await api('POST', `/api/v1/prescriptions/${rx.id}/dispense`);
+        toast('已发药');
+        closeDrawer();
+        await refresh();
+      });
+    };
+  }
+}
+
+/* ---------------------------------------------------------------- 药品库存（次级页面） */
+
+async function viewDrugs() {
+  content.innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <h3>药品库存</h3>
+        <button type="button" class="btn small" id="dg-refresh">刷新</button>
+      </div>
+      <div class="panel-body">
+        <div class="filter-bar">
+          <label class="grow">查找<input id="dg-q" placeholder="药品名称 / 编码"></label>
+          <label class="check-line"><input type="checkbox" id="dg-low"> 只看低库存</label>
+        </div>
+        <div id="dg-summary" class="stat-line"></div>
+        <div id="dg-table"></div>
+      </div>
+    </div>`;
+
+  state.drugQuery = '';
+  state.drugLowOnly = false;
+
+  const paint = () => {
+    const q = (state.drugQuery || '').trim().toLowerCase();
+    const all = state.drugs || [];
+    const rows = all.filter(d => (!q
+      || `${d.name} ${d.code}`.toLowerCase().includes(q))
+      && (!state.drugLowOnly || d.lowStock));
+    const low = all.filter(d => d.lowStock).length;
+    $('#dg-summary').innerHTML = `<span>共 <strong>${all.length}</strong> 种</span>`
+      + `<span>低于预警线 <strong style="color:var(--danger)">${low}</strong> 种</span>`;
+    $('#dg-table').innerHTML = rows.length ? table(
+      ['药品', '库存 / 预警', '单价', '属性', '操作'],
+      rows.map(d => `<tr>
+        <td><strong>${esc(d.name)}</strong><br><span class="hint">${esc(d.code)} · ${esc(d.spec)}</span></td>
+        <td>${d.lowStock ? `<span class="badge danger">${d.stock}</span>` : d.stock}<br><span class="hint">预警 ${d.alertStock}</span></td>
+        <td>${money(d.price)}</td>
+        <td>${d.controlled ? '<span class="badge danger">管制</span> ' : ''}${d.antibioticLevel ? `<span class="badge warn">${esc(d.antibioticLevel)}级抗菌</span>` : '—'}</td>
+        <td>${can('drug.stock') ? `<button type="button" class="btn small" data-stock="${d.id}">入库</button>` : '—'}</td>
+      </tr>`),
+      '没有符合条件的药品'
+    ) : '<p class="empty">没有符合条件的药品</p>';
+  };
+
+  const load = async () => {
+    state.drugs = await api('GET', '/api/v1/drugs');
+    paint();
+  };
+
+  $('#dg-refresh').onclick = () => load().catch(err => toast(err.message, 'error'));
+  $('#dg-q').oninput = e => { state.drugQuery = e.target.value; paint(); };
+  $('#dg-low').onchange = e => { state.drugLowOnly = e.target.checked; paint(); };
+  $('#dg-table').onclick = e => {
+    const btn = e.target.closest('button');
+    if (!btn || !btn.dataset.stock) return;
+    openModal({
+      title: '药品入库',
+      okText: '入库',
+      body: `<label>入库数量<input id="si-qty" type="number" inputmode="numeric" min="1" max="100000" value="100"></label>
+             <label>备注<input id="si-note" maxlength="100" placeholder="如 供应商到货"></label>`,
+      onOk: async () => {
+        const quantity = formNum('si-qty');
+        if (!quantity) throw new Error('请填写入库数量');
+        await api('POST', `/api/v1/drugs/${btn.dataset.stock}/stock-in`, { quantity, note: formVal('si-note') });
+        toast('入库成功');
+        await load();
       },
     });
-  });
+  };
+
+  await load();
 }
 
 /* ---------------------------------------------------------------- 收费 */
 
+const CHARGE_CAT = {
+  REGISTRATION: { name: '挂号费', cls: 'ok' },
+  DRUG: { name: '药品费', cls: 'info' },
+  LAB: { name: '检查费', cls: 'warn' },
+  BED: { name: '床位费', cls: 'info' },
+};
+
+function chargeCat(cat) {
+  return CHARGE_CAT[cat] || { name: cat || '其他', cls: '' };
+}
+
+function chargeRowHtml(r) {
+  const cat = chargeCat(r.category);
+  const payable = r.status === 'UNPAID' && can('charge.pay');
+  return `<div class="ch-row" data-charge="${r.id}">
+    ${r.status === 'UNPAID' && can('charge.pay')
+      ? `<input type="checkbox" class="chk task-chk" value="${r.id}" ${state.selectedCharges.has(r.id) ? 'checked' : ''} aria-label="选择账单">` : ''}
+    <div class="ch-main">
+      <div class="ch-line1">
+        <span class="ch-title">${esc(r.description || cat.name)}</span>
+        <span class="ch-amount">${money(r.amount)}</span>
+      </div>
+      <div class="ch-line2">
+        <span class="task-type ${cat.cls}">${esc(cat.name)}</span>
+        <span class="ch-sub">${esc(r.patientName || '')} · ${esc(r.patientMrn || '')} · ${esc(r.chargeNo)}</span>
+        <span class="ch-actions">
+          ${badge(r.status)}
+          ${payable ? `<button type="button" class="btn small primary" data-ch-pay="${r.id}">收费</button>` : ''}
+          <span class="task-go">详情 ›</span>
+        </span>
+      </div>
+    </div>
+  </div>`;
+}
+
 async function viewCharge() {
+  if (!state.chStatus) state.chStatus = 'UNPAID';
+  if (!state.chCat) state.chCat = '';
   content.innerHTML = `
     <div class="panel">
       <div class="panel-head"><h3>收费窗口</h3>
         <button class="btn small primary" id="ch-pay" ${can('charge.pay') ? '' : 'disabled'}>批量收费</button>
       </div>
       <div class="panel-body">
+        <div class="seg" id="ch-status">
+          ${[['UNPAID', '待收费'], ['PAID', '已收费'], ['VOID', '已作废'], ['', '全部']]
+            .map(([v, label]) => `<button type="button" class="seg-btn${state.chStatus === v ? ' active' : ''}" data-status="${v}">${label}</button>`).join('')}
+        </div>
         <div class="filter-bar">
-          <label>状态
-            <select id="ch-status">
-              <option value="UNPAID">待收费</option>
-              <option value="PAID">已收费</option>
-              <option value="VOID">已作废</option>
-              <option value="">全部</option>
-            </select>
-          </label>
-          <label>日期<input type="date" id="ch-date"></label>
-          <label>类别
-            <select id="ch-cat">
-              <option value="">全部</option>
-              <option value="REGISTRATION">挂号费</option>
-              <option value="DRUG">药品费</option>
-              <option value="LAB">检查费</option>
-            </select>
-          </label>
+          <label>日期<input type="date" id="ch-date" value="${esc(state.chDate || '')}"></label>
+          <div class="chips" id="ch-cat">
+            ${[['', '全部类别'], ['REGISTRATION', '挂号费'], ['DRUG', '药品费'], ['LAB', '检查费']]
+              .map(([v, label]) => `<button type="button" class="${state.chCat === v ? 'active' : ''}" data-cat="${v}">${label}</button>`).join('')}
+          </div>
           <button class="btn" id="ch-refresh">刷新</button>
         </div>
-        <div id="ch-table"></div>
+        <div class="stat-line" id="ch-sum"></div>
+        <div class="task-list" id="ch-list"></div>
       </div>
     </div>`;
 
   const load = async () => {
     state.selectedCharges.clear();
-    const status = formVal('ch-status');
-    const date = formVal('ch-date');
-    const cat = formVal('ch-cat');
+    state.chLimit = 20;
     let path = '/api/v1/charges?';
-    if (status) path += `status=${status}&`;
-    if (date) path += `date=${date}&`;
-    if (cat) path += `category=${cat}&`;
+    if (state.chStatus) path += `status=${state.chStatus}&`;
+    if (state.chDate) path += `date=${state.chDate}&`;
+    if (state.chCat) path += `category=${state.chCat}&`;
     const rows = await api('GET', path);
-    $('#ch-table').innerHTML = table(
-      ['选择', '账单号', '患者', '类别', '项目', '金额', '状态', '收费员', '收费时间', '操作'],
-      rows.map(r => `<tr>
-        <td>${r.status === 'UNPAID' ? `<input type="checkbox" class="chk" value="${r.id}" style="width:auto">` : ''}</td>
-        <td>${esc(r.chargeNo)}</td>
-        <td>${patientCell(r.patientId, r.patientName, r.patientMrn)}</td>
-        <td>${r.category === 'REGISTRATION' ? '挂号费' : r.category === 'DRUG' ? '药品费' : r.category === 'LAB' ? '检查费' : esc(r.category)}</td>
-        <td style="max-width:260px;white-space:normal">${esc(r.description)}</td>
-        <td>${money(r.amount)}</td>
-        <td>${badge(r.status)}</td>
-        <td>${esc(r.cashierName || '—')}</td>
-        <td>${esc(r.paidAt || '—')}</td>
-        <td>${r.status === 'UNPAID' && can('charge.void') ? `<button class="btn small danger" data-void="${r.id}">作废</button>` : ''}${r.status === 'PAID' && can('charge.refund') ? ` <button class="btn small danger" data-refund="${r.id}">退费</button>` : ''} <button class="btn small" data-doc="charge" data-id="${r.id}">打印</button></td>
-      </tr>`),
-      '暂无账单'
-    );
-    $('#ch-table').onchange = e => {
-      const chk = e.target.closest('input.chk');
-      if (!chk) return;
-      if (chk.checked) state.selectedCharges.add(Number(chk.value));
-      else state.selectedCharges.delete(Number(chk.value));
-    };
+    state.chRows = rows;
+    paintCharges();
   };
 
+  const paintCharges = () => {
+    const rows = state.chRows || [];
+    const limit = state.chLimit || 20;
+    const shown = rows.slice(0, limit);
+    $('#ch-list').innerHTML = (shown.length
+      ? shown.map(chargeRowHtml).join('')
+      : '<p class="empty">暂无账单</p>')
+      + (rows.length > limit
+        ? `<button type="button" class="btn block" id="ch-more">显示更多（剩 ${rows.length - limit} 笔）</button>`
+        : '');
+    paintChargeSum();
+  };
+
+  const paintChargeSum = () => {
+    const rows = state.chRows || [];
+    const total = rows.reduce((s, r) => s + Number(r.amount || 0), 0);
+    const selected = Array.from(state.selectedCharges);
+    const selAmount = rows.filter(r => selected.includes(r.id)).reduce((s, r) => s + Number(r.amount || 0), 0);
+    $('#ch-sum').innerHTML = `<span>本页 <strong>${rows.length}</strong> 笔 · 合计 <strong>${money(total)}</strong></span>`
+      + (selected.length ? `<span>已选 <strong>${selected.length}</strong> 笔 · ${money(selAmount)}</span>` : '');
+  };
+
+  $('#ch-status').onclick = e => {
+    const b = e.target.closest('[data-status]');
+    if (!b) return;
+    state.chStatus = b.dataset.status;
+    $('#ch-status').querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('active', x === b));
+    load().catch(err => toast(err.message, 'error'));
+  };
+  $('#ch-cat').onclick = e => {
+    const b = e.target.closest('[data-cat]');
+    if (!b) return;
+    state.chCat = b.dataset.cat;
+    $('#ch-cat').querySelectorAll('button').forEach(x => x.classList.toggle('active', x === b));
+    load().catch(err => toast(err.message, 'error'));
+  };
+  $('#ch-date').onchange = e => {
+    state.chDate = e.target.value;
+    load().catch(err => toast(err.message, 'error'));
+  };
   $('#ch-refresh').onclick = () => load().catch(err => toast(err.message, 'error'));
-  ['ch-status', 'ch-date', 'ch-cat'].forEach(id => {
-    document.getElementById(id).onchange = () => load().catch(err => toast(err.message, 'error'));
-  });
+
   $('#ch-pay').onclick = async () => {
     const ids = Array.from(state.selectedCharges);
     if (!ids.length) { toast('请先勾选待收费账单', 'error'); return; }
@@ -2059,41 +2363,119 @@ async function viewCharge() {
       await load();
     } catch (err) { toast(err.message, 'error'); }
   };
-  $('#ch-table').onclick = e => {
-    const btn = e.target.closest('button');
-    if (btn && btn.dataset.void) {
-      openModal({
-        title: '作废账单',
-        okText: '作废',
-        body: `<label>作废原因（≥2 字）<input id="vc-reason" maxlength="100"></label>`,
-        onOk: async () => {
-          const reason = formVal('vc-reason');
-          if (reason.length < 2) throw new Error('作废原因不得少于 2 个字');
-          await api('POST', `/api/v1/charges/${btn.dataset.void}/void`, { reason });
-          toast('账单已作废');
-          await load();
-        },
-      });
+
+  $('#ch-list').onchange = e => {
+    const chk = e.target.closest('input.chk');
+    if (!chk) return;
+    if (chk.checked) state.selectedCharges.add(Number(chk.value));
+    else state.selectedCharges.delete(Number(chk.value));
+    paintChargeSum();
+  };
+  $('#ch-list').onclick = e => {
+    if (e.target.closest('input.chk')) return;
+    if (e.target.closest('#ch-more')) {
+      state.chLimit = (state.chLimit || 20) + 20;
+      paintCharges();
       return;
     }
-    if (btn && btn.dataset.refund) {
-      openModal({
-        title: '账单退费',
-        okText: '确认退费',
-        body: `<label>退费原因（≥4 字）<input id="rf-reason" maxlength="100"></label>
-          <p class="hint">退费后将联动取消挂号/回库药品/退检查单，且不可撤销。</p>`,
-        onOk: async () => {
-          const reason = formVal('rf-reason');
-          if (reason.length < 4) throw new Error('退费原因不得少于 4 个字');
-          await api('POST', `/api/v1/charges/${btn.dataset.refund}/refund`, { reason });
-          toast('退费成功');
-          await load();
-        },
-      });
+    const payBtn = e.target.closest('[data-ch-pay]');
+    if (payBtn) {
+      e.stopPropagation();
+      payCharge(Number(payBtn.dataset.chPay), load);
+      return;
     }
+    const row = e.target.closest('[data-charge]');
+    if (row) openChargeDrawer(Number(row.dataset.charge), load);
   };
 
   await load();
+}
+
+/* ---------------------------------------------------------------- 账单详情抽屉 */
+
+function voidCharge(id, after) {
+  openModal({
+    title: '作废账单',
+    okText: '作废',
+    body: `<label>作废原因（≥2 字）<input id="vc-reason" maxlength="100"></label>`,
+    onOk: async () => {
+      const reason = formVal('vc-reason');
+      if (reason.length < 2) throw new Error('作废原因不得少于 2 个字');
+      await api('POST', `/api/v1/charges/${id}/void`, { reason });
+      toast('账单已作废');
+      after && await after();
+    },
+  });
+}
+
+function refundCharge(id, after) {
+  openModal({
+    title: '账单退费',
+    okText: '确认退费',
+    body: `<label>退费原因（≥4 字）<input id="rf-reason" maxlength="100"></label>
+      <p class="hint">退费后将联动取消挂号/回库药品/退检查单，且不可撤销。</p>`,
+    onOk: async () => {
+      const reason = formVal('rf-reason');
+      if (reason.length < 4) throw new Error('退费原因不得少于 4 个字');
+      await api('POST', `/api/v1/charges/${id}/refund`, { reason });
+      toast('退费成功');
+      after && await after();
+    },
+  });
+}
+
+async function payCharge(id, after) {
+  try {
+    const data = await api('POST', '/api/v1/charges/pay', { ids: [id] });
+    toast(`收费成功：${data.paidCount} 笔，合计 ${money(data.totalAmount)}`);
+    if (after) await after();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function openChargeDrawer(id, reload) {
+  const r = (state.chRows || []).find(x => x.id === id);
+  if (!r) return;
+  const root = $('#drawer-root');
+  const cat = chargeCat(r.category);
+  const payable = r.status === 'UNPAID' && can('charge.pay');
+  const actions = [];
+  if (payable) actions.push(`<button type="button" class="btn primary" id="chd-pay">收费 ${money(r.amount)}</button>`);
+  if (r.status === 'UNPAID' && can('charge.void')) actions.push('<button type="button" class="btn danger" id="chd-void">作废</button>');
+  if (r.status === 'PAID' && can('charge.refund')) actions.push('<button type="button" class="btn danger" id="chd-refund">退费</button>');
+  actions.push(`<button type="button" class="btn small" data-doc="charge" data-id="${r.id}">打印账单</button>`);
+  actions.push('<button type="button" class="btn ghost" data-drawer-close>关闭</button>');
+
+  root.innerHTML = `<div class="drawer-mask">
+    <aside class="drawer" role="dialog" aria-label="账单详情">
+      <div class="drawer-head">
+        <h3>${esc(r.chargeNo)} ${badge(r.status)}</h3>
+        <button type="button" class="btn ghost" data-drawer-close>关闭</button>
+      </div>
+      <div class="kv drawer-kv">
+        <div><span>患者</span><span class="link-patient" data-patient="${r.patientId}">${esc(r.patientName)}</span></div>
+        <div><span>病历号</span>${esc(r.patientMrn || '—')}</div>
+        <div><span>类别</span>${esc(cat.name)}</div>
+        <div><span>金额</span><strong>${money(r.amount)}</strong></div>
+        <div><span>收费员</span>${esc(r.cashierName || '—')}</div>
+        <div><span>收费时间</span>${esc(r.paidAt || '—')}</div>
+      </div>
+      <div class="section-title">费用项目</div>
+      <p class="drawer-note">${esc(r.description || '—')}</p>
+      <div class="drawer-foot">${actions.join('')}</div>
+    </aside>
+  </div>`;
+
+  root.querySelectorAll('[data-drawer-close]').forEach(b => { b.onclick = closeDrawer; });
+  root.querySelector('.drawer-mask').addEventListener('click', e => {
+    if (e.target.classList.contains('drawer-mask')) closeDrawer();
+  });
+  const after = async () => { closeDrawer(); if (reload) await reload(); };
+  const payBtn = root.querySelector('#chd-pay');
+  if (payBtn) payBtn.onclick = () => payCharge(r.id, after);
+  const voidBtn = root.querySelector('#chd-void');
+  if (voidBtn) voidBtn.onclick = () => voidCharge(r.id, after);
+  const refundBtn = root.querySelector('#chd-refund');
+  if (refundBtn) refundBtn.onclick = () => refundCharge(r.id, after);
 }
 
 /* ---------------------------------------------------------------- 患者档案 */
@@ -2124,12 +2506,11 @@ async function viewPatients() {
     const q = formVal('pt-q');
     const rows = await api('GET', '/api/v1/patients' + (q ? `?q=${encodeURIComponent(q)}` : ''));
     $('#pt-table').innerHTML = table(
-      ['病历号', '姓名', '性别', '出生日期', '联系电话', '慢病标签', '操作'],
+      ['病历号', '姓名 / 性别·年龄', '联系电话', '慢病标签', '操作'],
       rows.map(p => `<tr>
         <td>${esc(p.mrn)}</td>
-        <td><span class="link-patient" data-patient="${p.id}">${esc(p.name)}</span></td>
-        <td>${esc(p.gender)}</td>
-        <td>${esc(p.birthDate || '—')}</td>
+        <td><span class="link-patient" data-patient="${p.id}">${esc(p.name)}</span>
+          <br><span class="hint">${esc(p.gender)}${p.birthDate ? ' · ' + esc(ageFromBirth(p.birthDate)) : ''}</span></td>
         <td>${esc(p.phoneMask || '—')}</td>
         <td>${esc((p.chronicTags || []).join('、') || '—')}</td>
         <td><button class="btn small" data-pt="${p.id}">查看</button></td>
@@ -2210,93 +2591,197 @@ async function viewPatients() {
 
 /* ---------------------------------------------------------------- 医技 */
 
+function labStageLabel(r) {
+  if (r.status === 'APPLIED') return ['待采样', 'warn'];
+  if (r.status === 'SAMPLED') return ['待报告', 'info'];
+  if (r.status === 'REPORTED') return ['已出报告', 'ok'];
+  return [r.status || '—', ''];
+}
+
+function labRowHtml(r) {
+  const [stageLabel, stageCls] = labStageLabel(r);
+  const quick = [];
+  if (can('lab.report') && r.status === 'APPLIED') quick.push(`<button type="button" class="btn small" data-lab-sample="${r.id}">采样</button>`);
+  if (can('lab.report') && ['APPLIED', 'SAMPLED'].includes(r.status)) quick.push(`<button type="button" class="btn small primary" data-lab-report="${r.id}">录入报告</button>`);
+  const flags = `${r.critical ? '<span class="badge danger">危急值</span>' : ''}${r.abnormal ? '<span class="badge danger">异常</span>' : ''}`;
+  return `<div class="ch-row" data-lab="${r.id}">
+    <div class="ch-main">
+      <div class="ch-line1">
+        <span class="ch-title">${esc(r.itemName)} · ${esc(r.orderNo)}</span>
+        ${flags}
+      </div>
+      <div class="ch-line2">
+        <span class="task-type ${stageCls}">${esc(stageLabel)}</span>
+        <span class="ch-sub">${esc(r.patientName || '')} · ${esc(r.patientMrn || '')} · 开单 ${esc(r.doctorName || '—')}</span>
+        <span class="ch-actions">
+          ${quick.join('')}
+          <span class="task-go">详情 ›</span>
+        </span>
+      </div>
+      ${r.conclusion ? `<div class="ch-note">结论：${esc(r.conclusion)}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function openLabReportModal(id, after) {
+  openModal({
+    title: '录入检查报告',
+    okText: '提交报告',
+    body: `
+      <label>检查所见<textarea id="lr-findings" maxlength="2000"></textarea></label>
+      <label>检查结论<textarea id="lr-conclusion" maxlength="500"></textarea></label>
+      <label>检验数值（可选，有危急值阈值的项目填数值自动判定）<input id="lr-value" type="number" step="0.01"></label>
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="lr-abnormal" style="width:auto;margin:0"> 标记为异常
+      </label>`,
+    onOk: async () => {
+      const findings = formVal('lr-findings');
+      const conclusion = formVal('lr-conclusion');
+      if (!findings || !conclusion) throw new Error('检查所见与结论均必填');
+      const payload = { findings, conclusion, abnormal: $('#lr-abnormal').checked };
+      const value = formNum('lr-value');
+      if (value !== undefined) payload.value = value;
+      await api('POST', `/api/v1/lab-orders/${id}/report`, payload);
+      toast('报告已提交');
+      if (after) await after();
+    },
+  });
+}
+
+async function openLabDrawer(id, reload) {
+  const r = (state.labRows || []).find(x => x.id === id);
+  if (!r) return;
+  const [stageLabel] = labStageLabel(r);
+  const root = $('#drawer-root');
+  const actions = [];
+  if (can('lab.report') && r.status === 'APPLIED') actions.push('<button type="button" class="btn" id="labd-sample">标记采样</button>');
+  if (can('lab.report') && ['APPLIED', 'SAMPLED'].includes(r.status)) actions.push('<button type="button" class="btn primary" id="labd-report">录入报告</button>');
+  actions.push(`<button type="button" class="btn small" data-doc="lab" data-id="${r.id}">打印申请单</button>`);
+  actions.push('<button type="button" class="btn ghost" data-drawer-close>关闭</button>');
+
+  root.innerHTML = `<div class="drawer-mask">
+    <aside class="drawer" role="dialog" aria-label="检查申请详情">
+      <div class="drawer-head">
+        <h3>${esc(r.itemName)} ${badge(r.status)}</h3>
+        <button type="button" class="btn ghost" data-drawer-close>关闭</button>
+      </div>
+      <div class="kv drawer-kv">
+        <div><span>申请号</span>${esc(r.orderNo)}</div>
+        <div><span>患者</span><span class="link-patient" data-patient="${r.patientId}">${esc(r.patientName || '')}</span></div>
+        <div><span>病历号</span>${esc(r.patientMrn || '—')}</div>
+        <div><span>开单医生</span>${esc(r.doctorName || '—')}</div>
+        <div><span>进度</span>${esc(stageLabel)}</div>
+        <div><span>报告人</span>${esc(r.reporterName || '—')}</div>
+      </div>
+      ${r.critical || r.abnormal ? `<div class="alert-line">${r.critical ? '危急值' : ''}${r.critical && r.abnormal ? ' · ' : ''}${r.abnormal ? '结果异常' : ''}，请及时处理</div>` : ''}
+      <div class="section-title">检查所见</div>
+      <p class="drawer-note">${esc(r.findings || '—')}</p>
+      <div class="section-title">检查结论</div>
+      <p class="drawer-note">${esc(r.conclusion || '—')}</p>
+      <div class="drawer-foot">${actions.join('')}</div>
+    </aside>
+  </div>`;
+
+  root.querySelectorAll('[data-drawer-close]').forEach(b => { b.onclick = closeDrawer; });
+  root.querySelector('.drawer-mask').addEventListener('click', e => {
+    if (e.target.classList.contains('drawer-mask')) closeDrawer();
+  });
+  const after = async () => { closeDrawer(); if (reload) await reload(); };
+  const sampleBtn = root.querySelector('#labd-sample');
+  if (sampleBtn) sampleBtn.onclick = async () => {
+    try {
+      await api('POST', `/api/v1/lab-orders/${r.id}/sample`);
+      toast('已标记采样');
+      await after();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  const reportBtn = root.querySelector('#labd-report');
+  if (reportBtn) reportBtn.onclick = () => openLabReportModal(r.id, after);
+}
+
 async function viewLab() {
+  if (!state.labStatus) state.labStatus = '';
   content.innerHTML = `
     <div class="panel">
       <div class="panel-head"><h3>检查申请与报告</h3><button class="btn small" id="lab-refresh">刷新</button></div>
       <div class="panel-body">
-        <div class="filter-bar">
-          <label>状态
-            <select id="lab-status">
-              <option value="">全部</option>
-              <option value="APPLIED">已申请</option>
-              <option value="SAMPLED">已采样</option>
-              <option value="REPORTED">已出报告</option>
-            </select>
-          </label>
-          <label>日期<input type="date" id="lab-date"></label>
+        <div class="seg" id="lab-status">
+          ${[['', '全部'], ['APPLIED', '待采样'], ['SAMPLED', '待报告'], ['REPORTED', '已出报告']]
+            .map(([v, label]) => `<button type="button" class="seg-btn${state.labStatus === v ? ' active' : ''}" data-labstat="${v}">${label}</button>`).join('')}
         </div>
-        <div id="lab-table"></div>
+        <div class="filter-bar">
+          <label>日期<input type="date" id="lab-date" value="${esc(state.labDate || '')}"></label>
+        </div>
+        <div class="stat-line" id="lab-sum"></div>
+        <div class="task-list" id="lab-table"></div>
       </div>
     </div>`;
 
   const load = async () => {
-    const status = formVal('lab-status');
-    const date = formVal('lab-date');
+    state.labLimit = 20;
     let path = '/api/v1/lab-orders?';
-    if (status) path += `status=${status}&`;
-    if (date) path += `date=${date}&`;
+    if (state.labStatus) path += `status=${state.labStatus}&`;
+    if (state.labDate) path += `date=${state.labDate}&`;
     const rows = await api('GET', path);
-    $('#lab-table').innerHTML = table(
-      ['申请号', '患者', '项目', '开单医生', '状态', '结论', '报告人', '操作'],
-      rows.map(r => {
-        const actions = [];
-        if (can('lab.report') && r.status === 'APPLIED') actions.push(`<button class="btn small" data-sample="${r.id}">采样</button>`);
-        if (can('lab.report') && ['APPLIED', 'SAMPLED'].includes(r.status)) actions.push(`<button class="btn small primary" data-report="${r.id}">录入报告</button>`);
-        actions.push(`<button class="btn small" data-doc="lab" data-id="${r.id}">打印</button>`);
-        return `<tr>
-          <td>${esc(r.orderNo)}</td>
-          <td>${patientCell(r.patientId, r.patientName, r.patientMrn)}</td>
-          <td>${esc(r.itemName)}</td>
-          <td>${esc(r.doctorName)}</td>
-          <td>${badge(r.status)}${r.critical ? ' <span class="badge danger">危急值</span>' : ''}${r.abnormal ? ' <span class="badge danger">异常</span>' : ''}</td>
-          <td style="max-width:260px;white-space:normal">${esc(r.conclusion || '—')}</td>
-          <td>${esc(r.reporterName || '—')}</td>
-          <td>${actions.join(' ') || '—'}</td>
-        </tr>`;
-      }),
-      '暂无检查申请'
-    );
+    state.labRows = rows;
+    paintLabs();
   };
 
+  const paintLabs = () => {
+    const rows = state.labRows || [];
+    const limit = state.labLimit || 20;
+    const shown = rows.slice(0, limit);
+    const pending = rows.filter(r => r.status !== 'REPORTED').length;
+    const critical = rows.filter(r => r.critical).length;
+    $('#lab-sum').innerHTML = `<span>本页 <strong>${rows.length}</strong> 条 · 未出报告 <strong>${pending}</strong></span>`
+      + (critical ? `<span>危急值 <strong>${critical}</strong> 条</span>` : '');
+    $('#lab-table').innerHTML = (shown.length
+      ? shown.map(labRowHtml).join('')
+      : '<p class="empty">暂无检查申请</p>')
+      + (rows.length > limit
+        ? `<button type="button" class="btn block" id="lab-more">显示更多（剩 ${rows.length - limit} 条）</button>`
+        : '');
+  };
+
+  $('#lab-status').onclick = e => {
+    const b = e.target.closest('[data-labstat]');
+    if (!b) return;
+    state.labStatus = b.dataset.labstat;
+    $('#lab-status').querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('active', x === b));
+    load().catch(err => toast(err.message, 'error'));
+  };
+  $('#lab-date').onchange = e => {
+    state.labDate = e.target.value;
+    load().catch(err => toast(err.message, 'error'));
+  };
   $('#lab-refresh').onclick = () => load().catch(err => toast(err.message, 'error'));
-  ['lab-status', 'lab-date'].forEach(id => {
-    document.getElementById(id).onchange = () => load().catch(err => toast(err.message, 'error'));
-  });
+
   $('#lab-table').onclick = e => {
-    const btn = e.target.closest('button');
-    if (!btn) return;
-    if (btn.dataset.sample) {
+    if (e.target.closest('#lab-more')) {
+      state.labLimit = (state.labLimit || 20) + 20;
+      paintLabs();
+      return;
+    }
+    const sampleBtn = e.target.closest('[data-lab-sample]');
+    if (sampleBtn) {
+      e.stopPropagation();
       confirmAction('确认采样完成？', async () => {
-        await api('POST', `/api/v1/lab-orders/${btn.dataset.sample}/sample`);
-        toast('已标记采样');
-        await load();
-      });
-    }
-    if (btn.dataset.report) {
-      openModal({
-        title: '录入检查报告',
-        okText: '提交报告',
-        body: `
-          <label>检查所见<textarea id="lr-findings" maxlength="2000"></textarea></label>
-          <label>检查结论<textarea id="lr-conclusion" maxlength="500"></textarea></label>
-          <label>检验数值（可选，有危急值阈值的项目填数值自动判定）<input id="lr-value" type="number" step="0.01"></label>
-          <label style="display:flex;align-items:center;gap:8px">
-            <input type="checkbox" id="lr-abnormal" style="width:auto;margin:0"> 标记为异常
-          </label>`,
-        onOk: async () => {
-          const findings = formVal('lr-findings');
-          const conclusion = formVal('lr-conclusion');
-          if (!findings || !conclusion) throw new Error('检查所见与结论均必填');
-          const payload = { findings, conclusion, abnormal: $('#lr-abnormal').checked };
-          const value = formNum('lr-value');
-          if (value !== undefined) payload.value = value;
-          await api('POST', `/api/v1/lab-orders/${btn.dataset.report}/report`, payload);
-          toast('报告已提交');
+        try {
+          await api('POST', `/api/v1/lab-orders/${sampleBtn.dataset.labSample}/sample`);
+          toast('已标记采样');
           await load();
-        },
+        } catch (err) { toast(err.message, 'error'); }
       });
+      return;
     }
+    const reportBtn = e.target.closest('[data-lab-report]');
+    if (reportBtn) {
+      e.stopPropagation();
+      openLabReportModal(Number(reportBtn.dataset.labReport), load);
+      return;
+    }
+    const row = e.target.closest('[data-lab]');
+    if (row) openLabDrawer(Number(row.dataset.lab), load);
   };
 
   await load();
@@ -2307,72 +2792,290 @@ async function viewLab() {
 async function viewPh() {
   content.innerHTML = `
     <div class="panel">
-      <div class="panel-head"><h3>传染病上报与慢病随访</h3><button class="btn small" id="ph-refresh">刷新</button></div>
+      <div class="panel-head">
+        <h3>公卫任务</h3>
+        <div class="seg" id="ph-status-seg">
+          <button type="button" class="seg-btn" data-phstat="OPEN">待处理</button>
+          <button type="button" class="seg-btn" data-phstat="DONE">已完成</button>
+        </div>
+      </div>
       <div class="panel-body">
         <div class="filter-bar">
-          <label>状态
-            <select id="ph-status">
-              <option value="OPEN">待处理</option>
-              <option value="DONE">已完成</option>
-              <option value="">全部</option>
-            </select>
-          </label>
-          <label>类型
-            <select id="ph-type">
-              <option value="">全部</option>
-              <option value="INFECTION">传染病上报</option>
-              <option value="CHRONIC_FOLLOWUP">慢病随访</option>
-            </select>
-          </label>
+          <div class="chips" id="ph-type-chips">
+            <button type="button" data-phtype="">全部</button>
+            <button type="button" data-phtype="INFECTION">传染病上报</button>
+            <button type="button" data-phtype="CHRONIC_FOLLOWUP">慢病随访</button>
+          </div>
+          <label class="grow">查找<input id="ph-q" placeholder="患者姓名 / 病历号 / 任务号"></label>
+          <button type="button" class="btn small" id="ph-refresh">刷新</button>
         </div>
-        <div id="ph-table"></div>
+        <div id="ph-summary" class="stat-line"></div>
+        <div id="ph-list"></div>
+        <div id="ph-more"></div>
       </div>
     </div>`;
 
+  state.phStatus = state.phStatus || 'OPEN';
+  state.phType = state.phType || '';
+  state.phQuery = '';
+  state.phLimit = 20;
+
   const load = async () => {
-    const status = formVal('ph-status');
-    const type = formVal('ph-type');
-    let path = '/api/v1/ph-tasks?';
-    if (status) path += `status=${status}&`;
-    if (type) path += `type=${type}&`;
-    const rows = await api('GET', path);
-    $('#ph-table').innerHTML = table(
-      ['任务号', '类型', '患者', '任务', '截止时间', '状态', '完成人', '操作'],
-      rows.map(r => `<tr>
-        <td>${esc(r.taskNo)}</td>
-        <td>${r.type === 'INFECTION' ? '<span class="badge danger">传染病</span>' : '<span class="badge info">慢病随访</span>'}</td>
-        <td>${patientCell(r.patientId, r.patientName, r.patientMrn)}</td>
-        <td style="max-width:320px;white-space:normal">${esc(r.title)}<br><span class="hint">${esc(r.detail)}</span></td>
-        <td>${esc(r.dueAt)}${r.overdue ? ' <span class="badge danger">逾期</span>' : ''}</td>
-        <td>${badge(r.status)}</td>
-        <td>${esc(r.doneBy || '—')}</td>
-        <td>${r.status === 'OPEN' && can('ph.complete') ? `<button class="btn small primary" data-done="${r.id}">完成</button>` : '—'}</td>
-      </tr>`),
-      '暂无公卫任务'
-    );
+    state.phRows = await api('GET', '/api/v1/ph-tasks');
+    paintPh();
   };
 
-  $('#ph-refresh').onclick = () => load().catch(err => toast(err.message, 'error'));
-  ['ph-status', 'ph-type'].forEach(id => {
-    document.getElementById(id).onchange = () => load().catch(err => toast(err.message, 'error'));
+  $$('#ph-status-seg [data-phstat]').forEach(b => {
+    b.onclick = () => { state.phStatus = b.dataset.phstat; state.phLimit = 20; paintPh(); };
   });
-  $('#ph-table').onclick = e => {
-    const btn = e.target.closest('button');
-    if (btn && btn.dataset.done) {
-      openModal({
-        title: '完成任务',
-        okText: '标记完成',
-        body: `<label>处理记录<textarea id="ph-note" maxlength="500" placeholder="上报/随访情况说明"></textarea></label>`,
-        onOk: async () => {
-          await api('POST', `/api/v1/ph-tasks/${btn.dataset.done}/complete`, { note: formVal('ph-note') });
-          toast('任务已完成');
-          await load();
-        },
-      });
+  $('#ph-type-chips').onclick = e => {
+    const b = e.target.closest('[data-phtype]');
+    if (!b) return;
+    state.phType = b.dataset.phtype;
+    state.phLimit = 20;
+    paintPh();
+  };
+  $('#ph-q').oninput = e => { state.phQuery = e.target.value; paintPh(); };
+  $('#ph-refresh').onclick = () => load().catch(err => toast(err.message, 'error'));
+  $('#ph-list').onclick = e => {
+    const row = e.target.closest('[data-task]');
+    if (row) openPhTask(Number(row.dataset.task));
+  };
+  $('#ph-more').onclick = e => {
+    if (e.target.closest('#ph-more-btn')) {
+      state.phLimit = (state.phLimit || 20) + 20;
+      paintPh();
     }
   };
 
   await load();
+}
+
+function paintPh() {
+  const rows = state.phRows || [];
+  const open = rows.filter(r => r.status === 'OPEN');
+  const done = rows.filter(r => r.status === 'DONE');
+  const status = state.phStatus || 'OPEN';
+  const type = state.phType || '';
+  const q = (state.phQuery || '').trim().toLowerCase();
+
+  $$('#ph-status-seg [data-phstat]').forEach(b => {
+    const key = b.dataset.phstat;
+    const n = key === 'OPEN' ? open.length : done.length;
+    b.classList.toggle('active', key === status);
+    b.innerHTML = `${key === 'OPEN' ? '待处理' : '已完成'} <span class="seg-count">${n}</span>`;
+  });
+  $$('#ph-type-chips [data-phtype]').forEach(b => {
+    b.classList.toggle('active', (b.dataset.phtype || '') === type);
+  });
+
+  const overdue = open.filter(r => r.overdue).length;
+  $('#ph-summary').innerHTML = `<span>待处理 <strong>${open.length}</strong></span>`
+    + `<span>逾期 <strong style="${overdue ? 'color:var(--danger)' : ''}">${overdue}</strong></span>`
+    + `<span>已完成 <strong>${done.length}</strong></span>`
+    + '<span>按截止时间排序，逾期置顶</span>';
+
+  let list = (status === 'OPEN' ? open : done).filter(r => !type || r.type === type);
+  if (q) {
+    list = list.filter(r => `${r.taskNo} ${r.patientName} ${r.patientMrn} ${r.title}`
+      .toLowerCase().includes(q));
+  }
+  list.sort((a, b) => (status === 'OPEN'
+    ? String(a.dueAt || '').localeCompare(String(b.dueAt || ''))
+    : String(b.doneAt || '').localeCompare(String(a.doneAt || ''))));
+
+  const limit = state.phLimit || 20;
+  const shown = list.slice(0, limit);
+  $('#ph-list').innerHTML = shown.length
+    ? `<div class="task-list">${shown.map(phRowHtml).join('')}</div>`
+    : '<p class="empty">没有符合条件的任务</p>';
+  $('#ph-more').innerHTML = list.length > shown.length
+    ? `<button type="button" class="btn small" id="ph-more-btn" style="margin-top:10px">显示更多（剩余 ${list.length - shown.length} 条）</button>`
+    : '';
+}
+
+function phRowHtml(t) {
+  const { disease, code } = phParts(t);
+  const infect = t.type === 'INFECTION';
+  const due = t.status === 'OPEN'
+    ? dueText(t.dueAt)
+    : (t.doneAt ? `完成 ${String(t.doneAt).slice(5, 16)}` : '已完成');
+  return `<button type="button" class="task-row" data-task="${t.id}">
+      <span class="task-type ${infect ? 'danger' : 'info'}">${infect ? '传染病' : '慢病随访'}</span>
+      <span class="task-main">
+        <span class="task-title">${esc(disease)}${code ? ` <span class="hint">${esc(code)}</span>` : ''}</span>
+        <span class="task-sub">${esc(t.patientName)} · ${esc(t.patientMrn)}${t.doneBy ? ` · ${esc(t.doneBy)}` : ''}</span>
+      </span>
+      <span class="task-due ${t.overdue ? 'overdue' : ''}">${esc(due)}</span>
+      <span class="task-go">${t.status === 'OPEN' && can('ph.complete') ? '处理' : '查看'}</span>
+    </button>`;
+}
+
+function phParts(t) {
+  const title = t.title || '';
+  const idx = title.indexOf('：');
+  const disease = idx >= 0 ? title.slice(idx + 1) : title;
+  const codeM = /诊断编码\s*([A-Z]\d{2}(?:\.\d+)?)/.exec(t.detail || '');
+  return { disease: disease || '公卫任务', code: codeM ? codeM[1] : '' };
+}
+
+function dueText(dueAt) {
+  if (!dueAt) return '无期限';
+  const d = new Date(String(dueAt).replace(' ', 'T'));
+  if (Number.isNaN(d.getTime())) return String(dueAt);
+  const diffMs = d.getTime() - Date.now();
+  const hours = Math.abs(diffMs) / 36e5;
+  if (diffMs < 0) {
+    return hours < 24
+      ? `逾期 ${Math.max(1, Math.round(hours))} 小时`
+      : `逾期 ${Math.round(hours / 24)} 天`;
+  }
+  return hours < 24 ? `剩 ${Math.max(1, Math.round(hours))} 小时` : `剩 ${Math.round(hours / 24)} 天`;
+}
+
+function shiftDate(days) {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function phFormHtml(infect) {
+  const today = todayStr();
+  if (infect) {
+    const symptoms = ['发热', '咳嗽', '咽痛', '头痛', '腹泻', '皮疹'];
+    return `<div class="drawer-form">
+      <div class="section-title">上报信息</div>
+      <div class="form-row">
+        <label>报卡类别<select id="pf-class">
+          <option>甲类</option><option selected>乙类</option><option>丙类</option>
+        </select></label>
+        <label>发病日期<input type="date" id="pf-onset" value="${today}"></label>
+      </div>
+      <div class="field">
+        <span class="field-label">主要症状（可多选）</span>
+        <div class="chips" id="pf-sym">${symptoms.map(s => `<button type="button" data-sym="${s}">${s}</button>`).join('')}</div>
+      </div>
+      <div class="form-row">
+        <label>网络直报<select id="pf-report"><option>已直报</option><option>待直报</option></select></label>
+        <label>核实方式<select id="pf-way"><option>电话核实</option><option>门诊核实</option><option>家访核实</option></select></label>
+      </div>
+      <label>处置备注<textarea id="pf-note" maxlength="200" placeholder="如 已电话核实患者居家隔离，样本已送检"></textarea></label>
+    </div>`;
+  }
+  return `<div class="drawer-form">
+    <div class="section-title">随访记录</div>
+    <div class="form-row">
+      <label>随访方式<select id="pf-way"><option>门诊随访</option><option>电话随访</option><option>家庭随访</option></select></label>
+      <label>用药依从性<select id="pf-adh"><option>规律服药</option><option>间断服药</option><option>未服药</option></select></label>
+    </div>
+    <div class="form-row">
+      <label>血压（mmHg）
+        <div class="inline-two">
+          <input id="pf-sbp" type="number" inputmode="numeric" min="40" max="300" placeholder="收缩压">
+          <input id="pf-dbp" type="number" inputmode="numeric" min="20" max="200" placeholder="舒张压">
+        </div>
+      </label>
+      <label>空腹血糖（mmol/L）<input id="pf-glu" type="number" inputmode="decimal" step="0.1" min="1" max="40" placeholder="如 6.5"></label>
+    </div>
+    <label>下次随访日期<input type="date" id="pf-next" value="${shiftDate(7)}"></label>
+    <label>随访备注<textarea id="pf-note" maxlength="200" placeholder="如 血压控制良好，继续原方案"></textarea></label>
+  </div>`;
+}
+
+async function openPhTask(taskId) {
+  const t = (state.phRows || []).find(r => r.id === taskId);
+  if (!t) return;
+  const { disease } = phParts(t);
+  const infect = t.type === 'INFECTION';
+  const editable = t.status === 'OPEN' && can('ph.complete');
+  const root = $('#drawer-root');
+  const due = t.dueAt ? `${t.dueAt}（${dueText(t.dueAt)}）` : '—';
+
+  root.innerHTML = `<div class="drawer-mask">
+    <aside class="drawer" role="dialog" aria-label="公卫任务处理">
+      <div class="drawer-head">
+        <h3>${infect ? '传染病上报' : '慢病随访'}：${esc(disease)}</h3>
+        <button type="button" class="btn ghost" data-drawer-close>关闭</button>
+      </div>
+      <div class="kv drawer-kv">
+        <div><span>患者</span><span class="link-patient" data-patient="${t.patientId}">${esc(t.patientName)}</span></div>
+        <div><span>病历号</span>${esc(t.patientMrn)}</div>
+        <div><span>任务号</span>${esc(t.taskNo)}</div>
+        <div><span>截止</span>${esc(due)}</div>
+        <div><span>状态</span>${badge(t.status)}</div>
+        <div><span>完成人</span>${esc(t.doneBy || '—')}</div>
+      </div>
+      <p class="hint">${esc(t.detail || '')}</p>
+      ${editable
+        ? phFormHtml(infect)
+        : `<div class="section-title">处理结果</div><p class="hint">完成时间：${esc(t.doneAt || '—')}</p>`}
+      <div class="drawer-foot">
+        ${editable ? '<button type="button" class="btn primary" id="pf-save">完成并归档</button>' : ''}
+        <button type="button" class="btn ghost" data-drawer-close>关闭</button>
+      </div>
+    </aside>
+  </div>`;
+
+  root.querySelectorAll('[data-drawer-close]').forEach(b => { b.onclick = closeDrawer; });
+  root.querySelector('.drawer-mask').addEventListener('click', e => {
+    if (e.target.classList.contains('drawer-mask')) closeDrawer();
+  });
+  root.querySelectorAll('#pf-sym [data-sym]').forEach(b => {
+    b.onclick = () => b.classList.toggle('active');
+  });
+
+  const save = root.querySelector('#pf-save');
+  if (save) {
+    save.onclick = async () => {
+      if (infect) {
+        const onset = readVal(root, '#pf-onset');
+        if (!onset) { toast('请填写发病日期', 'error'); return; }
+        if (onset > todayStr()) { toast('发病日期不能晚于今天', 'error'); return; }
+      }
+      save.disabled = true;
+      try {
+        await api('POST', `/api/v1/ph-tasks/${t.id}/complete`, { note: composePhNote(t, root) });
+        toast('任务已完成');
+        closeDrawer();
+        await viewPh();
+      } catch (err) {
+        toast(err.message, 'error');
+        save.disabled = false;
+      }
+    };
+  }
+}
+
+function readVal(root, sel) {
+  const el = root.querySelector(sel);
+  return el ? String(el.value || '').trim() : '';
+}
+
+function composePhNote(t, root) {
+  const parts = [];
+  if (t.type === 'INFECTION') {
+    parts.push(`报卡类别=${readVal(root, '#pf-class')}`);
+    parts.push(`发病日期=${readVal(root, '#pf-onset')}`);
+    const syms = Array.from(root.querySelectorAll('#pf-sym [data-sym].active'))
+      .map(b => b.dataset.sym);
+    if (syms.length) parts.push(`症状=${syms.join('、')}`);
+    parts.push(`网络直报=${readVal(root, '#pf-report')}`);
+    parts.push(`核实方式=${readVal(root, '#pf-way')}`);
+  } else {
+    parts.push(`随访方式=${readVal(root, '#pf-way')}`);
+    const sbp = readVal(root, '#pf-sbp');
+    const dbp = readVal(root, '#pf-dbp');
+    if (sbp || dbp) parts.push(`血压=${sbp || '?'}/${dbp || '?'}`);
+    const glu = readVal(root, '#pf-glu');
+    if (glu) parts.push(`空腹血糖=${glu}mmol/L`);
+    parts.push(`用药依从性=${readVal(root, '#pf-adh')}`);
+    const next = readVal(root, '#pf-next');
+    if (next) parts.push(`下次随访=${next}`);
+  }
+  const note = readVal(root, '#pf-note');
+  if (note) parts.push(`备注=${note}`);
+  return parts.join('；').slice(0, 500);
 }
 
 /* ---------------------------------------------------------------- 统计报表 */

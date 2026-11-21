@@ -95,8 +95,10 @@ function normalizeDetail(d) {
       ['检测时间', fmt(d.testedAt)], ['检查方法', d.inspectionMethod], ['仪器', d.instrumentModel]
     ]),
     reportRows: infoRows([
-      ['报告编号', d.reportNo], ['报告时间', fmt(d.reportedAt)],
-      ['检验人员', d.operatorName], ['审核人员', d.reviewerName], ['出具机构', d.institutionName]
+      ['报告编号', d.reportNo], ['检查申请号', d.examRequestNo], ['报告时间', fmt(d.reportedAt)],
+      ['检验人员', d.operatorName], ['审核人员', d.reviewerName], ['出具机构', d.institutionName],
+      ['来源系统', d.sourceSystem], ['外部报告号', d.externalReportId],
+      ['参考区间说明', d.referenceRangeNote]
     ]),
     findingsText: d.findingsText || '',
     impressionText: d.impressionText || '',

@@ -1,0 +1,163 @@
+/* pages/payment —— 演示支付（P0-1）
+   颜色只用 app.wxss 的页面令牌；金额/按钮按适老化放大，触控目标 ≥ 88rpx。 */
+.pay-page {
+  padding: 24rpx 24rpx 48rpx;
+  box-sizing: border-box;
+}
+
+.pay-card {
+  padding: 32rpx;
+}
+
+.pay-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.pay-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+
+.pay-sub {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: var(--text-weak);
+  word-break: break-all;
+}
+
+.pay-status {
+  flex: none;
+  padding: 8rpx 20rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.pay-status.is-unpaid {
+  color: var(--amber-text, #cc6600);
+  background: var(--amber-soft, #fff4e5);
+}
+
+.pay-status.is-paid {
+  color: var(--mint-text, #178f6b);
+  background: var(--mint-soft, #e0f7f0);
+}
+
+.pay-amount {
+  margin: 36rpx 0 28rpx;
+  font-size: 72rpx;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+
+.pay-amount-symbol {
+  font-size: 34rpx;
+  margin-right: 6rpx;
+}
+
+.pay-rows {
+  border-top: 1rpx solid var(--border, #e4e9f0);
+}
+
+.pay-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24rpx;
+  padding: 22rpx 0;
+  border-bottom: 1rpx solid var(--border, #e4e9f0);
+}
+
+.pay-k {
+  flex: none;
+  font-size: 26rpx;
+  color: var(--text-weak);
+}
+
+.pay-v {
+  font-size: 26rpx;
+  color: var(--text-main);
+  text-align: right;
+  word-break: break-all;
+}
+
+.pay-hint,
+.pay-disclaimer,
+.pay-success-note {
+  margin-top: 18rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: var(--text-weak);
+}
+
+.pay-disabled {
+  margin-top: 28rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.pay-success {
+  margin-top: 28rpx;
+  padding: 24rpx;
+  border-radius: 16rpx;
+  background: var(--mint-soft, #e5f7f1);
+}
+
+.pay-actions {
+  margin-top: 8rpx;
+}
+
+.pay-success-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--mint-dark, #0a6b53);
+}
+
+.pay-error {
+  margin-top: 20rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: var(--danger-text, #b42318);
+}
+
+.pay-btn {
+  margin-top: 28rpx;
+}
+
+.pay-loading {
+  padding: 40rpx 0;
+  text-align: center;
+  font-size: 28rpx;
+  color: var(--text-weak);
+}
+
+/* 2026-11-21 演示退费：中性色，不占用「已支付」的薄荷成功语义 */
+.pay-status.is-refunded {
+  color: var(--text-sub);
+  background: var(--bg);
+}
+
+.pay-refund {
+  margin-top: 28rpx;
+  padding: 24rpx;
+  border-radius: 16rpx;
+  background: var(--bg);
+}
+
+.pay-refund-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--text-sub);
+}
+
+.pay-refund-note {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: var(--text-weak);
+}

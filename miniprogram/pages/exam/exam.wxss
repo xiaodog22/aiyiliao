@@ -1,0 +1,283 @@
+/* pages/exam —— 检查预约（P0-2）；仅用设计令牌，不新增硬编码主色 */
+.exam-page {
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
+}
+
+.exam-card,
+.exam-head,
+.exam-success {
+  margin: 24rpx;
+  padding: 28rpx;
+  border-radius: 20rpx;
+}
+
+.exam-title {
+  font-size: 38rpx;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.exam-demo {
+  margin-top: 12rpx;
+  padding: 12rpx 16rpx;
+  border-radius: 10rpx;
+  background: var(--accent-soft);
+  color: var(--primary-dark);
+  font-size: 26rpx;
+  line-height: 1.5;
+}
+
+.exam-hint {
+  margin-top: 14rpx;
+  color: var(--text-sub);
+  font-size: 26rpx;
+  line-height: 1.6;
+}
+
+.exam-disabled {
+  margin-top: 24rpx;
+  padding: 24rpx;
+  border-radius: 12rpx;
+  background: var(--bg);
+  color: var(--text-main);
+  font-size: 30rpx;
+  line-height: 1.6;
+}
+
+.exam-loading,
+.exam-empty {
+  padding: 36rpx 0;
+  text-align: center;
+  color: var(--text-sub);
+  font-size: 28rpx;
+}
+
+.exam-step {
+  margin-bottom: 18rpx;
+  font-size: 30rpx;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.exam-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 96rpx;
+  padding: 18rpx 20rpx;
+  border: 2rpx solid var(--border);
+  border-radius: 14rpx;
+  margin-bottom: 14rpx;
+}
+
+.exam-item-on {
+  border-color: var(--primary);
+  background: var(--accent-soft);
+}
+
+.exam-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.exam-item-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.exam-item-sub {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  color: var(--text-sub);
+}
+
+.exam-item-price {
+  margin-left: 20rpx;
+  color: var(--primary-dark);
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
+.exam-slot-group {
+  margin-bottom: 20rpx;
+}
+
+.exam-slot-date {
+  margin-bottom: 10rpx;
+  color: var(--text-sub);
+  font-size: 26rpx;
+}
+
+.exam-slot-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.exam-slot {
+  min-width: 150rpx;
+  min-height: 72rpx;
+  padding: 0 18rpx;
+  border: 2rpx solid var(--border);
+  border-radius: 12rpx;
+  color: var(--text-main);
+  font-size: 28rpx;
+  line-height: 68rpx;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.exam-slot-on {
+  border-color: var(--primary);
+  background: var(--accent-soft);
+  color: var(--primary-dark);
+  font-weight: 700;
+}
+
+.exam-slot-off {
+  background: var(--bg);
+  color: var(--text-weak);
+}
+
+.exam-field {
+  display: flex;
+  align-items: center;
+  min-height: 96rpx;
+  padding: 0 20rpx;
+  border: 2rpx solid var(--border);
+  border-radius: 14rpx;
+}
+
+.exam-field-label {
+  width: 100rpx;
+  color: var(--text-sub);
+  font-size: 28rpx;
+}
+
+.exam-input {
+  flex: 1;
+  min-height: 72rpx;
+  font-size: 30rpx;
+  color: var(--text-main);
+}
+
+.exam-summary {
+  margin-top: 18rpx;
+  padding: 18rpx;
+  border-radius: 12rpx;
+  background: var(--bg);
+  color: var(--text-main);
+  font-size: 28rpx;
+  line-height: 1.6;
+}
+
+.exam-disclaimer,
+.exam-footnote {
+  margin-top: 16rpx;
+  color: var(--text-sub);
+  font-size: 25rpx;
+  line-height: 1.6;
+}
+
+.exam-footnote {
+  margin: 12rpx 32rpx 24rpx;
+}
+
+.exam-main-btn {
+  margin-top: 24rpx;
+}
+
+.exam-error {
+  margin: 0 24rpx 24rpx;
+  color: var(--accent-red);
+  font-size: 26rpx;
+  line-height: 1.6;
+}
+
+.exam-success {
+  border: 2rpx solid var(--primary);
+  background: var(--accent-soft);
+}
+
+.exam-success-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+
+.exam-success-item {
+  margin-top: 12rpx;
+  font-size: 30rpx;
+  color: var(--text-main);
+}
+
+.exam-success-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10rpx;
+  font-size: 26rpx;
+}
+
+.exam-k {
+  color: var(--text-sub);
+}
+
+.exam-v {
+  color: var(--text-main);
+  word-break: break-all;
+}
+
+.exam-success-note {
+  margin-top: 16rpx;
+  color: var(--text-sub);
+  font-size: 25rpx;
+  line-height: 1.6;
+}
+
+.exam-order {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 18rpx 0;
+  border-bottom: 2rpx solid var(--border);
+}
+
+.exam-order:last-child {
+  border-bottom: 0;
+}
+
+.exam-order-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.exam-order-name {
+  font-size: 29rpx;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.exam-order-sub,
+.exam-order-no {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  color: var(--text-sub);
+}
+
+.exam-cancel {
+  min-width: 88rpx;
+  min-height: 60rpx;
+  margin-left: 16rpx;
+  padding: 0 16rpx;
+  border: 2rpx solid var(--border);
+  border-radius: 10rpx;
+  color: var(--text-sub);
+  font-size: 25rpx;
+  line-height: 56rpx;
+  text-align: center;
+}
+
+.btn-disabled {
+  opacity: 0.6;
+}

@@ -30,11 +30,6 @@ const { errText } = require('../../../utils/err-text.js')
 const OV_TTL = 30000
 let _ovCache = { at: 0, data: null, today: '' }
 
-/** 契约状态 → 统计列（英文枚举，不用中文文案判分支） */
-const WAITING = ['PENDING', 'CONFIRMED']
-const IN_PROGRESS = ['CHECKED_IN']
-const DONE = ['COMPLETED']
-
 /** 待办徽章配色（效果图 01：问诊蓝 / 签到橙 / 报告薄荷） */
 const TODO_BADGE = {
   CONSULT_REPLY: { cls: 'todo-badge-blue', icon: 'chatWhite' },
@@ -172,12 +167,13 @@ Page({
   // ==================== 统计概览 ====================
 
   /**
-   * 统计 = 医生自己的排队列表本地聚合（不新增接口）。
-   * 口径（2026-10-24 统一）与「挂号管理」页一致：**今天及未来**的预约
-   * （不带 date 拉全量，前端按号源时间过滤 startTime >= 今日 00:00，丢弃过期历史）。
-   * 此前两页口径不一（首页曾统计全量历史 = 6、挂号管理只统计今日 = 0）导致数字对不上，
-   * 且患者挂"明天"的号在医生端不可见。
-   * force=true 跳过缓存（下拉刷新 / 错误重试必须绕过，否则拿着坏结果直接返回）。
+   * 问诊概览（2026-11-20 医生端收缩）：数据源由挂号队列改为线上问诊会话。
+   * 口径（字段见 DoctorConsultationData）：
+   *   · 待接诊 = accepting=false（已分配给我但尚未回复）
+   *   · 进行中 = accepting=true（已接诊在聊）
+   *   · 今日新增 = createdAt 落在今天
+   * 列表端点本身只返回本医生名下 ACTIVE 会话，故不统计历史已完成（不编造数字）。
+   * force=true 跳过缓存（下拉刷新 / 错误重试必须绕过）。
    */
   loadOverview(force) {
     const today = localDay()
@@ -191,17 +187,14 @@ Page({
       const d = new Date()
       return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
     })()
-    return doctorService.listAppointments({ limit: 50 })
+    return doctorService.listConsultations()
       .then((res) => {
         const arr = Array.isArray(res && res.items) ? res.items : []
         const overview = { waiting: 0, inProgress: 0, done: 0 }
         arr.forEach((it) => {
-          if (!it.startTime) return
-          if (new Date(it.startTime).getTime() < t0) return   // 过期历史不计入
-          const s = String(it.status || '').toUpperCase()
-          if (WAITING.indexOf(s) >= 0) overview.waiting++
-          else if (IN_PROGRESS.indexOf(s) >= 0) overview.inProgress++
-          else if (DONE.indexOf(s) >= 0) overview.done++
+          if (it.accepting === true) overview.inProgress++
+          else overview.waiting++
+          if (it.createdAt && new Date(it.createdAt).getTime() >= t0) overview.done++
         })
         _ovCache = { at: Date.now(), data: overview, today }
         this.setData({ overview, loading: false })
@@ -209,9 +202,9 @@ Page({
       .catch((err) => {
         if (ENV.MOCK_FALLBACK) {
           // 开发阶段后端不可用：不阻断演示（仅开发构建会走到这里）
-          console.warn('[workbench] 开发降级：概览接口不可用')
+          console.warn('[workbench] 开发降级：问诊概览不可用')
           this.setData({
-            overview: app.MOCK.DOCTOR.overview || { waiting: 0, inProgress: 0, done: 0 },
+            overview: { waiting: 0, inProgress: 0, done: 0 },
             loading: false,
             error: ''
           })
@@ -241,88 +234,46 @@ Page({
   loadTodos() {
     this.setData({ todosLoading: true, todosError: '' })
 
-    const pAppt = doctorService.listAppointments({ limit: 50, date: localDay() })
-      .then((res) => (Array.isArray(res && res.items) ? res.items : []))
-
-    const pConsult = doctorService.listConsultations()
-      .then((res) => (Array.isArray(res && res.items) ? res.items : []))
-
-    return Promise.all([
-      pAppt.then((items) => ({ ok: true, items }), (err) => ({ ok: false, err })),
-      pConsult.then((list) => ({ ok: true, list }), (err) => ({ ok: false, err }))
-    ]).then((results) => {
-      const apptRes = results[0]
-      const consultRes = results[1]
-      const todos = []
-
-      // ① 预约签到待确认
-      if (apptRes.ok) {
-        const arr = apptRes.items || []
-        const today = localDay()
-        const checkin = arr.filter((it) => String(it.status || '').toUpperCase() === 'CHECKED_IN'
-          && (!it.startTime || localDay(it.startTime) === today)).length
-        if (checkin > 0) {
-          todos.push({
-            kind: 'CHECKIN_CONFIRM',
-            title: '预约签到待确认',
-            subtitle: '今日 ' + checkin + ' 位到院患者待叫号确认',
-            badgeCls: TODO_BADGE.CHECKIN_CONFIRM.cls,
-            badgeIcon: TODO_BADGE.CHECKIN_CONFIRM.icon
-          })
-        }
-      }
-
-      // ② 在线问诊待回复（医生视角：已分配给我的 ACTIVE 会话）
-      if (consultRes.ok) {
-        const list = consultRes.list || []
-        const active = list.filter((c) => String(c.status || '').toUpperCase() === 'ACTIVE'
-          && !!c.assignedDoctorId).length
-        if (active > 0) {
+    // 2026-11-20 医生端收缩：挂号签到待确认随挂号队列迁入 HIS，待办只保留问诊。
+    // 数据源：GET /api/v1/doctor/consultations（医生视角，仅本医生名下 ACTIVE 会话）。
+    return doctorService.listConsultations()
+      .then((res) => {
+        const list = Array.isArray(res && res.items) ? res.items : []
+        const pending = list.filter((c) => c.accepting !== true)
+        const todos = []
+        if (pending.length > 0) {
           todos.push({
             kind: 'CONSULT_REPLY',
-            title: '在线问诊待回复',
-            subtitle: '当前有 ' + active + ' 个进行中的问诊会话',
+            title: '在线问诊待接诊',
+            subtitle: '当前有 ' + pending.length + ' 位患者等待接诊',
             badgeCls: TODO_BADGE.CONSULT_REPLY.cls,
             badgeIcon: TODO_BADGE.CONSULT_REPLY.icon
           })
         }
-      }
-
-      // 两条都失败才算失败（单条失败时按"该类别无待办"处理，并在控制台留痕）
-      const allFailed = !apptRes.ok && !consultRes.ok
-      if (allFailed) {
+        this.setData({
+          todos,
+          todosLoading: false,
+          todosError: '',
+          unread: todos.length > 0
+        })
+      })
+      .catch((err) => {
         if (ENV.MOCK_FALLBACK) {
           this.setData({ todos: [], todosLoading: false, todosError: '', unread: false })
           return
         }
-        const err = apptRes.err || consultRes.err
         this.setData({
           todosLoading: false,
           todos: [],
           unread: false,
           todosError: errText(err, '待办加载失败')
         })
-        return
-      }
-      if (!apptRes.ok) console.warn('[workbench] 预约列表不可用，签到待办按 0 处理')
-      if (!consultRes.ok) console.warn('[workbench] 问诊列表不可用，问诊待办按 0 处理')
-
-      this.setData({
-        todos,
-        todosLoading: false,
-        todosError: '',
-        unread: todos.length > 0
       })
-    })
   },
 
-  /** 「处理」/整行点击：按类别跳转（问诊处理页 V21 已上线 → 直达会话列表） */
+  /** 「处理」/整行点击：按类别跳转（医生端只剩问诊待办） */
   onTodo(e) {
     const kind = e.currentTarget.dataset.kind
-    if (kind === 'CHECKIN_CONFIRM') {
-      wx.navigateTo({ url: '/pages/doctor/appointments/appointments?from=todo' })
-      return
-    }
     if (kind === 'CONSULT_REPLY') {
       wx.navigateTo({ url: '/pages/doctor/consult/consult' })
       return
@@ -330,9 +281,9 @@ Page({
     wx.showToast({ title: '该待办：暂无对应页面', icon: 'none' })
   },
 
-  /** 「查看全部」：待办都落在患者队列里 */
+  /** 「查看全部」：待办只剩问诊 → 直达会话列表 */
   onViewAllTodo() {
-    wx.navigateTo({ url: '/pages/doctor/appointments/appointments?from=todo' })
+    wx.navigateTo({ url: '/pages/doctor/consult/consult' })
   },
 
   // ==================== 导航栏 ====================
@@ -359,16 +310,12 @@ Page({
   // ==================== 宫格 / 快捷功能 ====================
 
   /**
-   * 今日工作 / 快捷功能 / 统计列 的点击。
+   * 今日工作 / 快捷功能 / 统计列 的点击（2026-11-20 医生端收缩：只留问诊相关）。
    * 有真实页面的直接跳；暂无页面的入口如实提示，不伪造页面。
    */
   onQuick(e) {
     const key = e.currentTarget.dataset.key
     const ROUTES = {
-      appointments: '/pages/doctor/appointments/appointments',
-      patientQueue: '/pages/doctor/appointments/appointments',
-      patientMgmt: '/pages/doctor/appointments/appointments',
-      beds: '/pages/doctor/beds/beds',
       personal: '/pages/doctor/personal/personal',
       consult: '/pages/doctor/consult/consult',
       schedule: '/pages/doctor/schedule/schedule',

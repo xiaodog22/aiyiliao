@@ -34,6 +34,13 @@
 
     <button class="dl-btn-primary" bindtap="onSubmit">登录验证</button>
 
+    <!-- 演示登录（仅开发/演示构建，2026-11-20）：不索取微信手机号、不展示/伪造医生姓名，
+         统一以预置医生身份进入（服务端按 dev-user-2 真实签发会话）。 -->
+    <view class="dl-demo" wx:if="{{manualEnabled}}">
+      <button class="dl-btn-demo" bindtap="onDemoLogin" disabled="{{submitting}}">演示登录（免输入）</button>
+      <view class="dl-demo-tip">仅开发构建可用，统一以预置医生身份进入</view>
+    </view>
+
     <view class="dl-agree">
       <text class="dl-agree-text">登录即代表同意</text>
       <text class="dl-agree-link" bindtap="onOpenAgreement">用户协议</text>

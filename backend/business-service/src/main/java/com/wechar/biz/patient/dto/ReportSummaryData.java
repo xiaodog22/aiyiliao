@@ -18,6 +18,11 @@ public record ReportSummaryData(
         Instant recordedAt,
         Instant reportedAt,
         Integer abnormalCount,
+        String sourceSystem,
+        String externalReportId,
+        String reviewerName,
+        String examRequestNo,
+        String referenceRangeNote,
         Boolean isDemo
 ) {
 }

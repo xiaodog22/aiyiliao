@@ -72,7 +72,6 @@
   transform: translateY(-50%);
   display: flex;
   align-items: center;
-  gap: 18rpx;
   height: 64rpx;
   padding: 0 26rpx;
   border: 1rpx solid var(--border);
@@ -80,6 +79,9 @@
   background: var(--card);
   box-sizing: border-box;
 }
+/* ⚠️ 不用 flex gap：iOS 14.4 及以下 / 旧内核里 gap 对 flex 无效 → 间距归零，改用子项外边距 */
+.wb-nav-tools > .wb-nav-sep { margin-left: 18rpx; }
+.wb-nav-tools > .wb-nav-sep + .wb-nav-btn { margin-left: 18rpx; }
 
 .wb-nav-btn {
   position: relative;
@@ -597,11 +599,12 @@
 
   .wb-nav-tools {
     right: 12px;
-    gap: 9px;
     height: 32px;
     padding: 0 13px;
     border-width: 1px;
   }
+  .wb-nav-tools > .wb-nav-sep { margin-left: 9px; }
+  .wb-nav-tools > .wb-nav-sep + .wb-nav-btn { margin-left: 9px; }
 
   .wb-nav-btn {
     width: 20px;

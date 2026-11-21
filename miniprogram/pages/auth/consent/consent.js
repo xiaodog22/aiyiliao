@@ -20,7 +20,11 @@ Page({
   },
 
   onLoad(options) {
-    this._intent = options && options.intent === 'doctor' ? 'doctor' : 'patient'
+    // intent 三态（2026-11-20）：'' = 提交链路被动拉起（同意后返回原页）；
+    // 'doctor' / 'patient' = 登录入口主动拉起（同意后直达对应登录页，少点一次）。
+    // 旧实现把缺省值当 patient，医生链路会被错误导向患者手输页。
+    const raw = options && options.intent
+    this._intent = (raw === 'doctor' || raw === 'patient') ? raw : ''
     this.setData({ theme: app.globalData.theme || 'standard' })
     this.loadPolicy()
   },
@@ -56,7 +60,16 @@ Page({
     }
     try {
       consent.accept(this.data.version)
-      // 记录后返回登录页；登录页会重新读取 isAccepted，再允许发起登录。
+      // 主动拉起：同意后直达目标登录页（redirectTo 替换本页，栈里不留同意页）
+      if (this._intent === 'doctor') {
+        wx.redirectTo({ url: '/pages/auth/doctor-login/doctor-login' })
+        return
+      }
+      if (this._intent === 'patient') {
+        wx.redirectTo({ url: '/pages/auth/manual-login/manual-login' })
+        return
+      }
+      // 被动拉起（提交时 CONSENT_REQUIRED）：退回原页，由页面重新读取 isAccepted
       wx.navigateBack({
         delta: 1,
         success: () => {
