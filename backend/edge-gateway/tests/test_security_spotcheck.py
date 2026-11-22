@@ -29,12 +29,83 @@ def test_redact_phone_idcard_email():
     assert redact("li.ming@hospital.cn") == "l***@hospital.cn"
 
 
+def test_redact_signature_query_l11():
+    """L11：附件签名 URL 的 sig/expires 是持有即凭证，不得原样进 access log。"""
+    line = 'GET /api/v1/attachments/abc.jpg?sig=deadbeefcafebabe&expires=1700000000 HTTP/1.1'
+    out = redact(line)
+    assert "deadbeefcafebabe" not in out
+    assert "1700000000" not in out
+    assert "sig=" + MASK in out
+    assert "expires=" + MASK in out
+    # 保留路径与参数名，排障仍能定位是哪个附件接口
+    assert "/api/v1/attachments/abc.jpg" in out
+
+
+def test_redact_extensible_query_params_l11():
+    """L11：签名参数采用敏感词族，新增 nonce/api_key/X-Amz-Signature 不得漏掩。"""
+    line = ("GET /x?sig=aa11&X-Amz-Signature=bb22&nonce=cc33&api_key=dd44"
+            "&access_token=ee55&keyword=感冒 HTTP/1.1")
+    out = redact(line)
+    for secret in ("aa11", "bb22", "cc33", "dd44", "ee55"):
+        assert secret not in out, f"query 凭证 {secret} 原样落日志"
+    assert "X-Amz-Signature=***" in out
+    assert "nonce=***" in out
+    assert "api_key=***" in out
+    # 非敏感查询词不要求掩码，但不得因掩码丢失路径
+    assert "/x?" in out
+
+
+def test_install_redaction_on_non_propagating_logger_l11():
+    """uvicorn.access 默认 propagate=False：filter 必须挂在 logger 本身才生效。"""
+    import logging
+
+    lg = logging.getLogger("gw-access-nonprop")
+    lg.propagate = False
+    lg.handlers.clear()
+    try:
+        install_redaction(lg)
+        install_redaction(lg)
+        assert sum(1 for f in lg.filters if isinstance(f, RedactingFilter)) == 1
+        rec = lg.makeRecord("gw-access-nonprop", logging.INFO, __file__, 1,
+                            "%s", ("GET /x?sig=abc123dead&expires=99",), None)
+        for f in lg.filters:
+            f.filter(rec)
+        assert "abc123dead" not in rec.getMessage()
+    finally:
+        lg.filters.clear()
+
+
 def test_redact_keeps_route_and_status():
     # 网关自身日志（方法/路径/异常类名）必须保持可读
     line = "上游不可达 GET /api/v1/triage (ConnectTimeout)"
     assert redact(line) == line
     line2 = "响应适配失败，已原样透传 POST /api/v1/doctors (KeyError)"
     assert redact(line2) == line2
+
+
+def test_access_log_file_on_disk_is_redacted_l11(tmp_path):
+    """L11 实测落盘：uvicorn.access 的 FileHandler 里不能出现 sig/expires 原值。"""
+    lg = logging.getLogger("uvicorn.access.l11-file")
+    lg.propagate = False
+    lg.setLevel(logging.INFO)
+    lg.handlers.clear()
+    log_path = tmp_path / "access.log"
+    fh = logging.FileHandler(log_path, encoding="utf-8")
+    lg.addHandler(fh)
+    install_redaction(lg)
+    try:
+        lg.info('%s - "%s %s HTTP/%s" %d', "127.0.0.1", "GET",
+                "/api/v1/attachments/abc.jpg?sig=deadbeefcafebabe&expires=1700000000",
+                "1.1", 200)
+    finally:
+        fh.flush()
+        fh.close()
+        lg.removeHandler(fh)
+        lg.filters.clear()
+    text = log_path.read_text(encoding="utf-8")
+    assert "deadbeefcafebabe" not in text
+    assert "1700000000" not in text
+    assert "sig=***" in text and "expires=***" in text
 
 
 def test_filter_scrubs_record():

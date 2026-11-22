@@ -166,6 +166,8 @@ start-all.bat                # 或 start-gui.bat 用面板单独启停
 本地模拟收银台（不写后端）；`APP_PAYMENT_MODE` 只能为 `DEMO`，填 `LIVE` 会启动即失败
 （当前无企业主体/商户号）。退费为**演示态**：订单置 `REFUNDED`，不调用微信退款、不触发
 clinic-his 退费（对端退费接口未在 openapi 暴露），页面固定标注“未发起真实退款”。
+退费成功即登记 `PENDING_SYNC` 外部对账台账：对账 job 每小时扫描，24h 内必须清零；
+超 24h 未回写 HIS 的差异需在 1 个工作日内人工闭环并记录处理结果。
 
 **个人主体演示兜底（2026-11-20）**
 
@@ -397,6 +399,33 @@ refresh token 本地 at-rest 加密（微信无应用级安全存储）、
 `DevSmsSender.lastCodes` 仅 dev 的内存明文（生产不可达，后续改测试注入）、
 ASR 上传魔数嗅探（L9）、SBOM（L6）、prod 档 JDBC 变量强制注入（L5）、
 M11/M13 的真机渲染与全局 `Page` 包装实测。
+
+### 2026-11-22 敌意安全审查（蓝军 2026-11-21）整改
+
+基线：`aiyiliao 敌意安全审查报告（蓝军，2026-11-21）`（P0×1、P2×5、P3×6）。
+完整复现证据、文件清单、测试命令、风险回滚与审批结论见
+`docs/安全整改_20261122_敌意审查闭环.md`。
+
+| 项 | 级别 | 状态 | 落地口径 |
+| --- | --- | --- | --- |
+| L1 急症漏报 | P0 | 已修复 | 唯一手写源 `shared/triage-redflags.json`（15 类 + 35 条金标准 + 16 条否定语料 + 6 条负样本），生成前端数据模块与服务端常量；否定语义统一为「6 字窗口 + gap≤2 + 无诱因/无原因豁免」；在线问诊 `safetyFor` 规则优先（AI 判 false 不得降级），轮询/幂等重放也返回 emergency=true |
+| L12 分诊评测门禁 | P0 关联 | 已修复 | `TriageRedFlagParityTest`（35 条召回 100% + 15 类逐类对齐 + 差分基线逐条比对）+ `EmergencySafetyIntegrationTest`（endpoint/建会话/追加/重放四链路，追加链路每条独立 session）+ CI 显式 Maven 门禁；前端 `gen --check` 校验三处产物、`test-consultation-safety` 校验 banners/120 渲染 |
+| L2 上传限流/孤儿 | P2 | 已修复 | 新增 upload 限流组（默认 20/min/主体，第 21 次 429；未认证 401）+ 孤儿清理任务（默认保留 24h，引用/新鲜/非法名不动，删除/失败计数入 `audit_events` 与日志）；引用查询已对齐真实表 `health_record_attachments.object_key/preview_object_key`、`health_articles.cover_key/video_key`，H2+Flyway 集成测试覆盖 |
+| L3 快照加密默认 | P2 | 代码/单测已修复；真实 compose 待执行 | `AI_STORE_REQUIRE_ENCRYPTION` 默认 true；缺 key 启动拒绝；`AI_DEPLOY_ENV=production` 禁止 opt-out、非生产 opt-out 打高危警告；示例 env 与 compose `${VAR:?}` 一致性有测试。真实 MySQL + docker-compose 启动自检因本机无 Docker 未执行，列为发布前必跑项 |
+| L4 种子默认口令 | P2 | 已修复（含存量库） | 种子口令来自 `CLINIC_SEED_PASSWORD` 或随机生成（仅首次打印一次）；`must_change=1`，未改密仅放行 me/password/logout，ADMIN 同样 403；存量库启动自动把「从未改密且 must_change=0」置 1（幂等 + 审计），合规自检不再误报 PASS |
+| L5 取消/退费对账 | P2 | 已修复（演示口径） | 取消先入 outbox 再撤销，失败指数退避至 DEAD；落单失败用独立事务保留补偿；退费即登记待同步台账，OPEN 差异无论时间窗口均回到对账视野。**SLA**：`PENDING_SYNC` 由对账 job 每小时扫描，24h 内必须清零；超 24h 未回写需人工在 1 个工作日内对账闭环并记录差异 |
+| L6 HIS mode | P2 | 已修复（含自定义 profile） | `mode` 无默认值，enabled=true 漏配拒绝启动；`MockHisClient` 仅非 prod 且 mode=mock 装配；启动自检改为「仅显式 dev/itest/test/prodtest 放行 mock」，staging/自定义/无 profile 一律拒绝；security-gate 增加 `APP_HIS_MODE=mock` 规则 |
+| L7 硬编码盐 | P3 | 已修复（接入查询路径） | `CLINIC_PATIENT_HASH_SALT` 所有环境缺失即拒启；迁移期 `..._LEGACY` + `patient_hash_candidates()` 双读；患者检索按证件号/完整手机号走 `id_hash`/`phone_hash` 精确匹配，换盐后老患者仍可搜到 |
+| L8 忽略/跟踪不一致 | P3 | 已修复 | `project.private.config.json` 已 `git rm --cached`（本地文件保留、未改写历史）；`.gitignore` 第 87 行忽略；CI 增加“禁止跟踪 IDE 私有配置”步骤；删除已进入本轮合并 commit |
+| L9 历史本地口令 | P3 | 决策完成 | `478c0eb` 的 `local_root` 是本地 compose 历史残留；当前 compose 敏感口令已改 `${VAR:?}` 且不发布 DB/业务/AI 端口。**决定不执行 `filter-repo`**（改写历史会破坏验收证据与 clone 一致性）；把该值视为已泄露，曾运行旧 compose 的本机 MySQL 口令必须轮换，轮换记录见本轮整改报告 |
+| L10 登录限速内存 | P3 | 已修复 | 全表过期清理 + 10000 IP 上限，按最近活动淘汰；测试覆盖 12000 个来源 IP 经公开检查接口后字典不超过上限 |
+| L11 access log 签名 | P3 | 已修复（可扩展） | `redact` 改为「敏感词族」匹配（sig/signature/expires/token/secret/key/nonce/auth），新增 `X-Amz-Signature`/`api_key` 等无需改代码；`uvicorn.access`（propagate=False）显式挂 filter；新增实际落盘断言 |
+
+**P3 结构改进（全部入 CI）**
+- 医疗规则单一事实源：`shared/triage-redflags.json` 生成前端/服务端/评测样本，`node tools/gen-triage-flags.js --check` 阻断漂移。
+- 配置模板一致性：`node tools/test-config-examples.js` 校验 compose 引用的变量都在 `.env.example`，且 AI 加密开关/密钥模板与 compose 一致。
+- 安全默认值回归：`node tools/test-security-defaults.js` 用合成样例证明 `matchIfMissing=true`、默认口令、`mode: mock` 规则会命中；`security-gate.js` 仍在每次 CI 阻断。
+- clinic-his 已纳入 CI：`python -m unittest discover -s tests`（L4 种子口令/首登改密、L7 盐、L10 限速内存）。
 
 ### 本地联调档（`env.local.js`，不入库）
 

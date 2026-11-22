@@ -14,7 +14,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,6 +51,7 @@ public class PaymentService {
     private final PaymentSettings settings;
     private final PaymentDemoSigner signer;
     private final HisClient hisClient;
+    private final HisReconcileDiffRepository reconciliation;
     private final Clock clock;
     private final AtomicInteger sequence = new AtomicInteger();
 
@@ -55,12 +60,14 @@ public class PaymentService {
                           PaymentSettings settings,
                           PaymentDemoSigner signer,
                           HisClient hisClient,
+                          HisReconcileDiffRepository reconciliation,
                           Clock clock) {
         this.appointmentRepository = appointmentRepository;
         this.orderRepository = orderRepository;
         this.settings = settings;
         this.signer = signer;
         this.hisClient = hisClient;
+        this.reconciliation = reconciliation;
         this.clock = clock;
     }
 
@@ -257,30 +264,71 @@ public class PaymentService {
         if (updated == 0 && !"REFUNDED".equals(next.status())) {
             throw new ApiException("PAYMENT_REFUND_CONFLICT", HttpStatus.CONFLICT, "订单状态已变化，请刷新后重试");
         }
-        log.info("演示退费完成 order={} amount={} channel=LOCAL_DEMO（未触发真实退款）",
+        // L5（2026-11-22）：clinic-his 未在 openapi 暴露退费接口，不能假装已联动。
+        // 退费成功即落一条 OPEN 待同步台账（同事务：台账写不进则退费回滚），
+        // 由 reconcile 把「HIS 仍 PAID」的订单拉回视野并可自动 RESOLVED。
+        reconciliation.recordOpen("PAYMENT", orderNo, "REFUNDED", "PENDING_SYNC",
+                "演示退费待回写 HIS（clinic-his 未提供退费接口）");
+        log.info("演示退费完成 order={} amount={} channel=LOCAL_DEMO，已登记 HIS 待同步台账",
                 orderNo, row.amount());
         return toData(next);
     }
 
-    /** 对账：本地 PAID 与 HIS 演示账单状态逐一比对，不一致只告警不自动改账。 */
+    /**
+     * 对账（L5，2026-11-22 扩展）：PAID + REFUNDED 都在视野内，差异落台账。
+     *
+     * <ul>
+     *   <li>PAID：要求 HIS 同单号且 PAID、金额一致；</li>
+     *   <li>REFUNDED：要求 HIS 已非 PAID（演示退费不调 HIS，若仍 PAID 即“退费未回写”差异）；</li>
+     *   <li>查询失败记 UNKNOWN 差异（不掩盖、不误判一致）；</li>
+     *   <li>恢复一致时自动把差异置 RESOLVED（台账可闭环）；只告警不自动改账。</li>
+     * </ul>
+     */
     public int reconcile(Instant since) {
         if (!settings.enabled()) {
             return 0;
         }
+        List<PaymentOrderRow> rows = new ArrayList<>(orderRepository.listReconcilableSince(since));
+        Set<String> seen = new HashSet<>();
+        rows.forEach(row -> seen.add(row.orderNo()));
+        // L5 扩展：OPEN 台账里的订单无论是否落在时间窗口内都要回到视野，
+        // 否则「退费待同步」开了台账却永远不会被再次检查。
+        for (String orderNo : reconciliation.listOpenBizIds("PAYMENT")) {
+            if (seen.add(orderNo)) {
+                orderRepository.findByOrderNo(orderNo).ifPresent(rows::add);
+            }
+        }
         int mismatches = 0;
-        for (PaymentOrderRow row : orderRepository.listPaidSince(since)) {
+        int resolved = 0;
+        for (PaymentOrderRow row : rows) {
+            boolean refunded = "REFUNDED".equals(row.status());
             try {
                 HisChargeResult his = hisClient.queryDemoCharge(row.chargeNo());
-                if (!"PAID".equals(his.status()) || his.amount().compareTo(row.amount()) != 0) {
-                    mismatches++;
-                    log.warn("支付对账不一致 order={} charge={} local={}/{} his={}/{}",
-                            row.orderNo(), row.chargeNo(), row.status(), row.amount(), his.status(), his.amount());
+                boolean statusOk = refunded
+                        ? !"PAID".equals(his.status())
+                        : "PAID".equals(his.status());
+                boolean amountOk = his.amount() != null && his.amount().compareTo(row.amount()) == 0;
+                if (statusOk && amountOk) {
+                    if (reconciliation.resolve("PAYMENT", row.orderNo()) > 0) {
+                        resolved++;
+                    }
+                    continue;
                 }
+                mismatches++;
+                String detail = "local=" + row.status() + "/" + row.amount()
+                        + " his=" + his.status() + "/" + his.amount()
+                        + (refunded && "PAID".equals(his.status()) ? "；演示退费未回写 HIS" : "");
+                reconciliation.recordOpen("PAYMENT", row.orderNo(), row.status(), his.status(), detail);
+                log.warn("支付对账不一致 order={} charge={} {}", row.orderNo(), row.chargeNo(), detail);
             } catch (RuntimeException e) {
                 mismatches++;
+                reconciliation.recordOpen("PAYMENT", row.orderNo(), row.status(), "UNKNOWN",
+                        "查询失败: " + e.getMessage());
                 log.warn("支付对账查询失败 order={} charge={}：{}", row.orderNo(), row.chargeNo(), e.getMessage());
             }
         }
+        log.info("支付对账完成 since={} scanned={} mismatches={} resolved={}",
+                since, rows.size(), mismatches, resolved);
         return mismatches;
     }
 

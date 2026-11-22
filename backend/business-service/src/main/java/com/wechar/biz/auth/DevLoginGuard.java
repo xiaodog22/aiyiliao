@@ -52,7 +52,8 @@ public class DevLoginGuard {
      * 可用 {@code app.auth.dev-login.revoked-keys}（逗号分隔）追加。</p>
      */
     static final String DEFAULT_REVOKED_KEYS =
-            "wb-devlogin-21cbddfc3b21990d6df374f6fa3f92cc,wb-devlogin-281819dbbf8ade34e27ac5fb04ce48a6";
+            "wb-devlogin-21cbddfc3b21990d6df374f6fa3f92cc,wb-devlogin-281819dbbf8ade34e27ac5fb04ce48a6,"
+                    + "wb-devlogin-e6a98a5b0c2712b344b077d87eb29035";
 
     private static final Logger log = LoggerFactory.getLogger(DevLoginGuard.class);
 

@@ -77,10 +77,17 @@ public class PaymentOrderRepository {
                 safe, Timestamp.from(Instant.now()), orderNo);
     }
 
-    public List<PaymentOrderRow> listPaidSince(Instant since) {
-        return jdbc.query("SELECT * FROM payment_orders WHERE status = 'PAID' AND paid_at >= ? "
-                        + "ORDER BY paid_at DESC LIMIT 200",
-                PaymentOrderRepository::mapRow, Timestamp.from(since));
+    /**
+     * 对账视野（L5）：PAID + REFUNDED 两类都纳入。
+     *
+     * <p>原实现只查 PAID，退费后订单直接退出对账视野，HIS 侧账单恒 PAID 却无人发现。
+     * 窗口按各自最近状态时间判定：PAID 看 paid_at，REFUNDED 看 refunded_at。
+     */
+    public List<PaymentOrderRow> listReconcilableSince(Instant since) {
+        return jdbc.query("SELECT * FROM payment_orders WHERE "
+                        + "(status = 'PAID' AND paid_at >= ?) OR (status = 'REFUNDED' AND refunded_at >= ?) "
+                        + "ORDER BY updated_at DESC LIMIT 200",
+                PaymentOrderRepository::mapRow, Timestamp.from(since), Timestamp.from(since));
     }
 
     private Optional<PaymentOrderRow> one(String sql, Object... args) {

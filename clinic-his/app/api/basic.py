@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import json
+import re
 
 from .. import db, security
 from ..errors import ApiError, conflict, not_found
 from .common import (as_int, as_list, as_str, one_of, pagination, parse_date,
                      require_fields)
+
+# L7（2026-11-23）：患者主索引支持用证件号/手机号精确检索。
+# 落库只存加盐哈希（不可逆），因此查询必须走 patient_hash_candidates()：
+# 迁移期同时接受新盐与旧盐哈希，换盐不会导致老患者搜不到（D-07 收口）。
+_PHONE_RE = re.compile(r"^1[3-9]\d{9}$")
+_ID_CARD_RE = re.compile(r"^\d{17}[\dXx]$")
 
 
 # ---------------------------------------------------------------- 科室
@@ -237,9 +244,20 @@ def list_patients(ctx):
     limit, _ = pagination({"limit": ctx.q("limit") or "50"})
     if keyword:
         like = f"%{keyword}%"
+        clauses = ["name LIKE ?", "mrn LIKE ?", "phone_mask LIKE ?"]
+        params = [like, like, like]
+        if _PHONE_RE.match(keyword) or _ID_CARD_RE.match(keyword):
+            hashes = security.patient_hash_candidates(keyword)
+            if hashes:
+                marks = ",".join("?" * len(hashes))
+                clauses.append(f"id_hash IN ({marks})")
+                params.extend(hashes)
+                clauses.append(f"phone_hash IN ({marks})")
+                params.extend(hashes)
+        params.append(limit)
         rows = db.query(
-            "SELECT * FROM patients WHERE name LIKE ? OR mrn LIKE ? OR phone_mask LIKE ? "
-            "ORDER BY id DESC LIMIT ?", (like, like, like, limit))
+            "SELECT * FROM patients WHERE " + " OR ".join(clauses)
+            + " ORDER BY id DESC LIMIT ?", tuple(params))
     else:
         rows = db.query("SELECT * FROM patients ORDER BY id DESC LIMIT ?", (limit,))
     return [_patient_brief(r) for r in rows]

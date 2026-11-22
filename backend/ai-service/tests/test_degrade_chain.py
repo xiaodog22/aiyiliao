@@ -268,6 +268,16 @@ def test_invalid_store_encryption_key_rejected_at_startup(tmp_path):
         settings.validate_security()
 
 
+def test_store_require_encryption_defaults_true(monkeypatch, tmp_path):
+    """L3：环境未显式关闭时必须默认加密（fail-closed），缺 key 拒绝启动。"""
+    monkeypatch.delenv("AI_STORE_REQUIRE_ENCRYPTION", raising=False)
+    monkeypatch.delenv("AI_STORE_ENCRYPTION_KEY", raising=False)
+    settings = _settings(tmp_path)
+    assert settings.store_require_encryption is True, "默认值必须为 true（原默认 false 属 fail-open）"
+    with pytest.raises(RuntimeError, match="AI_STORE_REQUIRE_ENCRYPTION"):
+        settings.validate_security()
+
+
 def test_store_encryption_required_but_missing_key_rejected(tmp_path):
     """F-03：生产置 AI_STORE_REQUIRE_ENCRYPTION=true 时，缺 key 必须拒绝启动。"""
     settings = _settings(tmp_path, store_require_encryption=True)

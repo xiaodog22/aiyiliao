@@ -8,7 +8,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * 演示支付对账（P0-1 步骤 6）：近 24h 本地 PAID 与 HIS 演示账单逐一比对。
+ * 演示支付对账（P0-1 步骤 6；L5 2026-11-22 扩展）：近 24h PAID + REFUNDED，
+ * 以及所有仍为 OPEN 的待同步订单（含超出时间窗口的退费）逐一比对。
  *
  * <p>只告警不自动改账：对账不是状态机，不允许把 HIS 的失败反过来覆盖本地已入账记录；
  * 发现不一致由人工按 orderNo/chargeNo 核查。支付未开启时任务空转。

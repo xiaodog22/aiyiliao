@@ -123,7 +123,10 @@ app:
   #   接真实院方且完成评审后才可置 false（走 HIS_LIVE）。
   his:
     enabled: ${APP_HIS_ENABLED:false}
-    mode: ${APP_HIS_MODE:mock}
+    # fail-closed（L6）：**不声明 mode 属性**（缺省即"未接入"，由 DisabledHisClient 兜底）。
+    # 注意不要写成 `mode: ${APP_HIS_MODE:}`：空字符串属性在 Spring 里仍算"存在"，
+    # 会让 DisabledHisClient 的 matchIfMissing 失效（matchIfMissing 只在属性完全缺失时生效）。
+    # enabled=true 时必须显式 APP_HIS_MODE=mock|http，漏配在 HisGateway 构造器拒绝启动。
     http:
       base-url: ${APP_HIS_HTTP_BASE_URL:http://127.0.0.1:8310}
       app-id: ${APP_HIS_HTTP_APP_ID:wechar-mini}
@@ -153,6 +156,11 @@ app:
     url-ttl-seconds: ${APP_ATTACHMENT_URL_TTL_SECONDS:900}
     # 视频签名 TTL（秒），默认 2 小时（覆盖停留 + 完整播放 + 拖动；过期拖动会 403）
     video-ttl-seconds: ${APP_ATTACHMENT_VIDEO_TTL_SECONDS:7200}
+    # 孤儿附件清理（L2）：上传后未被档案/报告/问诊引用的文件，超过保留期自动删除。
+    # retention<=0 或 cleanup-enabled=false 关闭；生产不建议关闭（磁盘会无限增长）。
+    cleanup-enabled: ${APP_ATTACHMENT_CLEANUP_ENABLED:true}
+    orphan-retention-hours: ${APP_ATTACHMENT_ORPHAN_RETENTION_HOURS:24}
+    cleanup-interval-ms: ${APP_ATTACHMENT_CLEANUP_INTERVAL_MS:3600000}
   # 审计（M4，docs/v4/03 §39）：只追加 audit_events；写操作全记录、只读仅记非 2xx。
   # 不记录请求/响应正文（天然不含健康内容）；关闭用 APP_AUDIT_ENABLED=false。
   audit:
@@ -190,6 +198,8 @@ app:
     window-seconds: ${APP_RATE_LIMIT_WINDOW:60}
     login-per-window: ${APP_RATE_LIMIT_LOGIN:30}
     submit-per-window: ${APP_RATE_LIMIT_SUBMIT:60}
+    # 附件上传独立配额（L2）：默认 20 次/分/主体，超限 429
+    upload-per-window: ${APP_RATE_LIMIT_UPLOAD:20}
   # 短信验证码（N9/N8，2026-10-19）：验证码只存 SHA-256，明文不入日志、不回响应。
   # provider：dev = 落库 + 脱敏日志（默认，供本地/集成测试）；prod = 生产档占位，
   #   真实网关接入前如实 503 SMS_UNAVAILABLE（不伪造发送成功）。

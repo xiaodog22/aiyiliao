@@ -182,3 +182,30 @@ CORS 只在 WebView / H5 调试台里才生效（`GW_CORS_ALLOW_ORIGINS` 显式�
 | AI 只出规则结果 | `AI_DEEPSEEK_API_KEY` 未配 + 云上连不到 Ollama |
 | 资源清单 `url` 为 null | `APP_RESOURCES_PUBLIC_BASE_URL` 未配（前端行为见第 5 节，不等于全走包内） |
 | 上传 1MB 以上报错 | `spring.servlet.multipart` 已在本仓库放宽到 50MB/55MB；若仍失败，检查控制台是否覆盖了 `MULTIPART_*` |
+
+---
+
+## 10. 发布前必跑：真实 MySQL + docker-compose 启动自检（L3，2026-11-23）
+
+> 本机当前无 Docker CLI，本节**未在开发机执行**；发布流水线/有 Docker 的机器必须补跑并留输出。
+> 单测已覆盖同等逻辑（`backend/ai-service/tests/test_store_security.py` 5 项），但 CI 不能替代真实容器。
+
+```bash
+cd backend
+# 1) 缺 AI_STORE_ENCRYPTION_KEY：ai-service 必须拒绝启动（compose 用 ${VAR:?} 直接报错）
+env -u AI_STORE_ENCRYPTION_KEY docker compose --env-file deploy/.env.local up -d ai-service
+docker compose logs ai-service | grep -E "AI_STORE_ENCRYPTION_KEY|拒绝启动"   # 期望非 0 退出/明确报错
+docker compose down
+
+# 2) 注入 key 后启动：tasks.json 不得有明文 PHI，且重启后可回读
+export AI_STORE_ENCRYPTION_KEY="$(python -c 'from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())')"
+docker compose --env-file deploy/.env.local up -d
+curl -fsS http://127.0.0.1:8080/api/gw/health
+# 造一条含“胸痛/120”的 ai task 后：
+docker compose exec ai-service sh -c 'grep -E "胸痛|120" /app/runtime/tasks.json' && exit 1 || echo "NO_PLAINTEXT_PHI_OK"
+docker compose restart ai-service
+curl -fsS http://127.0.0.1:8080/api/gw/health
+docker compose down
+```
+
+验收记录必须包含：两次启动的退出码、`tasks.json` 密文标记 `__fernet_input_v1__`、重启后任务可读、日志无明文 PHI。

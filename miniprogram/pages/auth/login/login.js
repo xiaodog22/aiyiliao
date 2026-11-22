@@ -29,7 +29,7 @@ const session = require('../../../services/session.js')
 const ENV = require('../../../config/env.js')
 const resource = require('../../../services/resource.js')
 
-// 个人主体演示登录：必须落在后端 dev 档预置手机号白名单内（13800138001/13900139001），
+// 个人主体演示登录：必须落在后端 dev 档预置手机号白名单内（见 env.local.js 说明），
 // 不采集真实手机号，也不触发 getPhoneNumber。生产构建不会走到这里。
 const DEMO_PHONE = '13800138001'
 const DEMO_PHONE_MASK = '138****8001'

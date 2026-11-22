@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 /**
@@ -26,7 +27,9 @@ import org.springframework.stereotype.Component;
  * {@code HIS-MOCK-CHG-} 前缀；不是真实收费凭证，不落任何支付表。
  */
 @Component
-@ConditionalOnProperty(name = "app.his.mode", havingValue = "mock", matchIfMissing = true)
+// L6 细化（2026-11-22）：生产 profile 一律不装配 mock，即使误配 mode=mock 也不会生效。
+@Profile("!prod")
+@ConditionalOnProperty(name = "app.his.mode", havingValue = "mock")
 public class MockHisClient implements HisClient {
 
     private static final Logger log = LoggerFactory.getLogger(MockHisClient.class);

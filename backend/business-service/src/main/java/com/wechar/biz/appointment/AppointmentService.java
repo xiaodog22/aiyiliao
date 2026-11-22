@@ -5,6 +5,7 @@ import com.wechar.biz.appointment.dto.AppointmentData;
 import com.wechar.biz.appointment.dto.AppointmentStatsData;
 import com.wechar.biz.appointment.dto.AppointmentUpdateRequest;
 import com.wechar.biz.appointment.dto.CreateResult;
+import com.wechar.biz.appointment.his.HisCancelTaskRepository;
 import com.wechar.biz.appointment.his.HisClient;
 import com.wechar.biz.appointment.his.HisGateway;
 import com.wechar.biz.catalog.CatalogRepository;
@@ -20,6 +21,8 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +38,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AppointmentService {
 
+    private static final Logger log = LoggerFactory.getLogger(AppointmentService.class);
+
     /** 消息体时间展示（Asia/Shanghai，与 home 问候同一时区口径）。 */
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
     private static final DateTimeFormatter DAY_TIME = DateTimeFormatter.ofPattern("M月d日HH:mm");
@@ -45,17 +50,20 @@ public class AppointmentService {
     private final MessageService messageService;
     private final FamilyProxyGuard proxyGuard;
     private final HisGateway hisGateway;
+    private final HisCancelTaskRepository cancelTasks;
     private final Clock clock;
 
     public AppointmentService(AppointmentRepository repository, CatalogRepository catalog,
                               PhoneCrypto phoneCrypto, MessageService messageService,
-                              FamilyProxyGuard proxyGuard, HisGateway hisGateway, Clock clock) {
+                              FamilyProxyGuard proxyGuard, HisGateway hisGateway,
+                              HisCancelTaskRepository cancelTasks, Clock clock) {
         this.repository = repository;
         this.catalog = catalog;
         this.phoneCrypto = phoneCrypto;
         this.messageService = messageService;
         this.proxyGuard = proxyGuard;
         this.hisGateway = hisGateway;
+        this.cancelTasks = cancelTasks;
         this.clock = clock;
     }
 
@@ -150,9 +158,20 @@ public class AppointmentService {
                     queueNo, null, idempotencyKey, digest, 1, now, null,
                     his.hisOrderNo(), his.source()), location, hospitalName);
         } catch (RuntimeException e) {
-            // 本地落单失败 → 尽力撤销已受理的 HIS 单，避免「院内有单、平台无单」；
-            // 补偿自身失败只记日志（cancelQuietly），不改变本次失败的结论。
-            hisGateway.cancelQuietly(his.hisOrderNo(), "local insert failed");
+            // 本地落单失败 → 尽力撤销已受理的 HIS 单，避免「院内有单、平台无单」。
+            // L5（2026-11-22）：外层事务必然回滚，因此用独立事务先落 outbox；
+            // 入队成功即由 HisCancelRetryJob 负责重试，不再依赖一次性 cancelQuietly 日志。
+            if (hisGateway.enabled() && his.hisOrderNo() != null && !his.hisOrderNo().isBlank()) {
+                try {
+                    cancelTasks.enqueueIndependent(id, his.hisOrderNo(), "local insert failed", Instant.now());
+                    log.error("本地落单失败，已登记 HIS 撤销补偿（独立事务）appointment={} hisOrderNo={}",
+                            id, his.hisOrderNo());
+                } catch (RuntimeException compensationFailure) {
+                    hisGateway.cancelQuietly(his.hisOrderNo(), "local insert failed + outbox failure");
+                    log.error("本地落单失败且补偿入队失败，已尝试同步撤销 appointment={} hisOrderNo={}：{}",
+                            id, his.hisOrderNo(), compensationFailure.getMessage(), compensationFailure);
+                }
+            }
             throw e;
         }
 
@@ -312,9 +331,17 @@ public class AppointmentService {
         // 过期/关闭的号源本就不可再约，不回补）。同一事务，失败整体回滚。
         repository.releaseSlotRemaining(row.slotId());
         // 2026-11-21（HIS 默认接通）：取消必须联动撤销院内受理单，否则「平台已取消、医院仍有单」。
-        // 撤销失败只记日志（cancelQuietly 语义），不得把已成功的本地取消回滚成失败。
-        hisGateway.cancelQuietly(row.hisOrderNo(),
-                cancelReason == null || cancelReason.isBlank() ? "patient cancelled" : cancelReason);
+        // 敌意审查 L5（2026-11-22）：撤销失败不能只 log.warn（进程重启即丢失线索）。
+        //   · 本地取消事务内**先入队** outbox（写库失败 → 整体回滚，不允许「取消成功但无补偿记录」）；
+        //   · 再尝试一次撤销，成功立即置 DONE；失败由定时任务指数退避重试，达上限转 DEAD。
+        if (hisGateway.enabled() && row.hisOrderNo() != null && !row.hisOrderNo().isBlank()) {
+            String hisReason = cancelReason == null || cancelReason.isBlank()
+                    ? "patient cancelled" : cancelReason;
+            cancelTasks.enqueue(appointmentId, row.hisOrderNo(), hisReason, clock.instant());
+            if (hisGateway.cancelAttempt(row.hisOrderNo(), hisReason)) {
+                cancelTasks.markDone(appointmentId);
+            }
+        }
         return new CancelResult(toData(repository.findViewById(appointmentId).orElseThrow(), null), true);
     }
 

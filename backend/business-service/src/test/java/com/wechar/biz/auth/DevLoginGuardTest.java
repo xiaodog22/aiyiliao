@@ -96,4 +96,13 @@ class DevLoginGuardTest {
         ApiException e = assertThrows(ApiException.class, () -> guard.assertAllowed("login"));
         assertEquals("DEV_LOGIN_FORBIDDEN", e.getCode());
     }
+
+    @Test
+    void 本地已轮换旧钥同样在撤销名单内() {
+        // 复审 P3：本地 ignored 的 e6a9… 已撤销；留在任何环境都不再具备登录能力
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> new DevLoginGuard(true, "wb-devlogin-e6a98a5b0c2712b344b077d87eb29035",
+                        DevLoginGuard.DEFAULT_REVOKED_KEYS));
+        assertTrue(e.getMessage().contains("已泄露"));
+    }
 }

@@ -60,6 +60,9 @@ def create_app(settings: Optional[GateSettings] = None) -> FastAPI:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     redact.install_redaction()  # D4.2：日志脱敏（防原文/凭据落盘）
+    # L11（2026-11-22）：uvicorn.access 默认 propagate=False，必须单独挂；
+    # lifespan 内再挂一次（uvicorn 启动时会重建该 logger 的 handler）。
+    redact.install_redaction(logging.getLogger("uvicorn.access"))
     # 逐请求日志是性能杀手，但**启动诊断必须留**（2026-11-01 PERF-03/04）。
     # 踩过的坑：把 root 设成 WARNING 会连 uvicorn 启动横幅、网关自身启动行一起吞掉，
     # 运维看不到「服务起来了 / 限流开没开」。所以只在 log_per_request=False 时
@@ -73,6 +76,7 @@ def create_app(settings: Optional[GateSettings] = None) -> FastAPI:
         # 运行时依赖自检（PERF-07 衍生）：sniffio 缺失会让 anyio 每次调用重扫 sys.path，
         # 实测吃掉 48.6% CPU，而 pip check 查不出来（可选依赖无人声明）。只告警，不阻截启动。
         preflight.run_startup_check()
+        redact.install_redaction(logging.getLogger("uvicorn.access"))  # uvicorn 配置完成后补挂（幂等）
         app.state.http = httpx.AsyncClient(
             trust_env=False,  # 本地/内网上游不得走环境代理（HTTP_PROXY/ALL_PROXY）
             timeout=httpx.Timeout(

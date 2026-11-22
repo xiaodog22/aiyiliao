@@ -77,6 +77,8 @@ services:
       AI_DEEPSEEK_BASE_URL: ${AI_DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       AI_DEEPSEEK_MODEL: ${AI_DEEPSEEK_MODEL:-deepseek-flash}
       AI_STORE_PATH: /app/runtime/tasks.json
+      # L3：部署档位仅用于安全自检；production 下关闭加密会直接拒启。
+      AI_DEPLOY_ENV: ${AI_DEPLOY_ENV:-dev}
       # 审计 M2：任务 result 正文静态加密；Fernet URL-safe base64 32 字节
       AI_STORE_ENCRYPTION_KEY: ${AI_STORE_ENCRYPTION_KEY:?必须注入 AI_STORE_ENCRYPTION_KEY（Fernet key）}
       # 审计 F-03：活动任务的 inputInline 也必须加密；缺 key 直接拒绝启动

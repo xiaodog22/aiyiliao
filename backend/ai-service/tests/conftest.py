@@ -20,6 +20,10 @@ os.environ.setdefault("AI_SERVICE_TOKEN", "test-token-0123456789abcdef0123456789
 # 审计 H10：生产默认 AI_EGRESS_POLICY=domestic，会硬否决 DeepSeek/edge-tts 等外部 provider。
 # 本套件专门验证云端降级链，测试进程统一显式 allow；生产默认值仍由 config.py 保持 domestic。
 os.environ.setdefault("AI_EGRESS_POLICY", "allow")
+# L3（2026-11-22）：快照加密默认已改为 true（fail-closed）。测试进程不含真实 PHI，
+# 显式关闭，否则 import app.main 时 create_app().validate_security() 会拒绝启动。
+# 生产/预发不得设置该项为 false。具体默认值行为由 test_degrade_chain 单独断言。
+os.environ.setdefault("AI_STORE_REQUIRE_ENCRYPTION", "false")
 
 from app.config import Settings  # noqa: E402
 from app.main import create_app  # noqa: E402

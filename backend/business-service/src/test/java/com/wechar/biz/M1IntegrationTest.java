@@ -428,7 +428,7 @@ class M1IntegrationTest {
                         .content("{\"text\":\"突然昏迷不醒\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.emergency").value(true))
-                .andExpect(jsonPath("$.data.matchedRules[0]").value("coma"));
+                .andExpect(jsonPath("$.data.matchedRules[0]").value("consciousness"));
 
         mockMvc.perform(post("/api/v1/triage/emergency-checks")
                         .contentType(MediaType.APPLICATION_JSON)

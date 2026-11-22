@@ -37,13 +37,27 @@ jobs:
         with:
           node-version: "22"
       # 阻断模式：命中 P0/P1 即非零退出。规则见 tools/security-gate.js
-      - name: 全仓敏感信息与危险默认配置
+      # 含 L6 危险默认：HIS 配置 mode=mock、任意 matchIfMissing=true（SMS/HIS fail-open）。
+      - name: 全仓敏感信息与危险默认配置（L6 门禁）
         run: node tools/security-gate.js
+      # P3：用合成样例证明 fail-open / 默认口令 / mock 默认规则确实会命中。
+      - name: 安全默认值规则回归（H1/M10/L6）
+        run: node tools/test-security-defaults.js
+      # P3：docker-compose 引用的变量必须在 .env.example 声明，AI 加密模板与 compose 口径一致。
+      - name: 配置模板与 compose 一致性
+        run: node tools/test-config-examples.js
       # 额外守卫：禁止把 env.local / 生产 .env 提交进仓库（允许 example/template）
       - name: 禁止提交本地环境覆盖文件
         run: |
           if git ls-files | grep -E '(^|/)(env\.local\.js|\.env\.local|\.env\.production)$'; then
             echo '::error::本地/生产环境覆盖文件不得入库（H9）'
+            exit 1
+          fi
+      # P3 L8：IDE 私有配置只保留在工作区，不能重新被 git add。
+      - name: 禁止跟踪 IDE 私有配置
+        run: |
+          if git ls-files | grep -E '^miniprogram/project\.private\.config\.json$'; then
+            echo '::error::project.private.config.json 不得入库（L8）'
             exit 1
           fi
 
@@ -69,8 +83,14 @@ jobs:
         run: |
           node tools/test-fe.js
           node tools/test-triage.js
+      - name: 在线问诊 safety 契约（服务端 safety → 急救横幅/120）
+        run: node tools/test-consultation-safety.js
       - name: 导诊 golden set（红旗召回必须 100%）
         run: node tools/eval-triage.js
+      # 2026-11-22 L12：急症词表唯一手写源 shared/triage-redflags.json，
+      # 禁止只改源不生成（前端数据模块 / 服务端常量 / golden 样本三处必须一致）
+      - name: 急症词表单一事实源一致性（shared → 三处产物）
+        run: node tools/gen-triage-flags.js --check
 
   java:
     name: Java 单元/契约/集成（H2）
@@ -97,11 +117,36 @@ jobs:
           mkdir -p backend/deploy/resources
           cp backend/deploy/resources-seed/*.mp4 backend/deploy/resources/
           python tools/resource-import.py --write
+      # 2026-11-22 P0/L12：服务端分诊金标准显式门禁（失败即阻断）。
+      # TriageRedFlagParityTest 直接调 TriageRuleEngine.scanText 跑 29 条红旗 +
+      # negativeCases 防误报；EmergencySafetyIntegrationTest 覆盖 endpoint / 建会话 /
+      # 追加消息 / 幂等重放（safetyFor）四条链路，9 类急症必须全部 emergency=true。
+      - name: 服务端分诊金标准（P0 门禁，失败即阻断）
+        working-directory: backend/business-service
+        run: |
+          chmod +x mvnw
+          ./mvnw -B -Dtest=TriageRedFlagParityTest,EmergencySafetyIntegrationTest -DfailIfNoTests=false test
       - name: mvnw test
         working-directory: backend/business-service
         run: |
           chmod +x mvnw
           ./mvnw -B test
+
+  clinic-his:
+    name: clinic-his 安全回归（L4/L7/L10）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLINIC_ENV: test
+      CLINIC_PATIENT_HASH_SALT: ci-test-patient-hash-salt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: unittest
+        working-directory: clinic-his
+        run: python -m unittest discover -s tests -p "test_*.py" -v
 
   gateway:
     name: 网关 pytest

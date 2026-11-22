@@ -5,11 +5,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 APP_VERSION = "0.1.0-m3"
+
+logger = logging.getLogger("ai-service.config")
 
 _SERVICE_DIR = Path(__file__).resolve().parent.parent
 
@@ -146,11 +149,15 @@ class Settings:
     store_encryption_key: str = field(
         default_factory=lambda: _env("AI_STORE_ENCRYPTION_KEY", "")
     )
-    # 审计 F-03（2026-11-19）：生产强制“快照必须加密”。compose/云部署置 true：
-    # 缺 key 直接拒绝启动，避免运维漏配后退化成明文 PHI。
+    # 审计 F-03（2026-11-19）/ 敌意审查 L3（2026-11-22）：
+    # **fail-closed**：默认 true，缺 key 直接拒绝启动，绝不静默退化成明文 PHI。
+    # 仅 dev/itest 可显式设 AI_STORE_REQUIRE_ENCRYPTION=false（须自担风险并写进环境说明）。
     store_require_encryption: bool = field(
-        default_factory=lambda: _env_bool("AI_STORE_REQUIRE_ENCRYPTION", False)
+        default_factory=lambda: _env_bool("AI_STORE_REQUIRE_ENCRYPTION", True)
     )
+    # L3（2026-11-22）：部署档位仅用于安全自检，不参与业务路由。
+    # 生产（prod/production）不允许显式关闭加密；非生产关闭时必须打印高危警告。
+    deployment_env: str = field(default_factory=lambda: _env("AI_DEPLOY_ENV", "dev"))
     result_ttl_seconds: int = field(default_factory=lambda: int(_env("AI_RESULT_TTL_SECONDS", "3600")))
     task_timeout_seconds: int = field(default_factory=lambda: int(_env("AI_TASK_TIMEOUT_SECONDS", "300")))
     queue_max: int = field(default_factory=lambda: int(_env("AI_QUEUE_MAX", "100")))
@@ -371,6 +378,14 @@ class Settings:
             raise RuntimeError("AI_TTS_MAX_DISK_MB 不得为负")
         if int(self.tts_tenant_per_minute) < 0 or int(self.tts_tenant_per_day) < 0:
             raise RuntimeError("AI_TTS_TENANT_PER_MINUTE / AI_TTS_TENANT_PER_DAY 不得为负")
+        deploy_env = (self.deployment_env or "dev").strip().lower()
+        if not self.store_require_encryption:
+            if deploy_env in ("prod", "production"):
+                raise RuntimeError(
+                    "AI_DEPLOY_ENV=production 时禁止 AI_STORE_REQUIRE_ENCRYPTION=false（PHI 必须静态加密）")
+            logger.warning(
+                "高危：AI_STORE_REQUIRE_ENCRYPTION=false，任务快照中的病情/结果将以明文落盘；"
+                "仅限非生产环境（当前 AI_DEPLOY_ENV=%s）", deploy_env)
         if self.store_require_encryption and not (self.store_encryption_key or "").strip():
             raise RuntimeError("AI_STORE_REQUIRE_ENCRYPTION=true 但未配置 AI_STORE_ENCRYPTION_KEY，拒绝启动")
         if (self.store_encryption_key or "").strip():

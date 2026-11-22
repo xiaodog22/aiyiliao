@@ -57,6 +57,7 @@ class PaymentServiceTest {
     @Mock private AppointmentRepository appointments;
     @Mock private PaymentOrderRepository orders;
     @Mock private HisClient hisClient;
+    @Mock private HisReconcileDiffRepository reconciliation;
 
     private PaymentSettings settings;
     private PaymentDemoSigner signer;
@@ -66,7 +67,7 @@ class PaymentServiceTest {
     void setUp() {
         settings = new PaymentSettings(true, "DEMO", "DEMO", "demo-secret-0123456789", 300);
         signer = new PaymentDemoSigner(settings);
-        service = new PaymentService(appointments, orders, settings, signer, hisClient,
+        service = new PaymentService(appointments, orders, settings, signer, hisClient, reconciliation,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -98,7 +99,7 @@ class PaymentServiceTest {
     void 未开启支付_建单直接拒绝() {
         PaymentSettings disabled = new PaymentSettings(false, "DEMO", "DEMO", "", 300);
         PaymentService disabledService = new PaymentService(appointments, orders, disabled, signer,
-                hisClient, Clock.fixed(NOW, ZoneOffset.UTC));
+                hisClient, reconciliation, Clock.fixed(NOW, ZoneOffset.UTC));
 
         ApiException error = assertThrows(ApiException.class,
                 () -> disabledService.create(USER, APPT, "idem-1"));

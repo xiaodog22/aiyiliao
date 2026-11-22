@@ -4,6 +4,8 @@ import com.wechar.biz.common.ApiException;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -35,15 +37,39 @@ public class HisGateway {
     private final boolean enabled;
     private final String mode;
 
-    public HisGateway(HisClient client,
+    /**
+     * Spring 装配入口：client 用 {@link ObjectProvider} 取，允许 {@code enabled=false} 时为空。
+     *
+     * <p>敌意审查 L6（2026-11-22）修复：原实现 {@code app.his.mode} 默认 "mock"，
+     * 且 MockHisClient {@code matchIfMissing=true} —— 运维只打开 {@code app.his.enabled=true}
+     * 却漏配 mode 时，系统会**静默**用模拟适配器受理预约并在页面上标注已接 HIS。
+     * 现在：enabled=true 时必须显式声明 mode，且必须有对应实现，否则启动失败（fail-closed）。
+     */
+    @Autowired
+    public HisGateway(ObjectProvider<HisClient> clients,
                       @Value("${app.his.enabled:false}") boolean enabled,
-                      @Value("${app.his.mode:mock}") String mode) {
+                      @Value("${app.his.mode:}") String mode) {
+        this(clients.getIfAvailable(), enabled, mode);
+    }
+
+    /** 显式装配/单测入口；client 可为 null，仅在 enabled=false 时合法。 */
+    HisGateway(HisClient client, boolean enabled, String mode) {
         this.client = client;
         this.enabled = enabled;
-        this.mode = mode == null ? "mock" : mode.trim().toLowerCase();
-        // fail-fast：配了不支持的 mode 就直接启动失败，避免「以为接了沙箱、实际走 mock」
-        if (enabled && !SUPPORTED_MODES.contains(this.mode)) {
-            throw new IllegalStateException("app.his.mode 不支持: " + mode + "（支持 mock / http）");
+        this.mode = mode == null ? "" : mode.trim().toLowerCase();
+        if (enabled) {
+            if (this.mode.isEmpty()) {
+                throw new IllegalStateException(
+                        "app.his.enabled=true 但未显式配置 app.his.mode，拒绝启动（禁止默认 mock 静默放行）");
+            }
+            // fail-fast：配了不支持的 mode 就直接启动失败，避免「以为接了沙箱、实际走 mock」
+            if (!SUPPORTED_MODES.contains(this.mode)) {
+                throw new IllegalStateException("app.his.mode 不支持: " + mode + "（支持 mock / http）");
+            }
+            if (client == null) {
+                throw new IllegalStateException(
+                        "app.his.mode=" + this.mode + " 但没有对应 HisClient 实现，拒绝启动");
+            }
         }
     }
 
@@ -78,17 +104,28 @@ public class HisGateway {
     }
 
     /**
+     * 尝试撤销并返回结果（L5，2026-11-22）：true=成功或无需撤销；false=调用失败。
+     * 调用方（{@link HisCancelRetryJob}）据此决定是否保留 outbox 任务继续重试；
+     * 不得把失败当成功（否则「平台已取消、医院仍有单」永久静默）。
+     */
+    public boolean cancelAttempt(String hisOrderNo, String reason) {
+        if (!enabled || hisOrderNo == null || hisOrderNo.isBlank()) {
+            return true;
+        }
+        try {
+            client.cancel(hisOrderNo, reason);
+            return true;
+        } catch (RuntimeException e) {
+            log.warn("HIS cancel failed orderNo={}: {}", hisOrderNo, e.toString());
+            return false;
+        }
+    }
+
+    /**
      * 尽力撤销（补偿）。任何异常只记日志，不掩盖主异常：
      * 本地落单失败时调用，失败也只是「HIS 侧多一笔待清理」，不得反过来把请求变成成功。
      */
     public void cancelQuietly(String hisOrderNo, String reason) {
-        if (!enabled || hisOrderNo == null || hisOrderNo.isBlank()) {
-            return;
-        }
-        try {
-            client.cancel(hisOrderNo, reason);
-        } catch (RuntimeException e) {
-            log.warn("HIS cancel compensation failed orderNo={}: {}", hisOrderNo, e.toString());
-        }
+        cancelAttempt(hisOrderNo, reason);
     }
 }

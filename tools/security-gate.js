@@ -48,6 +48,7 @@ const EXCLUDE_SEGMENTS = [
 
 const EXCLUDE_FILES = [
   'tools/security-gate.js', // 规则自身
+  'tools/test-security-defaults.js', // 规则的合成样例（故意包含危险字符串）
   'package-lock.json',
   'pnpm-lock.yaml',
 ];
@@ -118,9 +119,29 @@ const RULES = [
   },
   {
     id: 'H1-SMS-FAIL-OPEN',
-    desc: 'DevSmsSender 缺省装配（matchIfMissing=true）',
-    re: /matchIfMissing\s*=\s*true/,
-    allow: [/src\/test\//],
+    desc: '条件装配缺省启用（matchIfMissing=true，可能静默启用 dev/mock 实现）',
+    // 只匹配注解上下文，避免把文档/注释里的说明文字当成危险默认。
+    re: /@ConditionalOnProperty\s*\([\s\S]{0,600}?matchIfMissing\s*=\s*true/,
+    allow: [
+      /src\/test\//,
+      // DisabledHisClient 的缺省装配是 fail-safe（任何调用 503），不是启用外部/mock。
+      /DisabledHisClient\.java$/,
+    ],
+  },
+  {
+    id: 'L6-HIS-MOCK-FAIL-OPEN',
+    desc: 'HIS 配置把 mode 设为 mock（生产禁止演示受理）',
+    // 只看 yml 中 his: 块内 10 行内的 mode: mock；代码里的 havingValue="mock" 是合法装配条件。
+    re: /his\s*:\s*\n(?:[^\n]*\n){0,10}?[ \t]*mode\s*:\s*['"]?mock['"]?/i,
+    allow: [/src\/test\//, /application-itest\.yml$/, /\.md$/],
+  },
+  {
+    id: 'L6-HIS-MODE-ENV-MOCK',
+    desc: 'HIS 模式环境变量设为 mock（生产/自定义 profile 禁止演示受理）',
+    // 2026-11-23（B3 复审 P2）：compose/env 里的 APP_HIS_MODE 与 yml 同等对待；
+    // 仅测试/文档允许出现，生产必须 disabled|http 且由启动自检二次拦截。
+    re: /^\s*APP_HIS_MODE\s*[:=]\s*['"]?mock['"]?/im,
+    allow: [/src\/test\//, /application-itest\.yml$/, /\.md$/],
   },
   {
     id: 'H3-AUTH-OFF',
@@ -306,4 +327,8 @@ function main() {
   process.exitCode = 1;
 }
 
-main();
+module.exports = { RULES, isExcluded, shouldScan, scanFile };
+
+if (require.main === module) {
+  main();
+}
