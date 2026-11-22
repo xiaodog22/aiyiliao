@@ -167,6 +167,12 @@ async function api(method, path, body) {
     showLogin();
     throw new Error((payload && payload.message) || '登录状态已失效');
   }
+  // L4：未完成首登改密 → 弹改密框（服务端 403 PASSWORD_CHANGE_REQUIRED）
+  if (res.status === 403 && payload && payload.code === 'PASSWORD_CHANGE_REQUIRED') {
+    if (state.user) state.user.mustChange = true;
+    openChangePassword();
+    throw new Error(payload.message || '请先修改初始口令');
+  }
   if (!res.ok || (payload && payload.code && payload.code !== 'OK')) {
     throw new Error((payload && payload.message) || ('请求失败（HTTP ' + res.status + '）'));
   }
@@ -235,7 +241,11 @@ async function doLogin(event) {
     state.depts = [];
     $('#login-password').value = '';
     enterApp();
-    if (data.user.mustChange) toast('当前为初始口令，建议立即修改', 'ok');
+    // L4（2026-11-22）：种子默认口令必须首登改密，服务端只放行 me/password/logout。
+    if (data.user.mustChange) {
+      toast('首次登录必须修改初始口令后才能使用业务功能', 'warn');
+      openChangePassword();
+    }
   } catch (err) {
     errorEl.textContent = err.message;
   } finally {
@@ -265,7 +275,10 @@ function openChangePassword() {
       if (!oldPassword || !newPassword) throw new Error('请填写完整');
       if (newPassword !== formVal('cp-confirm')) throw new Error('两次输入的新口令不一致');
       await api('POST', '/api/v1/auth/password', { oldPassword, newPassword });
-      toast('口令已修改');
+      if (state.user) state.user.mustChange = false;
+      toast('口令已修改，业务功能已恢复');
+      // 首登被 403 打断的页面重新加载，避免停留在错误态
+      if (state.token) enterApp();
     },
   });
 }
@@ -3450,7 +3463,7 @@ async function bootApp() {
     const btn = e.target.closest('button[data-demo]');
     if (!btn) return;
     $('#login-username').value = btn.dataset.demo;
-    $('#login-password').value = 'Clinic@2026';
+    $('#login-password').value = '';
     $('#login-error').textContent = '';
   });
   document.addEventListener('click', e => {

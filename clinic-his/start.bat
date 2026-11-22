@@ -60,7 +60,7 @@ echo   Clinic HIS - Community Clinic Information System
 echo ------------------------------------------------------------
 echo   URL: http://%BROWSE_HOST%:%CLINIC_PORT%
 echo   Demo accounts: doctor01 / admin06 ... (30 accounts)
-echo   Initial password: Clinic@2026
+echo   Initial password: printed once on first init (or set CLINIC_SEED_PASSWORD)
 echo ------------------------------------------------------------
 echo   First run creates the database, demo data and OpenAPI keys.
 echo   (data\openapi-credentials.txt - do not commit or share)
@@ -69,13 +69,23 @@ echo   Press Ctrl+C to stop the server.
 echo ============================================================
 echo.
 
-rem ---------- Stable document secret: print links survive restarts ----------
+rem ---------- Stable local secrets ----------
 if "%CLINIC_DOC_SECRET%"=="" call :load_doc_secret
 if "%CLINIC_DOC_SECRET%"=="" (
     echo [WARN] Document secret was not created; print links will expire on restart.
 ) else (
     echo   Document secret: configured ^(data\.doc_secret or env var^)
 )
+if "%CLINIC_PATIENT_HASH_SALT%"=="" call :load_patient_salt
+if "%CLINIC_PATIENT_HASH_SALT%"=="" (
+    echo [ERROR] Patient hash salt is missing.
+    echo          Run scripts\ensure-secret.ps1 or set CLINIC_PATIENT_HASH_SALT.
+    echo          Production must inject it from the secret manager.
+    echo.
+    pause
+    exit /b 1
+)
+echo   Patient hash salt: configured ^(data\.patient_hash_salt or env var^)
 echo.
 
 rem Open the browser after a short delay; the console still shows startup errors.
@@ -106,5 +116,14 @@ if not exist "data\.doc_secret" (
 )
 if exist "data\.doc_secret" (
     set /p CLINIC_DOC_SECRET=<"data\.doc_secret"
+)
+exit /b 0
+
+:load_patient_salt
+if not exist "data\.patient_hash_salt" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\ensure-secret.ps1" >nul 2>nul
+)
+if exist "data\.patient_hash_salt" (
+    set /p CLINIC_PATIENT_HASH_SALT=<"data\.patient_hash_salt"
 )
 exit /b 0

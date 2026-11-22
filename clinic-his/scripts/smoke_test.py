@@ -4,6 +4,10 @@
     python scripts/smoke_test.py                 # 自动复用或拉起本地服务
     python scripts/smoke_test.py --base http://127.0.0.1:8310
 仅依赖 Python 标准库；任何断言失败以非 0 退出码结束。
+
+L4（2026-11-22）：种子初始口令不再写死。
+  · 自动拉起隔离实例时，本脚本会生成一次性口令并通过 CLINIC_SEED_PASSWORD 注入；
+  · 连接已有实例（--base/--no-start）时必须显式提供同一口令，否则登录必然失败。
 """
 
 from __future__ import annotations
@@ -26,7 +30,13 @@ from datetime import datetime
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.environ.get("CLINIC_DATA_DIR") or os.path.join(ROOT, "data")
 BASE = "http://127.0.0.1:8310"
-DEFAULT_PASSWORD = "Clinic@2026"
+# L4：连接已有实例时用调用方注入的口令；自动拉起隔离实例时生成一次性口令。
+DEFAULT_PASSWORD = os.environ.get("CLINIC_SEED_PASSWORD") or ("Smoke" + secrets.token_hex(8) + "!A1")
+os.environ["CLINIC_SEED_PASSWORD"] = DEFAULT_PASSWORD
+# L7：自动拉起的隔离实例需要显式患者哈希盐；连接已有实例时此值不影响服务端。
+os.environ.setdefault("CLINIC_PATIENT_HASH_SALT", "smoke-" + secrets.token_hex(16))
+# 冒烟首登改密用的新口令（仅隔离实例；不含任何账号名，满足 ≥10 位/大小写/数字/符号）。
+SMOKE_CHANGED_PASSWORD = "SmokeChanged@2026"
 
 passed = 0
 failed = 0
@@ -66,9 +76,23 @@ def call(method: str, path: str, token: str = "", body=None, headers=None, raw: 
 
 def login(username: str, password: str = DEFAULT_PASSWORD) -> str:
     status, payload = call("POST", "/api/v1/auth/login", body={"username": username, "password": password})
+    if status != 200 and password == DEFAULT_PASSWORD:
+        # 同一隔离实例内二次登录：该账号可能已在首轮冒烟中完成首登改密。
+        status, payload = call("POST", "/api/v1/auth/login",
+                               body={"username": username, "password": SMOKE_CHANGED_PASSWORD})
     if status != 200 or payload.get("code") != "OK":
         raise SystemExit(f"登录失败 {username}: {status} {payload}")
-    return payload["data"]["token"]
+    token = payload["data"]["token"]
+    # L4：种子账号首登必须改密；冒烟在隔离实例内完成一次改密后继续业务链路。
+    status, me = call("GET", "/api/v1/auth/me", token=token)
+    if status != 200 or me.get("code") != "OK":
+        raise SystemExit(f"读取当前用户失败 {username}: {status} {me}")
+    if me["data"].get("mustChange"):
+        status, changed = call("POST", "/api/v1/auth/password", token=token,
+                               body={"oldPassword": password, "newPassword": SMOKE_CHANGED_PASSWORD})
+        if status != 200 or changed.get("code") != "OK":
+            raise SystemExit(f"首登改密失败 {username}: {status} {changed}")
+    return token
 
 
 def ok_data(status: int, payload: dict, label: str):

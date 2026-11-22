@@ -8,12 +8,11 @@ import secrets
 import sys
 from datetime import datetime
 
-from .. import db, security
+from .. import db, legacy_credentials, security
 from ..errors import bad_request, not_found
 from .common import as_str, pagination, parse_date
 
-# 默认口令（种子账号初始口令，用于合规自检识别未改密账号）
-_DEFAULT_PASSWORD = "Clinic@2026"
+# L4（2026-11-22）：种子初始口令不再写死；合规自检改为统计 must_change=1。
 
 
 def _scalar(sql: str, params: tuple = ()):
@@ -165,15 +164,33 @@ def compliance(ctx):
         if files:
             last_backup = datetime.fromtimestamp(max(os.path.getmtime(f) for f in files)).strftime("%Y-%m-%d %H:%M:%S")
 
-    # ① 口令策略：统计仍在用默认口令的账号
-    default_users = sum(1 for row in db.query("SELECT password_hash FROM users")
-                        if security.verify_password(_DEFAULT_PASSWORD, row["password_hash"]))
+    # ① 口令策略（B3/D-06）：must_change=1 **或** 建号后从未改密，都算未完成首登改密。
+    # 原实现只数 must_change=1，把 30 个仍用旧默认口令的存量账号算成"已完成"→ 误报 PASS。
+    pending_change = _scalar(
+        "SELECT COUNT(*) FROM users WHERE must_change=1 OR "
+        + legacy_credentials.NEVER_CHANGED_SQL)
+    legacy_unmarked = _scalar(
+        "SELECT COUNT(*) FROM users WHERE must_change=0 AND "
+        + legacy_credentials.NEVER_CHANGED_SQL)
+    role_rows = db.query(
+        "SELECT role, COUNT(*) AS c FROM users WHERE must_change=1 OR "
+        + legacy_credentials.NEVER_CHANGED_SQL + " GROUP BY role ORDER BY role")
+    role_detail = "、".join(f"{row['role']} {row['c']}" for row in role_rows)
+    if legacy_unmarked > 0:
+        password_status = "FAIL"
+        password_state = (f"检测到 {legacy_unmarked} 个存量账号从未改密且未被强制标记"
+                          "（迁移未执行或 must_change 被重置）")
+    elif pending_change > 0:
+        password_status = "WARN"
+        password_state = (f"{pending_change} 个账号尚未完成首登改密（{role_detail}；"
+                          "改密前业务接口一律 403）")
+    else:
+        password_status = "PASS"
+        password_state = "全部账号已完成首登改密"
     password_item = {
         "key": "password_policy", "name": "口令策略（≥10 位，大小写/数字/符号）",
-        "status": "PASS" if default_users == 0 else "WARN",
-        "detail": f"PBKDF2-SHA256 12 万次迭代；连续 5 次失败锁定 15 分钟；"
-                  + ("全部账号已改初始口令" if default_users == 0
-                     else f"{default_users} 个账号仍使用默认口令 {_DEFAULT_PASSWORD}")}
+        "status": password_status,
+        "detail": f"PBKDF2-SHA256 12 万次迭代；连续 5 次失败锁定 15 分钟；" + password_state}
 
     # ② 会话管理：读取配置并统计过期未清理会话
     expired_sessions = _scalar(

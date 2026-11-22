@@ -38,7 +38,7 @@
 
 共 13 个科室、30 个账号、10 名演示患者、22 种药品、37 条 ICD-10、9 个检查项目。
 
-初始口令统一为 `Clinic@2026`，首次登录建议修改（系统会提示）。
+初始口令不再写死：首次初始化时若设置了 `CLINIC_SEED_PASSWORD` 则使用该值，否则随机生成并**仅在启动日志打印一次**；所有种子账号 `must_change=1`，改密前除 `/auth/me`、`/auth/password`、`/auth/logout` 外一律 403。
 
 | 账号 | 人员 | 角色 | 主要权限 |
 | --- | --- | --- | --- |
@@ -59,21 +59,30 @@
 
 - 端口已在运行：直接打开浏览器，不会重复起进程；
 - 端口被其他程序占用：提示改用 `set CLINIC_PORT=8311`；
-- 首次启动会把打印签名密钥固定到 `data\.doc_secret`，重启后旧打印链接仍有效。
+- 首次启动会把打印签名密钥固定到 `data\.doc_secret`，重启后旧打印链接仍有效；
+- `start.bat` / `scripts\run.ps1` 会把患者哈希盐固定到 `data\.patient_hash_salt`（已 gitignore）；生产不走该文件，必须由密钥管理注入 `CLINIC_PATIENT_HASH_SALT`。
 
 其它方式：
 
 ```powershell
 # 在 clinic-his 目录
+$env:CLINIC_PATIENT_HASH_SALT = '<32+ 字符随机盐>'   # 直接 python -m app.main 时必须显式注入
 python -m app.main          # 或使用脚本：scripts\run.ps1
 ```
+
+> **L7 患者哈希盐（fail-closed）**：`CLINIC_PATIENT_HASH_SALT` 缺失时服务拒绝启动（所有环境）。
+> 迁移旧库不要直接换盐：新盐写入 `CLINIC_PATIENT_HASH_SALT`，旧盐放
+> `CLINIC_PATIENT_HASH_SALT_LEGACY`，`patient_hash_matches()` 双读兼容旧 `id_hash` / `phone_hash`；
+> 新写入一律用新盐。等旧行按原始证件/手机号完成重算后再移除 legacy 变量。
+> 非生产临时排障可显式 `CLINIC_ALLOW_LEGACY_PATIENT_HASH_SALT=true` 使用内置 v1 兼容盐，会打印高危警告；
+> 生产设置该开关也不会生效。
 
 打开 <http://127.0.0.1:8310>，用上表账号登录。首次启动会自动：
 
 1. 建库建表（20+ 张表）并写入科室/人员/药品/ICD/检查/患者/号源；
 2. 生成对外接口密钥，写入 `data/openapi-credentials.txt`（仅本机，勿提交）。
 
-端到端验证（自动拉起隔离临时数据目录的服务，98 项断言，覆盖全部业务、病历增强、留观护理、工作台/患者全视图/合理用药/质控、病历可见范围、过敏硬阻断、账号恢复、退费闭环、对外接口与危急值闭环）：
+端到端验证（自动拉起隔离临时数据目录的服务，99 项断言，覆盖全部业务、病历增强、留观护理、工作台/患者全视图/合理用药/质控、病历可见范围、过敏硬阻断、账号恢复、退费闭环、对外接口与危急值闭环）：
 
 ```powershell
 python scripts/smoke_test.py
@@ -150,7 +159,7 @@ python scripts/backup.py --keep 30
 合成「性别 · 年龄」一列，7 列压到 5 列。
 
 账号同步（2026-11-21）：小程序端医生账号 **13900139001（林建平 / 主任医师 / 消化内科）** 已同步为本院职工——
-新增科室「消化内科（XH）」，职工工号 `D009`、账号 `13900139001`、口令 `Clinic@2026`、权限角色 `DOCTOR`，
+新增科室「消化内科（XH）」，职工工号 `D009`、账号 `13900139001`、初始口令与种子口令同源（`CLINIC_SEED_PASSWORD` 或首次启动一次性打印）、权限角色 `DOCTOR`，
 并生成未来 7 日 × 上下午共 14 个号源（`SL{日期}D009AM|PM`）；`his_master_data_map` 增 `dep-gastro→XH`、
 `doc-gastro-1→D009` 两条 CONFIRMED 映射，小程序预约经 `HttpHisClient.book()` 即落到该医生。
 医生工作站底部新增折叠区「我的资料与近 7 日排班」（默认收起，展开后显示工号/科室/职称/账号与本人 7 日号源余量），

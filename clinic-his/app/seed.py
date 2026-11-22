@@ -1,20 +1,55 @@
 """初始化数据：科室、30 名人员与账号、号源、药品、ICD-10、检验项目、对接密钥。
 
 编制：8 医生 / 14 护士（含公卫 3）/ 6 行政 / 2 医技。
-演示初始口令统一为 Clinic@2026（生产必须启用首次登录强制改密）。
+初始口令不再写死统一值（L4，2026-11-22）：
+  · 优先读环境变量 CLINIC_SEED_PASSWORD（便于自动化/联调预置）；
+  · 未提供时随机生成，仅在首次初始化时打印一次；
+  · 所有种子账号 must_change=1，首登必须改密。
 """
 
 from __future__ import annotations
 
 import json
 import os
+import random
 import secrets
 from datetime import datetime, timedelta
 
 from . import db
-from .security import hash_password, patient_hash
+from .security import hash_password, patient_hash, validate_password
 
-DEFAULT_PASSWORD = "Clinic@2026"
+SEED_PASSWORD_ENV = "CLINIC_SEED_PASSWORD"
+
+_UPPER = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+_LOWER = "abcdefghijkmnopqrstuvwxyz"
+_DIGITS = "23456789"
+_SYMBOLS = "!@#$%^&*-_+="
+
+
+def _random_password(length: int = 14) -> str:
+    """生成满足 validate_password 的随机口令（至少各含一个大写/小写/数字/符号）。"""
+    pool = _UPPER + _LOWER + _DIGITS + _SYMBOLS
+    chars = [secrets.choice(_UPPER), secrets.choice(_LOWER),
+             secrets.choice(_DIGITS), secrets.choice(_SYMBOLS)]
+    chars.extend(secrets.choice(pool) for _ in range(max(0, length - len(chars))))
+    random.SystemRandom().shuffle(chars)
+    return "".join(chars)
+
+
+def resolve_seed_password() -> str:
+    """解析种子初始口令：环境变量优先；未提供则随机生成并一次性打印。"""
+    provided = os.environ.get(SEED_PASSWORD_ENV, "").strip()
+    if provided:
+        problem = validate_password(provided)
+        if problem:
+            raise RuntimeError(f"{SEED_PASSWORD_ENV} 不符合口令策略：{problem}")
+        return provided
+    while True:
+        generated = _random_password()
+        if validate_password(generated) is None:
+            print("[seed] 已生成一次性初始口令（仅本次初始化打印，账号首登必须改密）："
+                  f"{generated}", flush=True)
+            return generated
 
 DEPARTMENTS = [
     ("QK", "全科医学科", "CLINICAL"),
@@ -193,7 +228,7 @@ def _seed_departments(con) -> dict:
     return ids
 
 
-def _seed_staff(con, dept_ids: dict) -> None:
+def _seed_staff(con, dept_ids: dict, initial_password: str) -> None:
     now = db.now_str()
     for staff_no, name, gender, role, title, dept, license_no, specialty, pres_level, username in STAFF:
         cur = con.execute(
@@ -205,8 +240,8 @@ def _seed_staff(con, dept_ids: dict) -> None:
         staff_id = int(cur.lastrowid)
         con.execute(
             "INSERT INTO users(username,password_hash,staff_id,role,status,failed_count,password_changed_at,must_change,created_at) "
-            "VALUES (?,?,?,?, 'ACTIVE', 0, ?, 0, ?)",
-            (username, hash_password(DEFAULT_PASSWORD), staff_id, role, now, now),
+            "VALUES (?,?,?,?, 'ACTIVE', 0, ?, 1, ?)",
+            (username, hash_password(initial_password), staff_id, role, now, now),
         )
 
 
@@ -295,7 +330,7 @@ def ensure_seed() -> bool:
         count = con.execute("SELECT COUNT(*) AS c FROM departments").fetchone()["c"]
         if count == 0:
             dept_ids = _seed_departments(con)
-            _seed_staff(con, dept_ids)
+            _seed_staff(con, dept_ids, resolve_seed_password())
             _seed_patients(con)
             seeded = True
         if con.execute("SELECT COUNT(*) AS c FROM drugs").fetchone()["c"] == 0:

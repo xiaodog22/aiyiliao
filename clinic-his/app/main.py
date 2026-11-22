@@ -16,7 +16,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import db, security, seed
+from . import db, legacy_credentials, security, seed
 from .errors import ApiError
 from .http_response import RawResponse
 from .api import (admin, auth, basic, charge, clinical, documents as documents_api, lab,
@@ -223,6 +223,11 @@ class Handler(BaseHTTPRequestHandler):
                 ctx.user = security.resolve_session(ctx.token)
                 if not ctx.user:
                     raise ApiError(401, "AUTH_REQUIRED", "登录状态已失效，请重新登录")
+                # 敌意审查 L4（2026-11-22）：种子账号默认口令必须首登改密。
+                # 未改密前仅放行 me/password/logout，其余业务接口 403（fail-closed）。
+                if security.must_change_blocks(ctx.user, method, path):
+                    raise ApiError(403, "PASSWORD_CHANGE_REQUIRED",
+                                   "首次登录必须修改初始口令后才能继续使用", None, False)
                 if perm:
                     security.require_perm(ctx.user, perm)
 
@@ -300,7 +305,14 @@ def bootstrap() -> None:
     db.init_db()
     created = seed.ensure_seed()
     if created:
-        print("已初始化演示数据：8 医生 / 14 护士 / 6 行政 / 2 医技，初始口令 Clinic@2026")
+        print("已初始化演示数据：8 医生 / 14 护士 / 6 行政 / 2 医技；"
+              "初始口令见 seed 一次性输出（或由 CLINIC_SEED_PASSWORD 指定），所有账号首登必须改密")
+    # B3（2026-11-23）：存量库不会重新 seed，必须在每次启动时兜底标记「从未改密」的账号。
+    # 幂等；只置 must_change=1，不改口令哈希；审计记录数量与角色分布（无明文）。
+    migrated = legacy_credentials.mark_legacy_accounts()
+    if migrated["marked"]:
+        detail = "、".join(f"{role} {count}" for role, count in migrated["roles"].items())
+        print(f"存量账号口令迁移：{migrated['marked']} 个从未改密账号已强制首登改密（{detail}）")
 
 
 def main() -> None:
