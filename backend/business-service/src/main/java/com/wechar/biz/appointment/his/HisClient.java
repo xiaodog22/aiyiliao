@@ -68,7 +68,18 @@ public interface HisClient {
 
     /** 受理请求：只带业务必需字段，不含任何健康敏感信息（主诉不传给 HIS）。 */
     record HisBookingCommand(String appointmentId, String slotId, String patientName,
-                             String doctorId, String departmentId) {
+                             String doctorId, String departmentId, java.time.Instant slotStart) {
+
+        /**
+         * 兼容构造：不携带号源开始时间（历史调用与单测）。
+         *
+         * <p>2026-11-22 起正式链路应传 slotStart —— HIS 受理要落院内挂号，
+         * 挂号必须知道就诊日期才能进当日队列；缺时间时 HIS 按「当天」兜底。
+         */
+        HisBookingCommand(String appointmentId, String slotId, String patientName,
+                          String doctorId, String departmentId) {
+            this(appointmentId, slotId, patientName, doctorId, departmentId, null);
+        }
     }
 
     /**

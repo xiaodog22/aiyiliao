@@ -14,6 +14,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -47,6 +49,11 @@ import org.springframework.stereotype.Component;
 @Component
 @ConditionalOnProperty(name = "app.his.mode", havingValue = "http")
 public class HttpHisClient implements HisClient {
+
+    /** 医院所在时区：号源 Instant → 院内 reg_date/slotTime 的唯一换算口径。 */
+    private static final ZoneId HOSPITAL_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final DateTimeFormatter SLOT_TIME = DateTimeFormatter.ofPattern("HH:mm");
+
 
     private static final Logger log = LoggerFactory.getLogger(HttpHisClient.class);
 
@@ -115,6 +122,14 @@ public class HttpHisClient implements HisClient {
         }
         payload.put("doctorId", doctorId);
         payload.put("departmentId", departmentId);
+        // 就诊日期/时间（2026-11-22）：HIS 受理要落院内挂号，挂号必须按本地日期进队列。
+        // 号源是 UTC Instant，这里按医院时区（Asia/Shanghai）转成本地日期与 HH:mm，
+        // 不把 UTC 日期直接丢给院方（跨零点会把号排到前一天）。
+        if (command.slotStart() != null) {
+            var local = command.slotStart().atZone(HOSPITAL_ZONE);
+            payload.put("slotDate", local.toLocalDate().toString());
+            payload.put("slotTime", local.toLocalTime().format(SLOT_TIME));
+        }
 
         String idempotencyKey = idempotencyKey(command.appointmentId());
         JsonNode data;

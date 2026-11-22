@@ -125,6 +125,10 @@ archive/              已退出活动链的本地归档（重复副本 / 旧产�
 自动使用隔离临时数据目录，可重复运行）。本机 `env.local` 已**默认接通**：
 `APP_HIS_ENABLED=true` + `APP_HIS_MODE=http`（地址/凭据见同文件），挂号回执带 `his_order_no=CLN…`，
 取消预约会联动撤销 HIS 受理单；要回到纯本地演示，把两值改回 `false`/`mock` 并重启 business。
+**2026-11-22 起**：受理成功会同时落院内 `registrations`（`source=WECHAT`）+ 预排号
+`queue_tickets`（`status=RESERVED`，不参与叫号，签到后转 `WAITING` 并复用同一票号），
+撤销预约三者一起作废；平台号源日期按 Asia/Shanghai 换算后下发（`slotDate`/`slotTime`），
+不复用院内 `doctor_slots` 外键。链路与缺口详见 `docs/挂号可见性排查_20261122.md`。
 安全上已按审查报告修复越权读病历、过敏开方硬阻断、账号恢复与退费闭环；
 危急值报告会在工作台与医生站提示，并可一键引用回写病历。
 数据与接口密钥写入 `clinic-his/data/`，已加入 `.gitignore`。

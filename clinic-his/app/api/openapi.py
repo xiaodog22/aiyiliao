@@ -8,6 +8,7 @@ cancel → POST /appointments/{no}/cancel（幂等，不存在/已撤销也按�
 from __future__ import annotations
 
 import hashlib
+import secrets
 import sqlite3
 import time
 from datetime import date, datetime, timedelta
@@ -20,7 +21,8 @@ TIMESTAMP_TOLERANCE = 300          # ±300s
 NONCE_TTL_SECONDS = 600            # nonce 保留 10 分钟
 IDEM_MIN, IDEM_MAX = 8, 128
 
-CREATE_FIELDS = {"appointmentId", "slotId", "patientName", "doctorId", "departmentId"}
+CREATE_FIELDS = {"appointmentId", "slotId", "patientName", "doctorId", "departmentId",
+                 "slotDate", "slotTime"}
 DEMO_CHARGE_FIELDS = {"patientName", "amount", "description", "refType", "refId"}
 PAY_FIELDS = {"amount", "source"}
 EXAM_CREATE_FIELDS = {"requestNo", "itemCode", "slotKey", "patientName"}
@@ -135,12 +137,102 @@ def _order_payload(order: dict) -> dict:
 
 
 def _order_detail(order: dict) -> dict:
-    return {
+    """受理单详情：带上院内挂号/预排号，便于对账时一眼定位到具体号。"""
+    detail = {
         "hisOrderNo": order["his_order_no"], "status": order["status"],
         "appointmentId": order["appointment_id"], "doctorId": order["doctor_id"],
         "departmentId": order["department_id"], "createdAt": order["created_at"],
         "cancelledAt": order["cancelled_at"], "cancelReason": order["cancel_reason"] or None,
     }
+    reg = db.query(
+        "SELECT reg_no, queue_no, reg_date, status FROM registrations WHERE his_order_no=?",
+        (order["his_order_no"],), one=True)
+    if reg is not None:
+        detail.update({"registrationNo": reg["reg_no"], "queueNo": reg["queue_no"],
+                       "visitDate": reg["reg_date"], "registrationStatus": reg["status"]})
+    return detail
+
+
+# ---------------------------------------------------------------- 受理即落院内挂号
+#
+# 背景（2026-11-22 排查）：原实现只写 openapi_orders（对外受理台账），院内
+# registrations / queue_tickets 一行没有 —— 医生站、叫号大屏、日报统计都看不到
+# 互联网医院来的患者，等于「平台说挂号成功、院内没有这个人」。
+#
+# 口径：
+#   · 一位患者一次受理 = 一条 registrations（source=WECHAT，status=BOOKED，
+#     his_order_no 关联受理单），患者档案按 appId+姓名派生 MRN（同结算演示口径）。
+#   · 同时预排 queue_tickets 一行，status=RESERVED —— **不参与叫号**（call_next 只取
+#     WAITING），到院签到后由 registration.checkin 复用该票并置 WAITING，
+#     避免「没到院就被叫号」和「重复取号」。
+#   · 不生成 charges：挂号费仍由院内收费处收取（互联网医院侧支付未接入该接口）。
+#   · slot_id 留空：平台号源与院内 doctor_slots 不同源，不伪造院内号源外键。
+
+def _parse_slot_date(raw: str) -> str:
+    if not raw:
+        return db.today_str()
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date().isoformat()
+    except ValueError:
+        raise ApiError(400, "VALIDATION_FAILED", "slotDate 格式须为 YYYY-MM-DD",
+                       details=[{"field": "slotDate", "reason": "日期格式错误"}])
+
+
+def _ensure_registration(con: sqlite3.Connection, *, app_id: str, his_order_no: str,
+                         patient_name: str, doctor: dict, doctor_no: str, dept: dict,
+                         dept_code: str, slot_date: str, slot_time: str, ip: str) -> dict:
+    """受理成功的院内落地：挂号 + 预排号（幂等，按 his_order_no 只建一次）。"""
+    exist = con.execute(
+        "SELECT id, reg_no, queue_no FROM registrations WHERE his_order_no=?",
+        (his_order_no,)).fetchone()
+    if exist is not None:
+        return dict(exist)
+
+    patient = _demo_patient(con, app_id, patient_name) if patient_name else None
+    if patient is None:
+        # 没有姓名就没有可用的院内患者档案：不伪造，直接说明缺什么
+        raise ApiError(400, "VALIDATION_FAILED", "受理互联网医院挂号必须提供 patientName",
+                       details=[{"field": "patientName", "reason": "院内挂号需要患者姓名"}])
+
+    created_at = db.now_str()
+    temp_no = "TMP-" + secrets.token_hex(8)
+    cur = con.execute(
+        "INSERT INTO registrations(reg_no,patient_id,slot_id,doctor_id,dept_id,reg_date,source,status,"
+        "his_order_no,queue_no,vitals_json,created_at,created_by) "
+        "VALUES (?,?,NULL,?,?,?,?, 'BOOKED', ?, '', '', ?, NULL)",
+        (temp_no, patient["id"], doctor["id"], dept["id"], slot_date,
+         "WECHAT", his_order_no, created_at))
+    reg_id = int(cur.lastrowid)
+    reg_no = f"RG{slot_date.replace('-', '')}-{reg_id:05d}"
+    con.execute("UPDATE registrations SET reg_no=? WHERE id=?", (reg_no, reg_id))
+
+    seq = db.next_sequence(con, f"queue-{slot_date}-{dept['id']}")
+    ticket_no = f"{dept_code}{seq:03d}"
+    con.execute(
+        "INSERT INTO queue_tickets(ticket_no,queue_date,dept_id,registration_id,patient_id,"
+        "status,created_at) VALUES (?,?,?,?,?, 'RESERVED', ?)",
+        (ticket_no, slot_date, dept["id"], reg_id, patient["id"], created_at))
+    con.execute("UPDATE registrations SET queue_no=? WHERE id=?", (ticket_no, reg_id))
+    security.audit(con, None, "OPENAPI_REG_CREATE", "registration", reg_id,
+                   f"hisOrderNo={his_order_no} doctor={doctor_no} dept={dept_code} "
+                   f"date={slot_date} time={slot_time} queue={ticket_no}", "OK", ip or "-")
+    return {"id": reg_id, "reg_no": reg_no, "queue_no": ticket_no}
+
+
+def _cancel_registration(con: sqlite3.Connection, his_order_no: str, ip: str) -> int:
+    """受理单撤销时同步作废院内挂号与预排号；已签到/已就诊的不动（需走退号流程）。"""
+    reg = con.execute(
+        "SELECT id FROM registrations WHERE his_order_no=? AND status='BOOKED'",
+        (his_order_no,)).fetchone()
+    if reg is None:
+        return 0
+    con.execute("UPDATE registrations SET status='CANCELLED' WHERE id=?", (reg["id"],))
+    con.execute(
+        "UPDATE queue_tickets SET status='CANCELLED' WHERE registration_id=? "
+        "AND status IN ('RESERVED','WAITING')", (reg["id"],))
+    security.audit(con, None, "OPENAPI_REG_CANCEL", "registration", reg["id"],
+                   f"hisOrderNo={his_order_no} 随受理单撤销", "OK", ip or "-")
+    return int(reg["id"])
 
 
 def create_appointment(ctx):
@@ -155,6 +247,10 @@ def create_appointment(ctx):
     department_id = as_str(body, "departmentId", required=True, max_len=32)
     slot_id = as_str(body, "slotId", max_len=64)
     patient_name = as_str(body, "patientName", max_len=50)
+    # 就诊日期/时间：平台号源是 UTC Instant，落到院内挂号必须按本地日期分队列，
+    # 因此要求调用方显式下发（缺失时按当天处理，兼容旧客户端）。
+    slot_date = _parse_slot_date(as_str(body, "slotDate", max_len=10))
+    slot_time = as_str(body, "slotTime", max_len=5)
 
     with db.tx() as con:
         replay = con.execute(
@@ -175,9 +271,14 @@ def create_appointment(ctx):
             doc = con.execute("SELECT name FROM staff WHERE staff_no=?", (order["doctor_id"],)).fetchone()
             order["department_name"] = dept["name"] if dept else ""
             order["doctor_name"] = doc["name"] if doc else ""
+            reg = con.execute("SELECT reg_no, queue_no FROM registrations WHERE his_order_no=?",
+                              (order["his_order_no"],)).fetchone()
             ctx.status = 200
             payload = _order_payload(order)
             payload["replayed"] = True
+            if reg is not None:
+                payload["registrationNo"] = reg["reg_no"]
+                payload["queueNo"] = reg["queue_no"]
             return payload
 
         dept = con.execute("SELECT id, name FROM departments WHERE code=?", (department_id,)).fetchone()
@@ -208,11 +309,18 @@ def create_appointment(ctx):
         security.audit(con, None, "OPENAPI_ACCEPT", "openapi_order", his_order_no,
                        f"appId={key['app_id']} appointmentId={appointment_id} "
                        f"doctor={doctor_id} dept={department_id}", "OK", ctx.ip)
+        # 受理即落院内：registrations（医生站/日报可见）+ queue_tickets（RESERVED，不参与叫号）
+        reg = _ensure_registration(con, app_id=key["app_id"], his_order_no=his_order_no,
+                                   patient_name=patient_name, doctor=doc, doctor_no=doctor_id,
+                                   dept=dept, dept_code=department_id,
+                                   slot_date=slot_date, slot_time=slot_time, ip=ctx.ip)
         ctx.status = 201
         return {
             "hisOrderNo": his_order_no, "status": "ACCEPTED",
             "source": "HIS_LIVE", "mock": False,
             "departmentName": dept["name"], "doctorName": doc["name"],
+            "registrationNo": reg["reg_no"], "queueNo": reg["queue_no"],
+            "visitDate": slot_date, "visitTime": slot_time,
             "acceptedAt": created_at, "replayed": False,
         }
 
@@ -250,9 +358,11 @@ def cancel_order(ctx):
             return {"hisOrderNo": his_order_no, "status": "CANCELLED", "idempotent": True}
         con.execute("UPDATE openapi_orders SET status='CANCELLED', cancelled_at=?, cancel_reason=? "
                     "WHERE id=?", (db.now_str(), reason, order["id"]))
+        cancelled_reg = _cancel_registration(con, his_order_no, ctx.ip)
         security.audit(con, None, "OPENAPI_CANCEL", "openapi_order", his_order_no,
-                       f"appId={key['app_id']} reason={reason[:50]}", "OK", ctx.ip)
-    return {"hisOrderNo": his_order_no, "status": "CANCELLED", "idempotent": False}
+                       f"appId={key['app_id']} reason={reason[:50]} reg={cancelled_reg}", "OK", ctx.ip)
+    return {"hisOrderNo": his_order_no, "status": "CANCELLED", "idempotent": False,
+            "registrationCancelled": bool(cancelled_reg)}
 
 
 # ---------------------------------------------------------------- 演示账单（P0-1）

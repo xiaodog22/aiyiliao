@@ -137,13 +137,23 @@ def checkin(ctx):
             raise conflict("挂号费尚未收取，请先到收费处缴费", "REG_FEE_UNPAID")
 
         dept = con.execute("SELECT code FROM departments WHERE id=?", (reg["dept_id"],)).fetchone()
-        # 按 日期+科室 维度原子取号，避免并发生成重复排队号
-        seq = db.next_sequence(con, f"queue-{db.today_str()}-{reg['dept_id']}")
-        ticket_no = f"{dept['code']}{seq:03d}"
-        con.execute(
-            "INSERT INTO queue_tickets(ticket_no,queue_date,dept_id,registration_id,patient_id,status,created_at) "
-            "VALUES (?,?,?,?,?, 'WAITING', ?)",
-            (ticket_no, db.today_str(), reg["dept_id"], reg_id, reg["patient_id"], db.now_str()))
+        # 互联网医院受理时已预排一张 RESERVED 票（openapi._ensure_registration）：
+        # 签到复用它并转 WAITING，既保证「一挂号一队号」，也不让未到院的预约被叫号。
+        reserved = con.execute(
+            "SELECT id, ticket_no FROM queue_tickets WHERE registration_id=? AND status='RESERVED'",
+            (reg_id,)).fetchone()
+        if reserved is not None:
+            ticket_no = reserved["ticket_no"]
+            con.execute("UPDATE queue_tickets SET status='WAITING', queue_date=? WHERE id=?",
+                        (db.today_str(), reserved["id"]))
+        else:
+            # 按 日期+科室 维度原子取号，避免并发生成重复排队号
+            seq = db.next_sequence(con, f"queue-{db.today_str()}-{reg['dept_id']}")
+            ticket_no = f"{dept['code']}{seq:03d}"
+            con.execute(
+                "INSERT INTO queue_tickets(ticket_no,queue_date,dept_id,registration_id,patient_id,status,created_at) "
+                "VALUES (?,?,?,?,?, 'WAITING', ?)",
+                (ticket_no, db.today_str(), reg["dept_id"], reg_id, reg["patient_id"], db.now_str()))
         con.execute(
             "UPDATE registrations SET status='CHECKED_IN', checked_in_at=?, queue_no=?, vitals_json=? WHERE id=?",
             (db.now_str(), ticket_no, json.dumps(vitals, ensure_ascii=False), reg_id))

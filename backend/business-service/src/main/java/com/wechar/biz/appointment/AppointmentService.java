@@ -146,7 +146,8 @@ public class AppointmentService {
         // 503 HIS_UNAVAILABLE，本方法事务整体回滚（含上面的号源扣减），前端只会看到失败提示，
         // 不会出现「提示预约成功、实际未成立」。
         HisClient.HisBookingResult his = hisGateway.book(new HisClient.HisBookingCommand(
-                id, request.slotId(), request.patientName(), slot.doctorId(), doctor.departmentId()));
+                id, request.slotId(), request.patientName(), slot.doctorId(), doctor.departmentId(),
+                slot.startTime()));
         // D-07：成功页原先把裸 UUID 当「预约号」（ap-04c6a996-…，两行还抄不全）。
         // 这里分配「取号序号」= 该号源已建单数 + 1，前端展示「第 003 号」供报号/叫号；
         // 内部主键仍是 UUID，不对外当业务号使用。

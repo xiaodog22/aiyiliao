@@ -56,6 +56,25 @@ public class DevWechatSessionProvider implements WechatSessionProvider {
     private static final Pattern MANUAL_PHONE =
             Pattern.compile("^dev-user-\\d+-manual-(1\\d{10})$");
 
+    /**
+     * 医生端联调登录 code：dev-doctor-doc-cardio-1 → openid=dev-doc-doc-cardio-1。
+     *
+     * <p>为什么需要（2026-11-22）：医生端预约/会话范围由 doctors.user_id 决定，
+     * 但 dev 档 30 位医生只有 doc-gastro-1 有账号（V9002）。要验证「换一位医生是否也能看到自己的号」，
+     * 只能给 30 位医生各配一个手机号白名单 + identity-map（120 行配置，且顺序敏感），
+     * 或者在这里开一条确定性入口。选后者：医生 ID 本身就是稳定主键，
+     * 直接派生 openid，账号由 V9017 预先建好，登录即可。
+     *
+     * <p>安全边界（与本类其它 dev 入口一致，不额外放宽）：
+     * <ul>
+     *   <li>仅 {@code @Profile({"dev","itest"})} 装配，生产档无此实现；</li>
+     *   <li>仍受 {@link DevLoginGuard} 的 X-Dev-Login-Key 闸门约束；</li>
+     *   <li>只派生 openid，不校验也不改写手机号；无任职关系的账号照样 403（DoctorService 判据不变）。</li>
+     * </ul>
+     */
+    private static final Pattern DOCTOR_CODE =
+            Pattern.compile("^dev-doctor-([a-z0-9][a-z0-9-]{0,39})$");
+
     /** dev 档才有该 bean（itest 为 null → 不设闸门）。 */
     private final ObjectProvider<DevLoginGuard> guard;
 
@@ -93,6 +112,11 @@ public class DevWechatSessionProvider implements WechatSessionProvider {
     public WechatSessionInfo getSessionByCode(String code) {
         checkGuard("login");
         assertManualPhoneAllowed(code);
+        // 医生端：dev-doctor-<doctorId> 直接映射到 V9017 预建的 dev-doc-<doctorId> 账号
+        String doctorId = doctorCode(code);
+        if (doctorId != null) {
+            return new WechatSessionInfo("dev-doc-" + doctorId, "演示医生", "dev-session-key");
+        }
         String phone = manualPhone(code);
         String mapped = phone == null ? null : identityByPhone.get(phone);
         if (mapped != null) {
@@ -101,6 +125,15 @@ public class DevWechatSessionProvider implements WechatSessionProvider {
         String openid = code != null && code.contains("dev-user-2") ? "dev-user-2" : "dev-user-1";
         String nickname = "dev-user-2".equals(openid) ? "开发用户乙" : "开发用户甲";
         return new WechatSessionInfo(openid, nickname, "dev-session-key");
+    }
+
+    /** 取出医生登录 code 里的医生 ID；非该形态返回 null（不抛错，交回原有分支）。 */
+    private static String doctorCode(String code) {
+        if (code == null) {
+            return null;
+        }
+        Matcher m = DOCTOR_CODE.matcher(code);
+        return m.matches() ? m.group(1) : null;
     }
 
     /** 取出手输派生 code 末尾手机号；非手输 code 返回 null。 */
