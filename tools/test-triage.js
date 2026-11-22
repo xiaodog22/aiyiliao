@@ -8,6 +8,11 @@
  * 用法：node tools/test-triage.js
  */
 const path = require('path')
+// 2026-11-22：本文件末尾的「服务层集成」会 require services/speech.js → config/env.js。
+// 干净 clone 没有 config/env.local.js，env.js 会落 production 并在加载期 fail-closed
+// （CI 实测：进程直接崩在 require，连「失败明细」都来不及打印）。
+// 与 tools/test-fe.js 同一口径：只在 Node 测试进程里走 local 档，生产不受影响。
+process.env.WB_NODE_TEST = '1'
 const ROOT = path.join(__dirname, '..', 'miniprogram')
 const E = require(path.join(ROOT, 'utils', 'triage-engine.js'))
 
