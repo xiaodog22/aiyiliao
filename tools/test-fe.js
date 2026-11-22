@@ -42,5 +42,12 @@ if (!files.length) {
 }
 
 console.log(`[test-fe] 运行 ${files.length} 个测试文件`)
-const proc = spawnSync(process.execPath, ['--test', ...files], { cwd: ROOT, stdio: 'inherit' })
+// WB_NODE_TEST=1：干净 clone 没有 config/env.local.js，config/env.js 会落 production 档并在
+// 加载期因缺 HTTPS 网关 fail-fast（CI 实测 request.js:14 抛错）。该变量只让 env.js 在
+// Node 测试进程里走 local 档，小程序运行时无 process，生产 fail-closed 不受影响。
+const proc = spawnSync(process.execPath, ['--test', ...files], {
+  cwd: ROOT,
+  stdio: 'inherit',
+  env: Object.assign({}, process.env, { WB_NODE_TEST: '1' })
+})
 process.exit(proc.status === null ? 2 : proc.status)

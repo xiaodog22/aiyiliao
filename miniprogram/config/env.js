@@ -30,7 +30,13 @@ try {
   LOCAL_OVERRIDES = {}
 }
 
-const BUILD_ENV = String(LOCAL_OVERRIDES.buildEnv || 'production').trim()
+// ⚠️ Node 逻辑层单测（tools/test-fe.js，2026-11-22）：CI 是干净 clone，没有 env.local.js，
+//    BUILD_ENV 会落 production 且 gateway 为空 → 下面的 fail-closed 会在**模块加载期**抛
+//    「production 档缺少 HTTPS 网关」，整个测试文件崩在 require（CI 实测 request.js:14）。
+//    单测运行器显式注入 WB_NODE_TEST=1 时才走 local 档；小程序运行时没有 process 对象，
+//    该分支永不可达，生产包仍严格 fail-closed。
+const IS_NODE_TEST = typeof process !== 'undefined' && !!process.env && process.env.WB_NODE_TEST === '1'
+const BUILD_ENV = String(IS_NODE_TEST ? 'local' : (LOCAL_OVERRIDES.buildEnv || 'production')).trim()
 
 // ⚠️ 档位白名单（fail-closed）：拼错（如 'prod' / 'Production'）不再静默落到 development，
 //    而是构建期直接抛错。历史上 isProduction 用的是 `=== 'production'`，任何拼写偏差都会
