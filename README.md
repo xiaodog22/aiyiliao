@@ -183,6 +183,10 @@ clinic-his 退费（对端退费接口未在 openapi 暴露），页面固定标
   关闭或订单读取失败时也显示「模拟支付（本地演示）」。点击后弹「模拟收银台」，生成 0.01 元本地演示单，
   只在页面内把状态置 PAID，**不写后端、不调起 `wx.requestPayment`、不产生真实扣款**。
 - 上述入口均由 `ENV.legacyManualLoginEnabled` 控制，生产构建不渲染。
+- **彩蛋患者（2026-11-22）**：`13800138000` 已加入 dev 手输白名单（网关 `GW_DEV_LOGIN_PHONES` +
+  业务 `APP_AUTH_DEV_LOGIN_PHONES`），并通过 `APP_AUTH_DEV_LOGIN_IDENTITY_MAP` 映射到独立账号
+  `u-easter-egg-chen`（陈楷楠 / 女 / 2006-05-20 / 广州天河石牌街道）。仅本机 dev 演示，生产档不装配
+  dev provider；HIS 侧 `P000099` 仍是独立院内档案，没有患者登录，两者在受理时按 `patientName` 关联。
 - 本地演示会话（`demo=true` 且无服务端 token）不再按 72h 真会话持久化：冷启动自动清理，预约提交前校验 `session.hasSession()`，无 token 时明确引导重新「模拟手机号登录」，避免提交后只看到 401。
 
 检查预约同样默认关闭（`APP_EXAM_ENABLED=false`）。本机要演示，显式加 `APP_EXAM_ENABLED=true`；

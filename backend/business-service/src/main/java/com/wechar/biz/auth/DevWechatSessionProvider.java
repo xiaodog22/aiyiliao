@@ -52,9 +52,21 @@ import com.wechar.biz.common.ApiException;
 @Profile({"dev", "itest"}) // itest = 单测 H2 档（不连库生产环境，无真实凭证）
 public class DevWechatSessionProvider implements WechatSessionProvider {
 
-    /** 手输登录派生 code：dev-user-1-manual-13800138001 → 取末尾手机号做白名单校验。 */
+    /**
+     * 手输登录派生 code → 取末尾手机号做白名单 / 身份映射校验。
+     *
+     * <p>兼容两种形态：
+     * <ul>
+     *   <li>{@code dev-user-1-manual-13800138001}（小程序手输登录直连业务侧）；</li>
+     *   <li>{@code legacy-compat-13800138000}（网关 /api/user/login 翻译后的旧客户端形态）。</li>
+     * </ul>
+     *
+     * <p>为什么加 legacy 形态（2026-11-22）：仅认第一个形态时，网关翻译出来的
+     * {@code legacy-compat-<手机号>} 不进入 identity-map 分支，13800138000 会落到默认
+     * dev-user-1（张三），与预期患者身份不符；补上后两条登录路径口径一致。
+     */
     private static final Pattern MANUAL_PHONE =
-            Pattern.compile("^dev-user-\\d+-manual-(1\\d{10})$");
+            Pattern.compile("^(?:dev-user-\\d+-manual-|legacy-compat-)(1\\d{10})$");
 
     /**
      * 医生端联调登录 code：dev-doctor-doc-cardio-1 → openid=dev-doc-doc-cardio-1。
