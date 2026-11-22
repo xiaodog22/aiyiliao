@@ -345,6 +345,7 @@ voice.js:156-158 → 101-104 连锁复位，登记 V1.20 T1-1）；3 项登记�
 一键编排与完整说明见 **[tools/e2e-weapp/README.md](tools/e2e-weapp/README.md)**。
 
 - `node tools/e2e-weapp/run-all.js`：环境自检 → 小程序 UI E2E（首页→导诊、预约挂号两条旅程）→ JMeter 5.4.1 网关冒烟，产出 `artifacts/e2e-weapp/report-latest.md`。
+- 模拟器（官方 wechatide CLI，IDE ≥2.02.2607152）：`node tools/e2e-weapp/official-cli-preflight.js` 预检环境（缺一即 SKIP，退出码 2，不写 PASS）；`node tools/e2e-weapp/official-cli-e2e.js` 跑基础两旅程；`node tools/e2e-weapp/official-cli-emergency.js` 跑急症红旗三项（无诱因胸痛→红条+拨打120、无胸痛不误报、不舒服3天不吞时长）。旧 `miniprogram-automator`（`e2e.spec.js` 的 `launch()`）已废弃：无窗口实例会卡死元素查询。
 - 后端离线时自动切换「离线自检」：只验证 JMX / JTL 链路，不自造连接失败样本、不伪造性能数据；开发者工具或 automator SDK 缺失时明确 SKIP 并列出具体原因。
 - 测试套件零业务代码改动；网关地址取自 `config/env.js`、健康路径取自 `config/api.js`，JMX 只用内置组件、不依赖第三方插件。`check-project` 门禁全绿，主包 1.363MB 不变。
 - USB 真机实测（2026-11-14，Xiaomi M2007J17C / Android 16）报告在 `artifacts/e2e-weapp/device-20261114-1737/device-test-report.md`（⚠️ **本地生成、不入库**）：42 项 PASS 34 / FAIL 2 / BLOCKED 2 / 观察 4，含逐项预期与实际、复现步骤、日志线索与问题清单。
