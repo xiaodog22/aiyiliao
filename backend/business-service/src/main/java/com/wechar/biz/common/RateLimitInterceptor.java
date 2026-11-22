@@ -42,6 +42,9 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             Map.entry("POST /api/v1/doctor/login", "login"),
             Map.entry("POST /api/v1/doctor/login-by-account", "login"),
             Map.entry("POST /api/v1/appointments", "submit"),
+            // 敌意审查 L2（2026-11-22）：附件上传单列 upload 组（默认 20/min/主体）。
+            // 原实现无任何限流：单账号可无限上传 50MB 视频，磁盘/带宽任人刷。
+            Map.entry("POST /api/v1/attachments", "upload"),
             Map.entry("POST /api/v1/family-members/invitations", "submit"),
             Map.entry("POST /api/v1/consultations", "submit"),
             Map.entry("POST /api/v1/consultations/*/messages", "submit"),
@@ -60,16 +63,19 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     private final int windowSeconds;
     private final int loginPerWindow;
     private final int submitPerWindow;
+    private final int uploadPerWindow;
 
     public RateLimitInterceptor(
             @Value("${app.rate-limit.enabled:true}") boolean enabled,
             @Value("${app.rate-limit.window-seconds:60}") int windowSeconds,
             @Value("${app.rate-limit.login-per-window:30}") int loginPerWindow,
-            @Value("${app.rate-limit.submit-per-window:60}") int submitPerWindow) {
+            @Value("${app.rate-limit.submit-per-window:60}") int submitPerWindow,
+            @Value("${app.rate-limit.upload-per-window:20}") int uploadPerWindow) {
         this.enabled = enabled;
         this.windowSeconds = Math.max(1, windowSeconds);
         this.loginPerWindow = Math.max(1, loginPerWindow);
         this.submitPerWindow = Math.max(1, submitPerWindow);
+        this.uploadPerWindow = Math.max(1, uploadPerWindow);
     }
 
     @Override
@@ -88,7 +94,11 @@ public class RateLimitInterceptor implements HandlerInterceptor {
                 System.currentTimeMillis() / 1000 / windowSeconds, new AtomicInteger(0)));
         int used = w.count().incrementAndGet();
         cleanup(windowKey);
-        int limit = "login".equals(group) ? loginPerWindow : submitPerWindow;
+        int limit = switch (group) {
+            case "login" -> loginPerWindow;
+            case "upload" -> uploadPerWindow;
+            default -> submitPerWindow;
+        };
         if (used > limit) {
             long nowSecond = System.currentTimeMillis() / 1000;
             long windowStart = w.startSecond() * windowSeconds;

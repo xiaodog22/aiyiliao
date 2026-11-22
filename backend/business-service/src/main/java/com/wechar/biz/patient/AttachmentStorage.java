@@ -82,6 +82,16 @@ public class AttachmentStorage {
         this.signSecret = signSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 
+    /** 附件根目录（只读暴露给孤儿清理任务；调用方不得据此拼接客户端输入）。 */
+    public Path directory() {
+        return attachmentsDir;
+    }
+
+    /** objectKey 是否满足服务端白名单（孤儿清理/外部校验复用同一口径）。 */
+    public static boolean isSafeKey(String objectKey) {
+        return objectKey != null && SAFE_KEY.matcher(objectKey).matches();
+    }
+
     /** 按扩展名取上限：mp4 用 videoMaxBytes，其余（图片/PDF）用 maxBytes。 */
     private long maxBytesFor(String ext) {
         return "mp4".equals(ext) ? videoMaxBytes : maxBytes;

@@ -33,10 +33,14 @@ app:
 # 2026-11-20（P0-3）：再补 V26.3（messages.biz_key + 唯一索引），对齐生产 V33 的消息幂等段；
 # 报告投影列不补（H2 档没有 V27 报告表）。
 # 2026-11-20（P0-1）：再补 V26.4（payment_orders 表），对齐生产 V34；target 调高到 26.4。
+# 2026-11-22（L5）：补 V26.6（退费三列 + 取消 outbox + 对账差异台账），对齐生产 V37/V38；
+# target 调高到 26.6（V26.5 已存在，故不能复用 26.5 的版本号）。
+# 2026-11-23（B2）：补 V26.7（health_record_attachments.preview_object_key），对齐生产 V27 的
+# 附件预览列；否则孤儿清理真实 SQL 集成测试只覆盖 object_key，D-03/D-04 仍会漏。
 spring:
   flyway:
     locations: classpath:db/migration,classpath:db/migration-h2
-    target: 26.5
+    target: 26.7
 
 # 2026-11-18（审计 C3）：单测不连真实 ai-service，显式关闭服务间令牌启动自检；
 # 生产/联调档仍为 true（缺 AI_SERVICE_TOKEN 即拒绝启动）。
