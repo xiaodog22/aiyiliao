@@ -129,6 +129,34 @@ class LegacyCredentialMigrationTest(unittest.TestCase):
         self.assertIn("ADMIN", item["detail"], "明细必须列出角色分布")
         self.assertIn("改密前业务接口一律 403", item["detail"])
 
+    def test_发布前轮换后旧默认口令全部失效且可逐账号验证(self):
+        from scripts.rotate_legacy_passwords import rotate
+
+        legacy_credentials.mark_legacy_accounts()  # 发布顺序：先强制改密，再轮换
+        out = os.path.join(_TMP, "rotated_credentials_test.txt")
+        first = rotate(out_path=out)
+        self.assertEqual(self.total, first["rotated"])
+        self.assertTrue(os.path.isfile(out))
+
+        admin_row = self._user("admin06")
+        self.assertFalse(security.verify_password("Clinic@2026", admin_row["password_hash"]),
+                         "轮换后历史默认口令仍可登录")
+        self.assertEqual(1, int(admin_row["must_change"]), "轮换后仍应强制首登改密")
+
+        checked = 0
+        with open(out, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                username, _role, password = line.split("\t")
+                row = self._user(username)
+                self.assertTrue(security.verify_password(password, row["password_hash"]),
+                                username + " 的新口令无法校验")
+                checked += 1
+        self.assertEqual(self.total, checked, "口令文件必须覆盖全部轮换账号")
+        self.assertEqual(0, rotate(out_path=out)["rotated"], "轮换必须幂等")
+
 
 if __name__ == "__main__":
     unittest.main()
