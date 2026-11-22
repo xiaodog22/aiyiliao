@@ -282,7 +282,10 @@ def test_budget_follows_provider_position(monkeypatch, order, expected_budget):
         timeout_s=17, first_token_timeout_s=1, fallback_timeout_s=3,
     ))
     assert result.source == "deepseek"
-    assert captured["timeout_s"] == expected_budget
+    # 预算由链内部按**墙钟剩余时间**扣减（deadline - now），不是原样透传 int：
+    # CI Linux 实测得 16.999998847999994，精确 == 会假红（本地 Windows 恰好落在 17.0）。
+    # 容差 0.05s 对 3~17s 的预算足够区分「首级满预算」与「兜底短预算」。
+    assert captured["timeout_s"] == pytest.approx(expected_budget, abs=0.05)
 
 
 # ---------------------------------------------------------------- 缓存 / 配置 / 契约

@@ -79,10 +79,19 @@ jobs:
           node tools/check-require.js
           node tools/check-exports.js
           node tools/check-project.js
+      # 2026-11-22：该步骤在 GitHub（Linux）红、本地 Windows 全绿，注解只有 exit code。
+      # 输出 tee 到文件，失败时把末尾 40 行写成 annotation，直接看到失败用例。
       - name: 逻辑层测试（node:test）
         run: |
-          node tools/test-fe.js
-          node tools/test-triage.js
+          set -o pipefail
+          { node tools/test-fe.js; node tools/test-triage.js; } 2>&1 | tee /tmp/fe-test.log
+      - name: 逻辑层测试失败摘要（写入 annotation）
+        if: failure()
+        run: |
+          echo "::error::前端逻辑测试失败，以下为末尾日志"
+          tail -40 /tmp/fe-test.log | while IFS= read -r line; do
+            echo "::error::$line"
+          done
       - name: 在线问诊 safety 契约（服务端 safety → 急救横幅/120）
         run: node tools/test-consultation-safety.js
       - name: 导诊 golden set（红旗召回必须 100%）
