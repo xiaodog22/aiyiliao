@@ -3,7 +3,7 @@
  *
  * 目的：发布前复测「急救横幅 / 拨打120 按钮」在真实渲染层是否出现，而不是只信单元测试。
  * 断言口径：
- *   1. 「无诱因胸痛」→ 常驻红条 .emg-bar 出现，文案含「急诊」，.emg-bar-call 文本为「拨打120」
+ *   1. 「无诱因胸痛，还冒冷汗」→ 常驻红条 .emg-bar 出现，文案含「急诊」，.emg-bar-call 文本为「拨打120」
  *   2. 同轮生成内联急症卡 .emg-card（含「紧急情况」标题与「前往急诊区」）
  *   3. 负样本「无胸痛」→ 不出现红条（否定语义不误报）
  *   4. 「不舒服3天」→ 时长槽位被采到（弱否定「不」不吞时长）
@@ -138,9 +138,9 @@ function main () {
     return (r && r.data && typeof r.data === 'object') ? r.data : (r || {})
   }
 
-  run('急症：无诱因胸痛 → 常驻红条 + 拨打120', (c) => {
+  run('急症：无诱因胸痛+冷汗 → 常驻红条 + 拨打120', (c) => {
     freshTriage()
-    say('无诱因胸痛')
+    say('无诱因胸痛，还冒冷汗')
     callCli(cli, 'automation_page_action', [
       '--action', 'querySelector', '--selector', '.emg-bar', '--wait-for-selector', '.emg-bar'
     ], { timeoutMs: 30000 })

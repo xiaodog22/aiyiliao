@@ -180,6 +180,20 @@ jobs:
       - name: 安装依赖
         working-directory: backend/ai-service
         run: python -m pip install -r requirements.txt
+      # 2026-11-22：本作业在 GitHub（Linux）长期红、本地 Windows 287/287 全绿，
+      # 且日志下载需要 admin 权限 → 这里把 pytest 输出同时 tee 到文件，
+      # 失败时把末尾 40 行写成 annotation，任何有读权限的人都能直接看到失败用例名。
       - name: pytest
         working-directory: backend/ai-service
-        run: python -m pytest tests -q
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          set -o pipefail
+          python -m pytest tests -q --tb=short 2>&1 | tee /tmp/ai-pytest.log
+      - name: pytest 失败摘要（写入 annotation，便于无 admin 权限时定位）
+        if: failure()
+        run: |
+          echo "::error::AI 服务 pytest 失败，以下为末尾日志"
+          tail -40 /tmp/ai-pytest.log | while IFS= read -r line; do
+            echo "::error::$line"
+          done

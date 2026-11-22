@@ -196,6 +196,17 @@
         this._cache = pool;
       }
       if (seq !== this._seq) return;            // 丢弃过期响应
+      // 远程数据源：服务端已按原始字段（姓名/病历号/手机掩码/哈希）检索并排好序，
+      // 前端不再按「脱敏后的展示名」二次打分 —— 否则输入全名（陈楷楠）会被掩码
+      // （陈**）过滤成空列表，表现为「输入关键词没有任何候选」。
+      if (this.opts.remote) {
+        this._items = pool.slice(0, this.opts.max).map(it => ({
+          it, label: this.opts.label(it), m: { score: 0, hl: null },
+        }));
+        this._sel = this._items.length ? 0 : -1;
+        this._show();
+        return;
+      }
       const scored = [];
       for (const it of pool) {
         const label = this.opts.label(it);

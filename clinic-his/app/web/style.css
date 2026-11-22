@@ -501,6 +501,7 @@ tbody tr:hover { background: #f7fbff; }
   padding: 9px 12px; font: inherit; cursor: pointer;
 }
 .search-item:hover { background: #f7fbff; }
+.search-item.sel { background: #e7f2f7; box-shadow: inset 3px 0 0 var(--brand); }
 .search-empty { padding: 12px; color: var(--muted); font-size: 13px; }
 
 .todo-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }

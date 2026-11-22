@@ -46,7 +46,8 @@ class TriageRuleEngineTest {
 
     @Test
     void 急症词表_确定性命中() {
-        assertTrue(engine.scanText("胸口压得慌").emergency());
+        // 2026-11-22：胸痛类红旗要求高危伴随证据，"胸口压得慌"单独不再判急症
+        assertTrue(engine.scanText("胸口压得慌，还出冷汗").emergency());
         assertTrue(engine.scanText("突然昏迷了").emergency());
         assertTrue(engine.scanText("痰中带血有咯血").emergency());
         assertFalse(engine.scanText("膝盖有点疼").emergency());
@@ -112,8 +113,11 @@ class TriageRuleEngineTest {
         assertFalse(engine.scanText("否认咯血").emergency(), "「否认咯血」不应判急症");
         assertFalse(engine.scanText("没有明显胸痛").emergency(), "否定词与关键词间隔 2 字仍算否认");
 
-        assertTrue(engine.scanText("胸痛").emergency(), "阳性必须命中");
-        assertTrue(engine.scanText("没有发烧但胸痛").emergency(), "转折后的胸痛不得被前面的否定吞掉");
+        // 2026-11-22 产品口径：单独「胸痛」不再一词判危重（前端降为 urgent + 高危确认）；
+        // 带高危证据（冷汗/出汗/放射/压榨性质等）才命中 chest_pain。
+        assertFalse(engine.scanText("胸痛").emergency(), "单独胸痛不再直接判急症");
+        assertTrue(engine.scanText("胸痛伴冷汗").emergency(), "阳性必须命中");
+        assertTrue(engine.scanText("没有发烧但胸痛，还出汗").emergency(), "转折后的胸痛不得被前面的否定吞掉");
         assertTrue(engine.scanText("没有胸痛，后来胸痛加重").emergency(), "同句后段阳性仍命中");
         assertTrue(engine.scanText("胸痛不缓解").emergency(), "「不」在关键词之后，不影响阳性判定");
     }

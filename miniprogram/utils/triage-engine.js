@@ -43,6 +43,9 @@ const RED_FLAGS_N = RED_FLAGS.map((flag) => ({
   none: (flag.none || []).map((k) => normalize(k))
 }))
 
+// 胸痛降档用（2026-11-22）：单独「胸痛」不再直接 emergency，要先用一句话确认高危伴随。
+const CHEST_RULE_N = RED_FLAGS_N.filter((n) => n.flag.id === 'chest_pain')[0] || null
+
 // 症状知识条扁平化：一次遍历即可完成打分，避免三层嵌套 forEach 的重复建道具
 const SYMPTOM_ROWS = []
 SYMPTOM_KB.forEach((entry) => {
@@ -506,8 +509,19 @@ function analyze(text, opts) {
   const unrecognized = !hasSignal
 
   const matched = primary.dept !== FALLBACK_DEPT && primary.score > 0
-  const stopAsk = unrecognized || level.key === 'emergency' || level.key === 'urgent' || matched
-  const question = stopAsk ? null : nextQuestion(slots, o.asked, o.rounds)
+  // 单独胸痛（红旗未命中、且本次会话还没问过 chest_risk）→ 允许一次高危确认追问；
+  // 回答命中出汗/放射/喘不上气才会命中 chest_pain 的 all 词表升为 emergency。
+  const askedList = o.asked || []
+  const chestPending = !redFlags.length && !!CHEST_RULE_N
+    && anyHit(normalize(merged), CHEST_RULE_N.any)
+    && askedList.indexOf('chest_risk') < 0
+  const baseStopAsk = unrecognized || level.key === 'emergency' || level.key === 'urgent' || matched
+  const stopAsk = baseStopAsk && !chestPending
+  const question = stopAsk
+    ? null
+    : (chestPending
+        ? Object.assign({ slot: 'chest_risk' }, FOLLOWUPS.chest_risk)
+        : nextQuestion(slots, o.asked, o.rounds))
 
   // 兜底科室不是"结论"（DEF-16）：只要主推荐落回 `全科医学科`，就说明**没有识别出系统归属**
   // （追问轮数用尽、或用户点「直接出结果」时最容易被渲染成"确定科室 + 去挂号"）。

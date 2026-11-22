@@ -621,16 +621,10 @@ Page({
       slotsText: result.slotsText || ''
     })
     try { wx.vibrateShort && wx.vibrateShort({ type: 'heavy', fail: () => {} }) } catch (e) {}
-    if (!this._emergencyModalShown) {
-      this._emergencyModalShown = true
-      wx.showModal({
-        title: '⚠ 检测到紧急情况',
-        content: info.label + '\n\n' + info.advice,
-        confirmText: '拨打 120',
-        cancelText: '我知道了',
-        success: (res) => { if (res.confirm) this.onCall120() }
-      })
-    }
+    // 2026-11-22 产品口径：取消强制 showModal。
+    // 原实现命中红旗就弹一次窗、再叠常驻红条 + 对话急诊卡 + 底部提示条，用户反馈"一个胸痛就被三处 120 轰炸"。
+    // 现在只保留"红条（常驻）+ 急诊卡（含拨打 120 / 去急诊区两个按钮）"，
+    // 安全出口一个不少（仍可直接拨号、仍引导急诊），但不打断用户操作。
   },
 
   onCall120() {

@@ -2566,7 +2566,30 @@ async function viewPatients() {
 
   $('#pt-refresh').onclick = () => load().catch(err => toast(err.message, 'error'));
   $('#pt-search').onclick = () => load().catch(err => toast(err.message, 'error'));
-  $('#pt-q').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); load().catch(err => toast(err.message, 'error')); } };
+  $('#pt-q').onkeydown = e => {
+    // 候选层未打开时 Enter 才触发列表检索；打开时交给 AutoComplete 采纳候选
+    if (e.key === 'Enter' && !document.querySelector('.ac-pop:not(.hidden)')) {
+      e.preventDefault();
+      load().catch(err => toast(err.message, 'error'));
+    }
+  };
+  // 患者检索也接自动补全：输入即出候选、↑↓ 选择、Enter 直接进患者详情
+  if ($('#pt-q')) {
+    AutoComplete.attach($('#pt-q'), {
+      remote: async q => await api('GET', `/api/v1/patients?q=${encodeURIComponent(q)}&limit=10`),
+      label: p => p.name, code: p => p.mrn,
+      sub: p => `${p.mrn} · ${p.gender || ''}${p.birthDate ? ' · ' + p.birthDate : ''}`,
+      value: p => p.mrn,
+      emptyHint: '无匹配患者：可换姓名/病历号/手机号关键词，或点「搜索」查看全部',
+      onPick: async p => {
+        const qEl = $('#pt-q');
+        qEl.value = p.mrn;
+        await load();
+        openDetail(p.id).catch(err => toast(err.message, 'error'));
+        qEl.value = p.mrn;
+      },
+    });
+  }
   $('#pt-table').onclick = e => {
     const btn = e.target.closest('button');
     if (btn && btn.dataset.pt) openDetail(Number(btn.dataset.pt)).catch(err => toast(err.message, 'error'));
@@ -3413,22 +3436,45 @@ function setupGlobalSearch() {
   const box = $('#global-search-results');
   if (!input || !box) return;
   let timer = null;
+  let items = [];       // 当前候选（患者 brief）
+  let idx = -1;         // 键盘高亮位置
+
+  const paint = () => {
+    if (!items.length) return;
+    [...box.querySelectorAll('.search-item')].forEach((el, i) => {
+      el.classList.toggle('sel', i === idx);
+      if (i === idx) el.scrollIntoView({ block: 'nearest' });
+    });
+  };
+
+  const pick = p => {
+    if (!p) return;
+    box.classList.add('hidden');
+    input.value = '';
+    items = [];
+    idx = -1;
+    openPatient(Number(p.id));
+  };
+
   const run = async () => {
     const q = input.value.trim();
-    if (!q) { box.innerHTML = ''; box.classList.add('hidden'); return; }
+    if (!q) { box.innerHTML = ''; box.classList.add('hidden'); items = []; idx = -1; return; }
     try {
-      const rows = await api('GET', `/api/v1/patients?q=${encodeURIComponent(q)}&limit=8`);
+      const rows = (await api('GET', `/api/v1/patients?q=${encodeURIComponent(q)}&limit=8`)) || [];
+      items = rows;
+      idx = rows.length ? 0 : -1;
       box.innerHTML = rows.length
-        ? rows.map(p => `<button type="button" class="search-item" data-patient="${p.id}">
+        ? rows.map((p, i) => `<button type="button" class="search-item${i === idx ? ' sel' : ''}" data-patient="${p.id}">
             <strong>${esc(p.name)}</strong>
-            <span class="hint">${esc(p.mrn)} · ${esc(p.gender)}${p.phoneMask ? ' · ' + esc(p.phoneMask) : ''}</span>
+            <span class="hint">${esc(p.mrn)} · ${esc(p.gender || '')}${p.phoneMask ? ' · ' + esc(p.phoneMask) : ''}</span>
           </button>`).join('')
-        : '<div class="search-empty">未找到患者</div>';
+        : '<div class="search-empty">未找到患者（可换姓名 / 病历号 / 手机号关键词）</div>';
       box.classList.remove('hidden');
     } catch (err) {
       toast(err.message, 'error');
     }
   };
+
   input.addEventListener('input', () => {
     clearTimeout(timer);
     timer = setTimeout(run, 300);
@@ -3437,17 +3483,28 @@ function setupGlobalSearch() {
     if (e.key === 'Enter') {
       e.preventDefault();
       clearTimeout(timer);
-      run();
+      // 有候选就采纳当前高亮项（默认第一项），否则立刻检索
+      if (items.length) pick(items[Math.max(idx, 0)]); else run();
+      return;
     }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!items.length) { clearTimeout(timer); run(); return; }
+      idx = e.key === 'ArrowDown'
+        ? Math.min(idx + 1, items.length - 1)
+        : Math.max(idx - 1, 0);
+      paint();
+      return;
+    }
+    if (e.key === 'Escape') { box.classList.add('hidden'); idx = -1; }
   });
   box.addEventListener('click', e => {
     const item = e.target.closest('[data-patient]');
     if (!item) return;
     e.preventDefault();
     e.stopPropagation();
-    box.classList.add('hidden');
-    input.value = '';
-    openPatient(Number(item.dataset.patient));
+    const p = items.find(x => String(x.id) === item.dataset.patient);
+    pick(p || { id: item.dataset.patient });
   });
   document.addEventListener('click', e => {
     if (!e.target.closest('.global-search')) box.classList.add('hidden');

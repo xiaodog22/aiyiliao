@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import secrets
+import threading
+import time
 
 from .. import db, security
 from ..errors import ApiError, conflict, not_found
@@ -11,6 +13,27 @@ from .common import as_int, as_str, one_of, parse_date, parse_vitals, require_fi
 
 TITLE_FEE = {"主任医师": 20.0, "副主任医师": 18.0, "主治医师": 15.0, "住院医师": 10.0}
 DEFAULT_FEE = 10.0
+
+# ---------------------------------------------------------------- 挂号频控
+# 背景（2026-11-22）：HIS 只有登录限流，挂号/取消可被脚本无限刷（刷号占号、
+# 反复挂号取消制造脏数据）。这里做进程内滑动窗口限流，维度为「操作人 + 患者」。
+# 说明：单实例演示足够；多实例部署需换成 Redis 计数（阈值语义不变）。
+_RATE_LOCK = threading.Lock()
+_RATE_HITS: dict[str, list[float]] = {}
+
+
+def _limit(key: str, max_hits: int, window_sec: int, message: str) -> None:
+    now = time.monotonic()
+    with _RATE_LOCK:
+        hits = [t for t in _RATE_HITS.get(key, []) if now - t < window_sec]
+        if len(hits) >= max_hits:
+            _RATE_HITS[key] = hits
+            retry = int(window_sec - (now - hits[0])) + 1
+            raise ApiError(429, "RATE_LIMITED", message,
+                           details=[{"field": "rate", "reason": f"{window_sec} 秒内最多 {max_hits} 次",
+                                     "retryAfterSec": max(retry, 1)}])
+        hits.append(now)
+        _RATE_HITS[key] = hits
 
 
 def _reg_row(row) -> dict:
@@ -62,6 +85,10 @@ def create_registration(ctx):
     slot_id = as_int(body, "slotId", required=True, minimum=1)
     source = one_of(as_str(body, "source", default="ONSITE") or "ONSITE",
                     {"ONSITE", "APPOINTMENT", "WECHAT"}, "source")
+
+    # 频控：同一操作人 60 秒内最多 8 单；同一患者 10 分钟内最多 3 单
+    _limit(f"reg-create-user:{ctx.user['id']}", 8, 60, "操作过于频繁，请稍后再试（挂号）")
+    _limit(f"reg-create-patient:{patient_id}", 3, 600, "该患者短时间内挂号次数过多，请稍后再试")
 
     with db.tx() as con:
         patient = con.execute("SELECT id FROM patients WHERE id=?", (patient_id,)).fetchone()
@@ -147,8 +174,8 @@ def checkin(ctx):
             con.execute("UPDATE queue_tickets SET status='WAITING', queue_date=? WHERE id=?",
                         (db.today_str(), reserved["id"]))
         else:
-            # 按 日期+科室 维度原子取号，避免并发生成重复排队号
-            seq = db.next_sequence(con, f"queue-{db.today_str()}-{reg['dept_id']}")
+            # 按 就诊日 全局取号（跨科室共用一条流水，避免同日各科室都从 001 起）
+            seq = db.next_sequence(con, f"queue-day-{db.today_str()}")
             ticket_no = f"{dept['code']}{seq:03d}"
             con.execute(
                 "INSERT INTO queue_tickets(ticket_no,queue_date,dept_id,registration_id,patient_id,status,created_at) "
@@ -170,6 +197,9 @@ def cancel_registration(ctx):
         reg = con.execute("SELECT * FROM registrations WHERE id=?", (reg_id,)).fetchone()
         if reg is None:
             raise not_found("挂号记录不存在")
+        # 频控：同一操作人 5 分钟最多 5 次取消；同一患者 10 分钟最多 3 次取消
+        _limit(f"reg-cancel-user:{ctx.user['id']}", 5, 300, "取消过于频繁，请稍后再试（取消挂号）")
+        _limit(f"reg-cancel-patient:{reg['patient_id']}", 3, 600, "该患者短时间内取消次数过多，请稍后再试")
         if reg["status"] != "BOOKED":
             raise conflict("已签到或已就诊的挂号不可取消，请走退号流程", "STATE_CONFLICT")
         paid = con.execute(

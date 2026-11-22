@@ -299,7 +299,10 @@ const OPT_FILLED = {
   duration: (s) => !!s.duration,
   severity: (s) => !!s.severity,
   associated: (s) => s.associated.length > 0,
-  part: (s) => s.part.length > 0
+  part: (s) => s.part.length > 0,
+  // chest_risk 的语义是"高危确认"，不是填槽：选项值要么命中红旗 all 词表，要么是否定回答，
+  // 逐条断言在下方「胸痛降档与高危确认」小节里做。
+  chest_risk: () => true
 }
 Object.keys(KBQ.FOLLOWUPS).forEach((slot) => {
   KBQ.FOLLOWUPS[slot].options.forEach((opt) => {
@@ -308,6 +311,26 @@ Object.keys(KBQ.FOLLOWUPS).forEach((slot) => {
       JSON.stringify(E.extractSlots(opt)))
   })
 })
+
+// 2026-11-22 产品口径：单独「胸痛」不再一词触发急救，改为 urgent + 一句高危确认；
+// 回答命中出汗/放射/喘不上气才升级 emergency。
+section('胸痛降档与高危确认')
+const chest1 = E.analyze('胸痛')
+check('胸痛-不直接判危重', chest1.emergency === false && chest1.level === 'urgent',
+  chest1.level + '/emg=' + chest1.emergency)
+check('胸痛-必问高危伴随', !!chest1.question && chest1.question.slot === 'chest_risk',
+  JSON.stringify(chest1.question && chest1.question.slot))
+check('胸痛-落心血管内科而非急诊兜底', chest1.primary.dept === '心血管内科', chest1.primary.dept)
+const chest2 = E.analyze('有出汗或恶心', { history: ['胸痛'], asked: ['chest_risk'] })
+check('胸痛+出汗/恶心 → 升级 emergency', chest2.emergency === true && chest2.level === 'emergency',
+  chest2.level)
+const chest3 = E.analyze('疼放射到左肩/后背', { history: ['胸痛'], asked: ['chest_risk'] })
+check('胸痛+放射痛 → 升级 emergency', chest3.emergency === true)
+const chest4 = E.analyze('都没有', { history: ['胸痛'], asked: ['chest_risk'] })
+check('胸痛+否认高危 → 保持 urgent、不再追问', chest4.emergency === false && chest4.level === 'urgent'
+  && chest4.question === null, chest4.level + '/q=' + JSON.stringify(chest4.question))
+const chest5 = E.analyze('胸口压榨一样疼，还出汗')
+check('压榨+出汗 仍立即预警', chest5.emergency === true)
 
 // ==================== ⑤d 非症状输入：不假装听懂 ====================
 // 原实现：识别不出任何症状词也照问「持续多久」，最后把「全科医学科 + 居家观察」写进导诊记录。

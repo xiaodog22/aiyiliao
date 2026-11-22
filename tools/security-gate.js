@@ -177,6 +177,10 @@ const RULES = [
       /DevWechatSessionProvider\.java$/, // @Profile("dev")，生产不装配
       /edge-gateway\/app\/compat\.py$/,  // 网关 dev 兼容路由
       /tools\/test-login-auth-audit\.js$/, // 测试脚本
+      // clinic-his 是**独立 SQLite 的演示院内系统**（不进 docker-compose / 云托管，
+      // 仅本地联调与验收用）。seed 里 staff.account 就是演示登录账号，
+      // 与 doctor01…doctor08 同性质；小程序医生端联调需要用它可以登录。
+      /clinic-his\/app\/seed\.py$/,
     ],
   },
   {

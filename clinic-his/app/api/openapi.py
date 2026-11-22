@@ -166,7 +166,9 @@ def _order_detail(order: dict) -> dict:
 #     WAITING），到院签到后由 registration.checkin 复用该票并置 WAITING，
 #     避免「没到院就被叫号」和「重复取号」。
 #   · 不生成 charges：挂号费仍由院内收费处收取（互联网医院侧支付未接入该接口）。
-#   · slot_id 留空：平台号源与院内 doctor_slots 不同源，不伪造院内号源外键。
+#   · 号源联动（2026-11-22 二次整改）：受理时按「本院医生 + 就诊日期 + 午别」匹配一条
+#     院内 doctor_slots，占号（booked+1）并回填 slot_id；撤销时释放（booked-1）。
+#     这样院内「剩余号源」会随小程序挂号实时变化，不再出现「平台挂号成功、HIS 余量不动」。
 
 def _parse_slot_date(raw: str) -> str:
     if not raw:
@@ -178,10 +180,24 @@ def _parse_slot_date(raw: str) -> str:
                        details=[{"field": "slotDate", "reason": "日期格式错误"}])
 
 
+def _match_slot(con: sqlite3.Connection, doctor_id: int, slot_date: str, slot_time: str):
+    """按医生+日期+午别匹配院内号源（上午=AM，下午=PM）。"""
+    try:
+        hour = int((slot_time or "09:00").split(":")[0])
+    except ValueError:
+        hour = 9
+    period = "AM" if hour < 12 else "PM"
+    return con.execute(
+        "SELECT id, capacity, booked FROM doctor_slots "
+        "WHERE doctor_id=? AND work_date=? AND period=? AND status='OPEN' "
+        "ORDER BY start_time LIMIT 1",
+        (doctor_id, slot_date, period)).fetchone()
+
+
 def _ensure_registration(con: sqlite3.Connection, *, app_id: str, his_order_no: str,
                          patient_name: str, doctor: dict, doctor_no: str, dept: dict,
                          dept_code: str, slot_date: str, slot_time: str, ip: str) -> dict:
-    """受理成功的院内落地：挂号 + 预排号（幂等，按 his_order_no 只建一次）。"""
+    """受理成功的院内落地：挂号（占院内号源）+ 预排号（幂等，按 his_order_no 只建一次）。"""
     exist = con.execute(
         "SELECT id, reg_no, queue_no FROM registrations WHERE his_order_no=?",
         (his_order_no,)).fetchone()
@@ -196,17 +212,31 @@ def _ensure_registration(con: sqlite3.Connection, *, app_id: str, his_order_no: 
 
     created_at = db.now_str()
     temp_no = "TMP-" + secrets.token_hex(8)
+    slot = _match_slot(con, doctor["id"], slot_date, slot_time)
+    if slot is not None:
+        cur = con.execute(
+            "UPDATE doctor_slots SET booked=booked+1 WHERE id=? AND booked<capacity AND status='OPEN'",
+            (slot["id"],))
+        if cur.rowcount == 0:
+            raise conflict("院内该时段号源已约满，请换时段或改约", "HIS_SLOT_FULL")
+        slot_id = slot["id"]
+    else:
+        # 院内未排该时段（例如临时加号）：不占号，但仍建挂号，避免丢患者
+        slot_id = None
     cur = con.execute(
         "INSERT INTO registrations(reg_no,patient_id,slot_id,doctor_id,dept_id,reg_date,source,status,"
         "his_order_no,queue_no,vitals_json,created_at,created_by) "
-        "VALUES (?,?,NULL,?,?,?,?, 'BOOKED', ?, '', '', ?, NULL)",
-        (temp_no, patient["id"], doctor["id"], dept["id"], slot_date,
+        "VALUES (?,?,?,?,?,?,?, 'BOOKED', ?, '', '', ?, NULL)",
+        (temp_no, patient["id"], slot_id, doctor["id"], dept["id"], slot_date,
          "WECHAT", his_order_no, created_at))
     reg_id = int(cur.lastrowid)
     reg_no = f"RG{slot_date.replace('-', '')}-{reg_id:05d}"
     con.execute("UPDATE registrations SET reg_no=? WHERE id=?", (reg_no, reg_id))
 
-    seq = db.next_sequence(con, f"queue-{slot_date}-{dept['id']}")
+    # 取号口径（2026-11-22 整改）：按「就诊日」全局连续发号，跨科室共用一条流水，
+    # 不再按「日期+科室」各自从 001 起 —— 否则同一天不同科室/不同患者都显示 001，
+    # 与挂号记录 RG…-00002/00003 的连续观感不一致。
+    seq = db.next_sequence(con, f"queue-day-{slot_date}")
     ticket_no = f"{dept_code}{seq:03d}"
     con.execute(
         "INSERT INTO queue_tickets(ticket_no,queue_date,dept_id,registration_id,patient_id,"
@@ -222,11 +252,15 @@ def _ensure_registration(con: sqlite3.Connection, *, app_id: str, his_order_no: 
 def _cancel_registration(con: sqlite3.Connection, his_order_no: str, ip: str) -> int:
     """受理单撤销时同步作废院内挂号与预排号；已签到/已就诊的不动（需走退号流程）。"""
     reg = con.execute(
-        "SELECT id FROM registrations WHERE his_order_no=? AND status='BOOKED'",
+        "SELECT id, slot_id FROM registrations WHERE his_order_no=? AND status='BOOKED'",
         (his_order_no,)).fetchone()
     if reg is None:
         return 0
     con.execute("UPDATE registrations SET status='CANCELLED' WHERE id=?", (reg["id"],))
+    if reg["slot_id"] is not None:
+        # 释放受理时占用的院内号源，保证「取消后余号回升」
+        con.execute("UPDATE doctor_slots SET booked=MAX(booked-1,0) WHERE id=?",
+                    (reg["slot_id"],))
     con.execute(
         "UPDATE queue_tickets SET status='CANCELLED' WHERE registration_id=? "
         "AND status IN ('RESERVED','WAITING')", (reg["id"],))

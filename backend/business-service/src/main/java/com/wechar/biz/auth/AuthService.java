@@ -138,7 +138,9 @@ public class AuthService {
      * GET /auth/whoami（审计 M13）：角色只从服务端权威数据下发。
      * 客户端本地 wb_role 仅作路由提示，医生端进入前必须用本接口结果裁决。
      */
-    @Transactional(readOnly = true)
+    // 不能标 readOnly：contractUser 会 insertIfAbsent 补建 user_preferences 默认行，
+    // 只读连接下该 INSERT 被 MySQL 拒绝（"Connection is read-only"）→ whoami 恒 500。
+    @Transactional
     public java.util.Map<String, Object> whoami(String userId) {
         var user = userService.contractUser(userId);
         java.util.List<String> roles = user.roles() == null ? java.util.List.of() : user.roles();

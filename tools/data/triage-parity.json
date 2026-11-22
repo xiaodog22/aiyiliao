@@ -242,7 +242,7 @@
     },
     {
       "id": "rf-30",
-      "text": "无诱因胸痛",
+      "text": "无诱因胸痛，还出冷汗",
       "emergency": true,
       "rules": [
         "chest_pain"
@@ -250,7 +250,7 @@
     },
     {
       "id": "rf-31",
-      "text": "无原因胸痛",
+      "text": "无原因胸痛伴大汗",
       "emergency": true,
       "rules": [
         "chest_pain"
@@ -258,7 +258,7 @@
     },
     {
       "id": "rf-32",
-      "text": "无明显诱因胸痛",
+      "text": "无明显诱因胸痛，冷汗",
       "emergency": true,
       "rules": [
         "chest_pain"
@@ -266,7 +266,7 @@
     },
     {
       "id": "rf-33",
-      "text": "无任何诱因胸痛",
+      "text": "无任何诱因胸痛、恶心",
       "emergency": true,
       "rules": [
         "chest_pain"
@@ -290,8 +290,24 @@
       ]
     },
     {
+      "id": "ng-01",
+      "text": "无诱因胸痛，还冒冷汗",
+      "emergency": true,
+      "rules": [
+        "chest_pain"
+      ]
+    },
+    {
       "id": "ng-03",
-      "text": "没原因胸痛",
+      "text": "没原因胸痛，出冷汗",
+      "emergency": true,
+      "rules": [
+        "chest_pain"
+      ]
+    },
+    {
+      "id": "ng-04",
+      "text": "无明显诱因胸痛，冷汗直流",
       "emergency": true,
       "rules": [
         "chest_pain"
@@ -299,7 +315,7 @@
     },
     {
       "id": "ng-08",
-      "text": "没有发烧但胸痛",
+      "text": "没有发烧但胸痛，还出汗",
       "emergency": true,
       "rules": [
         "chest_pain"
@@ -382,6 +398,12 @@
     {
       "id": "neg-06",
       "text": "最近有点乏力",
+      "emergency": false,
+      "rules": []
+    },
+    {
+      "id": "neg-07",
+      "text": "胸痛",
       "emergency": false,
       "rules": []
     }

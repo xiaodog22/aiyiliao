@@ -1,4 +1,4 @@
-<view class="page theme-{{theme}} rc-page">
+<view class="page theme-{{theme}} {{hc ? 'high-contrast' : ''}} rc-page">
 
   <!-- 分段筛选（设计 06：全部 / 待就诊 / 已完成，带小号计数） -->
   <view class="seg-tabs">

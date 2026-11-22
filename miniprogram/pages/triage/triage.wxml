@@ -280,8 +280,9 @@
   </view>
 
   <!-- ============ ⑥ 橙色警示条（复刻文档 §2-⑥：常驻在输入栏正上方）
-       浅橙底 #FFF4E5 / 深橙字 #CC6600 / 1rpx 橙边，均为 app.wxss 的 .notice-bar-amber 令牌 ============ -->
-  <view class="notice-bar notice-bar-amber ai-note">
+       浅橙底 #FFF4E5 / 深橙字 #CC6600 / 1rpx 橙边，均为 app.wxss 的 .notice-bar-amber 令牌 ============
+       2026-11-22：已命中急诊时不再显示——避免同屏出现「常驻红条 + 急诊卡 + 这条」三份 120 提示。 -->
+  <view class="notice-bar notice-bar-amber ai-note" wx:if="{{!emergency}}">
     <image class="notice-bar-ic" src="{{icons.alert}}" />
     <view class="notice-bar-text">若出现高烧不退、呼吸困难、胸痛等紧急情况，请立即拨打120或前往急诊。</view>
   </view>

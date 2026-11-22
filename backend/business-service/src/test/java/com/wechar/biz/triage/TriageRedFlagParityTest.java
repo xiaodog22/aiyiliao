@@ -140,8 +140,8 @@ class TriageRedFlagParityTest {
     @Test
     void 否定语义_无诱因无原因属阳性主诉() {
         List<String> positives = List.of(
-                "无诱因胸痛", "无原因胸痛", "没原因胸痛",
-                "无明显诱因胸痛", "无任何诱因胸痛");
+                "无诱因胸痛，还冒冷汗", "无原因胸痛伴大汗", "没原因胸痛，出冷汗",
+                "无明显诱因胸痛，冷汗直流", "无任何诱因胸痛、恶心");
         for (String text : positives) {
             TriageRuleEngine.RuleOutcome outcome = engine.scanText(text);
             assertTrue(outcome.emergency(), "阳性主诉被否定词吞掉：" + text);

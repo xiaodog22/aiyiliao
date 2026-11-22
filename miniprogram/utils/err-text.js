@@ -77,6 +77,15 @@ function errText(err, fallback) {
   if (code === 'EXAM_ORDER_FORBIDDEN') return '无权查看该检查预约'
   if (code === 'EXAM_NOT_CANCELLABLE') return '当前检查预约状态不可取消'
   if (code === 'HIS_UNAVAILABLE') return '院内服务暂时不可用，请稍后重试'
+  // 号源类（2026-11-22 补齐）：此前无专属文案，只能靠后端 message 含中文兜底；
+  // 后端一旦改成英文/结构化 message，用户就会看到默认文案，语义丢失。
+  if (code === 'SLOT_FULL') return '该号源已满，请重新选择号源'
+  if (code === 'SLOT_IN_PAST') return '该时段已过，请选择未来号源'
+  if (code === 'SLOT_NOT_FOUND') return '号源不存在，请刷新后重试'
+  // 终态保护（409 APPOINTMENT_STATE_FINAL）：已取消/已完成不可再改
+  if (code === 'APPOINTMENT_STATE_FINAL') return '该预约已完成或已取消，不能继续操作'
+  // 支付开关关闭（503 PAYMENT_DISABLED）：只能到院缴费
+  if (code === 'PAYMENT_DISABLED') return '线上缴费暂未开放，请到院窗口缴费'
 
   // ② 业务错误 / 无 code：仅当 message 是中文才展示
   if (readable(raw)) return raw

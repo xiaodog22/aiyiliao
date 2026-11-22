@@ -1,7 +1,7 @@
 <!-- 电子检查报告列表（V27）：分类 tab + 状态/就诊人/时间筛选 + 报告卡流。
      ⚠️ 所有展示字段来自后端 ReportSummaryData；页面不排序、不补数据、不伪造演示报告。
      ⚠️ 异常提示为文字 + 颜色双通道，不只靠颜色区分。 -->
-<view class="page theme-{{theme}} rep-page">
+<view class="page theme-{{theme}} {{hc ? 'high-contrast' : ''}} rep-page">
 
   <skeleton wx:if="{{loading}}" type="list" rows="4" />
 

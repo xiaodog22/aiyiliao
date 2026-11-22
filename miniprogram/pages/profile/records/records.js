@@ -82,6 +82,8 @@ function isHistory(it) {
 Page({
   data: {
     theme: 'standard',
+    // 高对比（2026-11-22 修复 DEF-01）：小程序不继承 page 的 class，每页根节点必须自带
+    hc: false,
     icons,
     all: [],
     displayed: [],
@@ -97,7 +99,10 @@ Page({
   },
 
   onLoad() {
-    this.setData({ theme: app.globalData.theme || 'standard' })
+    this.setData({
+      theme: app.globalData.theme || 'standard',
+      hc: !!app.globalData.highContrast
+    })
     this.fetch()
   },
 
@@ -130,7 +135,9 @@ Page({
    */
   onShow() {
     const theme = app.globalData.theme || 'standard'
-    if (theme !== this.data.theme) this.setData({ theme })
+    const hc = !!app.globalData.highContrast
+    // 设置页切换字号/高对比后回本页要立即生效（否则本页一直停在旧状态）
+    if (theme !== this.data.theme || hc !== this.data.hc) this.setData({ theme, hc })
     // 别处（或本页刚才）发生过变更才回源，不做无脑轮询；
     // 游标比较而非"读一次即删"——否则本页会把标记吞掉，挂号页就收不到通知了。
     const dirtyAt = aptDirtyAt()

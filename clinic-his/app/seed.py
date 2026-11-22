@@ -65,6 +65,10 @@ DEPARTMENTS = [
     ("YW", "医务科", "ADMIN"),
     ("XX", "信息科", "ADMIN"),
     ("YB", "院办", "ADMIN"),
+    # 2026-11-22：原先只手工补录在本地库（挂号可见性排查 §6.2），并入种子后重建库不再丢
+    ("XH", "消化内科", "CLINICAL"),
+    # 2026-11-22 彩蛋：急诊科（马义童挂靠）
+    ("JZ", "急诊科", "CLINICAL"),
 ]
 
 # (staff_no, 姓名, 性别, 角色, 职称, 科室, 执业证书编号, 专长/岗位, 处方权限级别, 账号)
@@ -78,6 +82,11 @@ STAFF = [
     ("D006", "蔡晓彤", "女", "DOCTOR", "主治医师", "EK", "1104401020006", "儿童呼吸、消化系统疾病", 2, "doctor06"),
     ("D007", "罗文彬", "男", "DOCTOR", "副主任医师", "ZY", "1104401020007", "针灸、中医内科调理", 3, "doctor07"),
     ("D008", "谢嘉怡", "女", "DOCTOR", "主治医师", "KQ", "1104401020008", "龋病、牙周病诊治", 2, "doctor08"),
+    # 2026-11-21 手工同步的小程序端医生（13900139001），2026-11-22 并入种子：
+    # 平台 doc-gastro-1 / dep-gastro 映射到院内的就是 D009 / XH。
+    ("D009", "林建平", "女", "DOCTOR", "主任医师", "XH", "1104401020009", "消化系统疾病、胃肠镜诊疗", 3, "13900139001"),
+    # 2026-11-22 彩蛋角色：急诊医生马义童（HIS 登录账号 13900139000）
+    ("D010", "马义童", "男", "DOCTOR", "主治医师", "JZ", "1104401020010", "急诊急救、创伤处置", 2, "13900139000"),
     # —— 护士 14 人（N010~N012 公卫岗）——
     ("N001", "张丽群", "女", "NURSE", "主管护师", "HL", "N4401202600001", "护士长 · 门诊护理管理", 0, "nurse01"),
     ("N002", "李春梅", "女", "NURSE", "护师", "HL", "N4401202600002", "分诊", 0, "nurse02"),
@@ -116,6 +125,8 @@ PATIENTS = [
     ("P000008", "吴德胜", "男", "1961-01-22", "8067", "159****1163", "湘桥区意溪镇", "阿司匹林过敏", ["高血压"]),
     ("P000009", "郑桂香", "女", "1958-07-09", "4439", "138****5507", "湘桥区太平街道", "无", ["2型糖尿病"]),
     ("P000010", "周文杰", "男", "2001-03-16", "1205", "186****9928", "湘桥区西新街道", "无", []),
+    # 2026-11-22 彩蛋角色：20 岁广州天河女大学生（手机号 13800138000）
+    ("P000099", "陈楷楠", "女", "2006-05-20", "0520", "138****8000", "广州市天河区石牌街道", "无", []),
 ]
 
 DRUGS = [
@@ -275,6 +286,54 @@ def ensure_slots(con) -> None:
                 )
 
 
+def ensure_demo_master_data(con) -> None:
+    """幂等补齐演示主数据：XH 消化内科 + D009 林建平。
+
+    背景（挂号可见性排查 2026-11-22 §6.2）：这两条主数据原先只手工补录在本地
+    data/clinic.db，不在种子里；重建库后 openapi 受理会因科室/医生找不到而 404，
+    平台侧 dep-gastro→XH、doc-gastro-1→D009 映射随之失效。
+    存量库同样受益（缺哪条补哪条），新库由 _seed_staff 正常写入。
+    """
+    dept = con.execute("SELECT id FROM departments WHERE code='XH'").fetchone()
+    if dept:
+        dept_id = int(dept["id"])
+    else:
+        cur = con.execute("INSERT INTO departments(code,name,type) VALUES (?,?,?)",
+                          ("XH", "消化内科", "CLINICAL"))
+        dept_id = int(cur.lastrowid)
+    staff = con.execute("SELECT id FROM staff WHERE staff_no='D009'").fetchone()
+    if not staff:
+        con.execute(
+            "INSERT INTO staff(staff_no,name,gender,role,title,dept_id,license_no,specialty,phone_mask,status,hire_date,pres_level) "
+            "VALUES (?,?,?,?,?,?,?,?,?, 'ACTIVE', ?, 3)",
+            ("D009", "林建平", "女", "DOCTOR", "主任医师", dept_id,
+             "1104401020009", "消化系统疾病、胃肠镜诊疗", "139****9001", "2026-11-21"),
+        )
+    # 彩蛋角色（2026-11-22）：急诊科 + 马义童 + 陈楷楠；存量库同样补齐
+    jz = con.execute("SELECT id FROM departments WHERE code='JZ'").fetchone()
+    if jz:
+        jz_id = int(jz["id"])
+    else:
+        cur = con.execute("INSERT INTO departments(code,name,type) VALUES (?,?,?)",
+                          ("JZ", "急诊科", "CLINICAL"))
+        jz_id = int(cur.lastrowid)
+    if not con.execute("SELECT id FROM staff WHERE staff_no='D010'").fetchone():
+        con.execute(
+            "INSERT INTO staff(staff_no,name,gender,role,title,dept_id,license_no,specialty,phone_mask,status,hire_date,pres_level) "
+            "VALUES (?,?,?,?,?,?,?,?,?, 'ACTIVE', ?, 2)",
+            ("D010", "马义童", "男", "DOCTOR", "主治医师", jz_id,
+             "1104401020010", "急诊急救、创伤处置", "139****9000", "2026-11-22"),
+        )
+    if not con.execute("SELECT id FROM patients WHERE mrn='P000099'").fetchone():
+        con.execute(
+            "INSERT INTO patients(mrn,name,gender,birth_date,id_last4,id_hash,phone_mask,phone_hash,address,allergy,chronic_tags,created_at,created_by) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL)",
+            ("P000099", "陈楷楠", "女", "2006-05-20", "0520", patient_hash("0520"),
+             "138****8000", patient_hash("13800008000"), "广州市天河区石牌街道", "无",
+             json.dumps([], ensure_ascii=False), db.now_str()),
+        )
+
+
 def ensure_openapi_key(con) -> None:
     row = con.execute("SELECT COUNT(*) AS c FROM openapi_keys").fetchone()
     if row["c"]:
@@ -352,6 +411,7 @@ def ensure_seed() -> bool:
                 con.execute(
                     "UPDATE lab_items SET critical_low=?, critical_high=? WHERE code=? AND critical_low IS NULL AND critical_high IS NULL",
                     (low, high, code))
+        ensure_demo_master_data(con)
         ensure_openapi_key(con)
         ensure_slots(con)
         ensure_beds(con)

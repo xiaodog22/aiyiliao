@@ -72,6 +72,8 @@ Page({
   data: {
     icons,
     theme: 'standard',
+    // 高对比（2026-11-22 同类修复）：小程序不继承 page 的 class，每页根节点必须自带
+    hc: false,
     tabs: TABS,
     activeTab: '',
     statuses: STATUSES,
@@ -86,7 +88,10 @@ Page({
   },
 
   onLoad() {
-    this.setData({ theme: app.globalData.theme || 'standard' })
+    this.setData({
+      theme: app.globalData.theme || 'standard',
+      hc: !!app.globalData.highContrast
+    })
     this.loadMembers()
     this.fetch()
   },

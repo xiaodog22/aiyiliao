@@ -29,6 +29,21 @@ function walk(dir, out) {
   return out
 }
 
+/**
+ * 允许缺失的「本地覆盖」文件（.gitignore 内，干净 clone 必然不存在）。
+ * 与 tools/check-require.js 同一口径，只豁免确切路径：
+ *   miniprogram/config/env.local.js —— 档位/隧道/联调密钥来源，设计上不入库，
+ *   config/env.js 用 try/catch 可选加载。不豁免则干净 clone 上本脚本必红。
+ */
+const OPTIONAL_MISSING = [path.join(ROOT, 'config', 'env.local.js')]
+const optionalHits = []
+
+function isOptionalMissing(fromFile, req) {
+  const abs = path.resolve(path.dirname(fromFile), req)
+  const absJs = abs.endsWith('.js') ? abs : abs + '.js'
+  return OPTIONAL_MISSING.indexOf(abs) >= 0 || OPTIONAL_MISSING.indexOf(absJs) >= 0
+}
+
 /** 把 require 的相对路径解析成绝对文件路径（省略 .js / 目录 index.js 都试一遍） */
 function resolveReq(fromFile, req) {
   if (!/^\.\.?[\\/]/.test(req)) return null      // 只处理相对路径（包名不管）
@@ -131,11 +146,17 @@ for (const file of files) {
   // ③ 相对路径解析不到（check-require.js 已覆盖，这里兜底提示打错的路径）
   const anyRe = /require\(\s*['"](\.[^'"]+)['"]\s*\)/g
   while ((m = anyRe.exec(src))) {
-    if (!resolveReq(file, m[1])) errors.push(rel + '  ⛔ require 路径解析不到：' + m[1])
+    if (resolveReq(file, m[1])) continue
+    if (isOptionalMissing(file, m[1])) { optionalHits.push(rel + ' → ' + m[1]); continue }
+    errors.push(rel + '  ⛔ require 路径解析不到：' + m[1])
   }
 }
 
 console.log('== check-exports：扫描 ' + files.length + ' 个 js ==')
+if (optionalHits.length) {
+  console.log('  可选本地覆盖（.gitignore 内，缺失属预期）：' + optionalHits.length + ' 处')
+  optionalHits.forEach((o) => console.log('  · ' + o))
+}
 if (errors.length) {
   errors.forEach((e) => console.log(e))
   console.log('\n❌ 发现 ' + errors.length + ' 处导入/导出不一致')
