@@ -26,6 +26,7 @@ const flowProgress = require('../../utils/flow-progress.js')
 const { fmtDate } = require('../../utils/datetime.js')
 const { errText } = require('../../utils/err-text.js')
 const { hasContent } = require('../../utils/input-guard.js')
+const consultationSafety = require('../../utils/consultation-safety.js')
 const icons = require('../../utils/icons.js')
 
 /**
@@ -681,13 +682,20 @@ Page({
   },
 
   // ============ 急症 / 失败 ============
-  /** 服务端 safety.emergency=true：直接走急救提示，不引导挂号 */
+  /**
+   * 服务端 safety.emergency=true：直接走急救提示，不引导挂号。
+   * 判定只认服务端（consultation-safety 纯函数不做症状匹配），避免本地第二套词表。
+   */
   _onEmergency(safety) {
-    const advice = (safety && safety.message) || '请立即拨打 120 或前往最近医院急诊科。'
+    const advice = consultationSafety.emergencyText(safety)
+    if (!advice) return
     this.setData({
       status: 'IDLE',
       emergency: advice,
-      latest: { dept: '急诊科', levelText: '紧急', levelCls: 'badge-red', confidence: '', advice }
+      latest: {
+        dept: consultationSafety.emergencyDept(safety),
+        levelText: '紧急', levelCls: 'badge-red', confidence: '', advice
+      }
     })
     this._typeAi('已识别到危险信号，请立即就医。' + advice, () => this._emergencyModal())
   },

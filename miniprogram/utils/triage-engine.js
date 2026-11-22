@@ -22,7 +22,7 @@
 const KB = require('./triage-kb.js')
 
 const {
-  RED_FLAGS, SYMPTOM_KB, PART_PRIMARY, DEPARTMENT_INFO, SLOT_DICT, NEGATIONS,
+  RED_FLAGS, SYMPTOM_KB, PART_PRIMARY, DEPARTMENT_INFO, SLOT_DICT, NEGATION,
   FOLLOWUPS, MAX_FOLLOWUP, LEVELS, URGENT_HINTS
 } = KB
 
@@ -102,41 +102,46 @@ function normalizeLoose(text) {
 }
 
 /**
- * 命中位置前 6 字窗口内是否出现否定词（否定识别，防误判）。
+ * 否定判定（B1：与 shared/triage-redflags.json 的 negation 规格同源，后端同构）。
  *
- * 唯一的否定判定入口 —— 红旗匹配、症状抽取、科室推荐都走 findKey → 这里。
- * 转折词（但/不过/却/后来…）之后重新起算，否则「没有发烧但胸痛」会把真阳性吞掉；
- * 吞掉真阳性比多报一次急症危险得多，所以转折一律按"重新肯定"处理（DEF-19）。
+ * 规则（前后端必须一致，差分基线 tools/data/triage-parity.json 在 CI 比对）：
+ *  ① 只看关键词前 NEGATION.window（6）字；遇到转折词（但/不过/却/后来…）重新起算；
+ *  ② 否定词与关键词间隔 > NEGATION.maxGap（2）字 → 不算否定
+ *     （「没有发烧但胸痛」「无明显诱因胸痛」里的胸痛仍是阳性）；
+ *  ③ 「无/没/没有 + 诱因|原因」修饰的是诱因，属阳性主诉（无诱因胸痛 = 无明确诱因的胸痛），
+ *     不得当成否认症状吞掉急症词；
+ *  ④ 弱否定「不」只认紧邻或隔一个程度词（不发烧 / 不太疼 / 不明显发热），
+ *     避免「不舒服3天」把时长 3 天一起否定（2026-11-16 真机缺陷）。
  */
-const NEG_CONTRASTS = ['但', '不过', '却', '而是', '后来', '随后']
+const NEG_WEAK_TAIL_RE = new RegExp(
+  NEGATION.weak.char + '[' + NEGATION.weak.modifiers + ']{0,' +
+  NEGATION.weak.maxModifiers + '}$')
+const NEG_WEAK_SPAN = NEGATION.weak.char.length + NEGATION.weak.maxModifiers + 1
 
-/**
- * 弱否定「不」的作用范围：只认紧邻（1~2 字），不再用 6 字窗口。
- *
- * 为什么改（2026-11-16 真机反馈「逻辑有误」）：
- *   原来「不」和「没有」共用 6 字窗口 → `不舒服3天` 里 `3天` 因为前面 6 字内有「不」被判成否定，
- *   时长/部位/伴随整段抽不出来，用户答完“3 天左右”采集条仍是空的，AI 只能反复追问。
- *   「不舒服」是最高频主诉开头，这条几乎命中所有口语描述。
- * 现在的口径：
- *   - 「没有 / 无 / 否认 / 不是 / 未见…」保持 6 字窗口（这些词本身就带明确的否定语义）；
- *   - 「不」只在**紧邻症状词**（`不发烧`）或**隔一个程度词**（`不太疼` / `不怎么咳` / `不明显发热`）时才算否定；
- *   - 「不舒服 / 不适」里的「不」是构词成分，不再参与否定。
- */
-const NEG_WEAK_TAIL_RE = /不[太怎么大很明]{0,2}$/
 function isNegated(text, idx) {
-  const from = Math.max(0, idx - 6)
+  const from = Math.max(0, idx - NEGATION.window)
   let window = text.slice(from, idx)
   // 用 for 而非 forEach：本函数是命中判定的最内层热点，避免每次派生闭包
-  for (let c = 0; c < NEG_CONTRASTS.length; c++) {
-    const mark = NEG_CONTRASTS[c]
+  for (let c = 0; c < NEGATION.contrasts.length; c++) {
+    const mark = NEGATION.contrasts[c]
     const i = window.lastIndexOf(mark)
     if (i >= 0) window = window.slice(i + mark.length)
   }
-  for (let i = 0; i < NEGATIONS.length; i++) {
-    if (window.indexOf(NEGATIONS[i]) >= 0) return true
+  for (let i = 0; i < NEGATION.negations.length; i++) {
+    const word = NEGATION.negations[i]
+    const at = window.lastIndexOf(word)
+    if (at < 0) continue
+    const gapText = window.slice(at + word.length)
+    if (gapText.length > NEGATION.maxGap) continue
+    // 「无诱因 / 无原因」= 未找到诱因，症状本身是阳性，不是否认
+    let trigger = false
+    for (let t = 0; t < NEGATION.triggerNouns.length; t++) {
+      if (gapText === NEGATION.triggerNouns[t]) { trigger = true; break }
+    }
+    if (!trigger) return true
   }
-  // 弱否定「不」：看紧挨着症状词的 3 个字（不能用 window，window 会把「不舒服」也算进来）
-  return NEG_WEAK_TAIL_RE.test(text.slice(Math.max(0, idx - 4), idx))
+  // 弱否定「不」：只看紧挨症状词的前几个字（不能用 window，会把「不舒服」也算进来）
+  return NEG_WEAK_TAIL_RE.test(text.slice(Math.max(0, idx - NEG_WEAK_SPAN), idx))
 }
 
 /** 在文本中查找关键词，返回首个未被否定的命中位置（-1 = 未命中） */

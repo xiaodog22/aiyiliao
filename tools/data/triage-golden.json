@@ -1,7 +1,7 @@
 {
-  "version": "triage-golden-v1",
-  "updatedAt": "2026-11-17",
-  "note": "导诊离线评测集（本地规则引擎）。期望值按临床常识标注，不按引擎输出反推；发现不一致时先判定是标注错还是引擎错。红旗用例为安全底线，召回率必须 100%。标注口径：普通感冒样鼻塞流涕归呼吸内科；失眠既可归神经内科也可归精神心理科，本集按「以睡眠/情绪为主」归精神心理科。",
+  "version": "triage-golden-v2",
+  "updatedAt": "2026-11-22",
+  "note": "导诊离线评测集（本地规则引擎 + 服务端同源词表）。期望值按临床常识标注，不按引擎输出反推；发现不一致时先判定是标注错还是引擎错。红旗用例为安全底线，召回率必须 100%。v2（2026-11-22 敌意审查 L1/L12 整改）：新增附录 A.1 的 9 条急症漏报样本，前端与服务端共用同一评测集，服务端由 TriageRedFlagParityTest 执行。标注口径：普通感冒样鼻塞流涕归呼吸内科；失眠既可归神经内科也可归精神心理科，本集按「以睡眠/情绪为主」归精神心理科。",
   "deptCases": [
     { "id": "gi-01", "text": "胃疼反酸一周了", "dept": "消化内科" },
     { "id": "gi-02", "text": "拉肚子三天了，一天跑好几趟", "dept": "消化内科" },
@@ -103,7 +103,22 @@
     { "id": "rf-17", "text": "说话含糊，半边身子没劲", "redFlag": "stroke" },
     { "id": "rf-18", "text": "憋得慌，躺下更喘", "redFlag": "dyspnea" },
     { "id": "rf-19", "text": "突然人事不省", "redFlag": "consciousness" },
-    { "id": "rf-20", "text": "吐血了", "redFlag": "bleeding" }
+    { "id": "rf-20", "text": "吐血了", "redFlag": "bleeding" },
+    { "id": "rf-21", "text": "误服了农药怎么办", "redFlag": "poisoning" },
+    { "id": "rf-22", "text": "孩子三个月大，发烧39度", "redFlag": "infant_fever" },
+    { "id": "rf-23", "text": "怀孕八个月，下面出血", "redFlag": "pregnancy_emergency" },
+    { "id": "rf-24", "text": "全身起大片皮疹，嘴唇肿，喘不上气", "redFlag": "anaphylaxis" },
+    { "id": "rf-25", "text": "大面积烫伤了，脸也烫到了", "redFlag": "severe_burn" },
+    { "id": "rf-26", "text": "不想活了，想结束生命", "redFlag": "self_harm" },
+    { "id": "rf-27", "text": "突然头痛欲裂，脖子发硬", "redFlag": "severe_headache" },
+    { "id": "rf-28", "text": "出车祸了，腿被压住流血不止", "redFlag": "trauma" },
+    { "id": "rf-29", "text": "肚子硬得像板一样疼得受不了", "redFlag": "acute_abdomen" },
+    { "id": "rf-30", "text": "无诱因胸痛", "redFlag": "chest_pain" },
+    { "id": "rf-31", "text": "无原因胸痛", "redFlag": "chest_pain" },
+    { "id": "rf-32", "text": "无明显诱因胸痛", "redFlag": "chest_pain" },
+    { "id": "rf-33", "text": "无任何诱因胸痛", "redFlag": "chest_pain" },
+    { "id": "rf-34", "text": "无诱因发热伴抽搐", "redFlag": "high_fever_convulsion" },
+    { "id": "rf-35", "text": "无原因意识模糊", "redFlag": "consciousness" }
   ],
   "fallbackCases": [
     { "id": "fb-01", "text": "就是不舒服" },

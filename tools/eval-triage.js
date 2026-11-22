@@ -1,8 +1,8 @@
 /**
- * eval-triage.js —— 导诊效果评测（golden set，2026-11-17）
+ * eval-triage.js —— 导诊效果评测（golden set，2026-11-17；服务端模式 2026-11-22）
  *
  * 为什么要有它：
- *   现有 `test-triage.js` 证明的是"规则没写坏"（322 项确定性断言），
+ *   现有 `test-triage.js` 证明的是"规则没写坏"（360 项确定性断言），
  *   但回答不了"分得准不准"。本脚本用一份**按临床常识标注**的评测集跑真实引擎，
  *   输出科室 Top-1 / Top-3、分科室命中率、红旗召回率、兜底率——
  *   换症状词、换融合策略、换模型后都能回归同一把尺子。
@@ -13,13 +13,27 @@
  *   ③ 科室 Top-1 先出基线（默认门槛 85%，低于即红，避免"越改越差"）。
  *
  * 用法：
- *   node tools/eval-triage.js                     # 默认门槛
+ *   node tools/eval-triage.js                     # 默认门槛（前端引擎）
  *   node tools/eval-triage.js --min-dept=0.8      # 临时放宽（只用于看基线）
  *   node tools/eval-triage.js --verbose           # 打印全部失配明细
- * 退出码：0 达标 / 1 未达标
+ *   node tools/eval-triage.js --server             # 打真实服务端 /triage/emergency-checks
+ *   node tools/eval-triage.js --server=http://127.0.0.1:8088
+ *   TRIAGE_SERVER_URL=https://staging.example node tools/eval-triage.js --server
+ *
+ * 服务端模式（2026-11-22 敌意审查 L12）：
+ *   原 CI 只评测前端引擎，服务端词表退化无法被发现。本模式对 golden 的每一条
+ *   红旗样本 POST `{"text":...}` 到 `/api/v1/triage/emergency-checks`，断言
+ *   `data.emergency=true` 且 `data.matchedRules` 包含期望 id；任何一条漏报即退出 1。
+ *   服务端不可达同样退出 1（不得把"没连上"当成"通过"）。
+ *   CI 的常驻门禁由 Java `TriageRedFlagParityTest` 承担（不需要起服务）；
+ *   本模式用于预发/本地验收。
+ *
+ * 退出码：0 达标 / 1 未达标（含服务端不可达）
  */
 const fs = require('fs')
 const path = require('path')
+const http = require('http')
+const https = require('https')
 
 const ROOT = path.join(__dirname, '..')
 const E = require(path.join(ROOT, 'miniprogram', 'utils', 'triage-engine.js'))
@@ -29,14 +43,94 @@ const argv = process.argv.slice(2)
 const verbose = argv.indexOf('--verbose') >= 0
 const minDeptArg = argv.find((x) => x.indexOf('--min-dept=') === 0)
 const MIN_DEPT = minDeptArg ? Number(minDeptArg.split('=')[1]) : 0.85
+const serverArg = argv.find((x) => x === '--server' || x.indexOf('--server=') === 0)
+const SERVER_URL = (() => {
+  if (!serverArg) return ''
+  const inline = serverArg.indexOf('=') >= 0 ? serverArg.split('=')[1] : ''
+  return inline || process.env.TRIAGE_SERVER_URL || 'http://127.0.0.1:8088'
+})()
 
 function pct(n, d) { return d ? (n / d * 100).toFixed(1) + '%' : '—' }
 
-function main() {
+/** 极简 POST JSON（不引第三方依赖；超时 15s 即失败，不静默重试）。 */
+function postJson(url, body) {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url)
+    const payload = JSON.stringify(body)
+    const mod = target.protocol === 'https:' ? https : http
+    const req = mod.request({
+      hostname: target.hostname,
+      port: target.port || (target.protocol === 'https:' ? 443 : 80),
+      path: target.pathname + target.search,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+        'X-Client-Version': 'eval-triage',
+        'X-Platform': 'tools'
+      }
+    }, (res) => {
+      let text = ''
+      res.setEncoding('utf8')
+      res.on('data', (chunk) => { text += chunk })
+      res.on('end', () => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          reject(new Error('HTTP ' + res.statusCode + ' ' + text.slice(0, 200)))
+          return
+        }
+        try {
+          resolve(JSON.parse(text))
+        } catch (e) {
+          reject(new Error('响应不是 JSON：' + text.slice(0, 200)))
+        }
+      })
+    })
+    req.on('error', reject)
+    req.setTimeout(15000, () => req.destroy(new Error('服务端请求超时（15s）')))
+    req.write(payload)
+    req.end()
+  })
+}
+
+/** 服务端模式：golden 红旗逐条打 emergency-checks。 */
+async function runServerEval(redCases) {
+  console.log('TRIAGE_EVAL_SERVER ' + SERVER_URL + ' | 红旗 ' + redCases.length)
+  const failures = []
+  for (const c of redCases) {
+    try {
+      const body = await postJson(SERVER_URL.replace(/\/$/, '') + '/api/v1/triage/emergency-checks',
+        { text: c.text })
+      const data = (body && body.data) || {}
+      const ids = Array.isArray(data.matchedRules) ? data.matchedRules : []
+      if (data.emergency !== true || ids.indexOf(c.redFlag) < 0) {
+        failures.push(c.id + ' 「' + c.text + '」期望=' + c.redFlag +
+          ' emergency=' + data.emergency + ' 命中=' + (ids.join(',') || '(none)'))
+      }
+    } catch (e) {
+      failures.push(c.id + ' 「' + c.text + '」请求失败：' + (e && e.message))
+    }
+  }
+  console.log('— 服务端红旗召回（必须 100%）—')
+  console.log('召回 ' + (redCases.length - failures.length) + '/' + redCases.length)
+  if (failures.length) {
+    console.log('\n— 服务端失配明细 —')
+    failures.forEach((f) => console.log('  ✗ ' + f))
+    console.log('\nTRIAGE_EVAL_SERVER_FAIL ' + failures.length + ' 条')
+    process.exit(1)
+  }
+  console.log('\nTRIAGE_EVAL_SERVER_OK（服务端红旗 100%）')
+}
+
+async function main() {
   const data = JSON.parse(fs.readFileSync(DATA, 'utf-8'))
   const deptCases = data.deptCases || []
   const redCases = data.redFlagCases || []
   const fbCases = data.fallbackCases || []
+
+  if (SERVER_URL) {
+    await runServerEval(redCases)
+    return
+  }
 
   console.log('TRIAGE_EVAL ' + data.version + ' | 科室 ' + deptCases.length +
     ' | 红旗 ' + redCases.length + ' | 兜底 ' + fbCases.length)
@@ -131,4 +225,7 @@ function main() {
     ' ≥ ' + pct(MIN_DEPT, 1) + '）')
 }
 
-main()
+main().catch((e) => {
+  console.error('TRIAGE_EVAL_FAIL ' + (e && e.message ? e.message : e))
+  process.exit(1)
+})

@@ -76,7 +76,7 @@ class TriageRuleEngineTest {
         var outcome = engine.evaluate(null, "肚子疼得厉害，还便血");
         assertTrue(outcome.emergency(), "归一后便血红旗未触发（§3.2 红旗不可被削）");
         assertEquals("EMERGENCY", outcome.level());
-        assertTrue(outcome.matchedRules().contains("severe_bleeding"));
+        assertTrue(outcome.matchedRules().contains("bleeding"));
 
         // 服务层主推荐：急症 → 急诊科（TriageService.recommend 合成条目；id 与前端
         // miniprogram/utils/triage-kb.js 导航字典 'emergency' 对齐）

@@ -1,0 +1,389 @@
+{
+  "version": "triage-parity-v1",
+  "note": "AUTO-GENERATED 差分基线：前端 matchRedFlags 的计算结果，服务端 scanText 必须逐条一致。",
+  "source": "shared/triage-redflags.json",
+  "generator": "tools/gen-triage-flags.js",
+  "entries": [
+    {
+      "id": "rf-01",
+      "text": "胸口压榨一样疼，还出汗",
+      "emergency": true,
+      "rules": [
+        "chest_pain"
+      ]
+    },
+    {
+      "id": "rf-02",
+      "text": "早上起来口角歪斜，说话不清",
+      "emergency": true,
+      "rules": [
+        "stroke"
+      ]
+    },
+    {
+      "id": "rf-03",
+      "text": "喘不上气，坐着都憋得慌",
+      "emergency": true,
+      "rules": [
+        "dyspnea"
+      ]
+    },
+    {
+      "id": "rf-04",
+      "text": "突然晕倒，叫不醒",
+      "emergency": true,
+      "rules": [
+        "consciousness"
+      ]
+    },
+    {
+      "id": "rf-05",
+      "text": "呕血两次，黑便",
+      "emergency": true,
+      "rules": [
+        "bleeding"
+      ]
+    },
+    {
+      "id": "rf-06",
+      "text": "突然剧烈头痛，脖子发硬",
+      "emergency": true,
+      "rules": [
+        "severe_headache"
+      ]
+    },
+    {
+      "id": "rf-07",
+      "text": "吃了海鲜全身皮疹，喉咙发紧呼吸困难",
+      "emergency": true,
+      "rules": [
+        "anaphylaxis",
+        "dyspnea"
+      ]
+    },
+    {
+      "id": "rf-08",
+      "text": "误服了农药",
+      "emergency": true,
+      "rules": [
+        "poisoning"
+      ]
+    },
+    {
+      "id": "rf-09",
+      "text": "车祸外伤，骨头都露出来了",
+      "emergency": true,
+      "rules": [
+        "trauma"
+      ]
+    },
+    {
+      "id": "rf-10",
+      "text": "肚子硬得像木板，一按就剧痛",
+      "emergency": true,
+      "rules": [
+        "acute_abdomen"
+      ]
+    },
+    {
+      "id": "rf-11",
+      "text": "三个月婴儿发热38度",
+      "emergency": true,
+      "rules": [
+        "infant_fever"
+      ]
+    },
+    {
+      "id": "rf-12",
+      "text": "怀孕7个月，阴道出血伴肚子痛",
+      "emergency": true,
+      "rules": [
+        "pregnancy_emergency"
+      ]
+    },
+    {
+      "id": "rf-13",
+      "text": "不想活了，想死",
+      "emergency": true,
+      "rules": [
+        "self_harm"
+      ]
+    },
+    {
+      "id": "rf-14",
+      "text": "大面积烧伤，脸也烧到了",
+      "emergency": true,
+      "rules": [
+        "severe_burn"
+      ]
+    },
+    {
+      "id": "rf-15",
+      "text": "发烧39度还抽搐",
+      "emergency": true,
+      "rules": [
+        "consciousness",
+        "high_fever_convulsion"
+      ]
+    },
+    {
+      "id": "rf-16",
+      "text": "胸口像压了块石头，冷汗直流",
+      "emergency": true,
+      "rules": [
+        "chest_pain"
+      ]
+    },
+    {
+      "id": "rf-17",
+      "text": "说话含糊，半边身子没劲",
+      "emergency": true,
+      "rules": [
+        "stroke"
+      ]
+    },
+    {
+      "id": "rf-18",
+      "text": "憋得慌，躺下更喘",
+      "emergency": true,
+      "rules": [
+        "dyspnea"
+      ]
+    },
+    {
+      "id": "rf-19",
+      "text": "突然人事不省",
+      "emergency": true,
+      "rules": [
+        "consciousness"
+      ]
+    },
+    {
+      "id": "rf-20",
+      "text": "吐血了",
+      "emergency": true,
+      "rules": [
+        "bleeding"
+      ]
+    },
+    {
+      "id": "rf-21",
+      "text": "误服了农药怎么办",
+      "emergency": true,
+      "rules": [
+        "poisoning"
+      ]
+    },
+    {
+      "id": "rf-22",
+      "text": "孩子三个月大，发烧39度",
+      "emergency": true,
+      "rules": [
+        "infant_fever"
+      ]
+    },
+    {
+      "id": "rf-23",
+      "text": "怀孕八个月，下面出血",
+      "emergency": true,
+      "rules": [
+        "pregnancy_emergency"
+      ]
+    },
+    {
+      "id": "rf-24",
+      "text": "全身起大片皮疹，嘴唇肿，喘不上气",
+      "emergency": true,
+      "rules": [
+        "anaphylaxis",
+        "dyspnea"
+      ]
+    },
+    {
+      "id": "rf-25",
+      "text": "大面积烫伤了，脸也烫到了",
+      "emergency": true,
+      "rules": [
+        "severe_burn"
+      ]
+    },
+    {
+      "id": "rf-26",
+      "text": "不想活了，想结束生命",
+      "emergency": true,
+      "rules": [
+        "self_harm"
+      ]
+    },
+    {
+      "id": "rf-27",
+      "text": "突然头痛欲裂，脖子发硬",
+      "emergency": true,
+      "rules": [
+        "severe_headache"
+      ]
+    },
+    {
+      "id": "rf-28",
+      "text": "出车祸了，腿被压住流血不止",
+      "emergency": true,
+      "rules": [
+        "bleeding",
+        "trauma"
+      ]
+    },
+    {
+      "id": "rf-29",
+      "text": "肚子硬得像板一样疼得受不了",
+      "emergency": true,
+      "rules": [
+        "acute_abdomen"
+      ]
+    },
+    {
+      "id": "rf-30",
+      "text": "无诱因胸痛",
+      "emergency": true,
+      "rules": [
+        "chest_pain"
+      ]
+    },
+    {
+      "id": "rf-31",
+      "text": "无原因胸痛",
+      "emergency": true,
+      "rules": [
+        "chest_pain"
+      ]
+    },
+    {
+      "id": "rf-32",
+      "text": "无明显诱因胸痛",
+      "emergency": true,
+      "rules": [
+        "chest_pain"
+      ]
+    },
+    {
+      "id": "rf-33",
+      "text": "无任何诱因胸痛",
+      "emergency": true,
+      "rules": [
+        "chest_pain"
+      ]
+    },
+    {
+      "id": "rf-34",
+      "text": "无诱因发热伴抽搐",
+      "emergency": true,
+      "rules": [
+        "consciousness",
+        "high_fever_convulsion"
+      ]
+    },
+    {
+      "id": "rf-35",
+      "text": "无原因意识模糊",
+      "emergency": true,
+      "rules": [
+        "consciousness"
+      ]
+    },
+    {
+      "id": "ng-03",
+      "text": "没原因胸痛",
+      "emergency": true,
+      "rules": [
+        "chest_pain"
+      ]
+    },
+    {
+      "id": "ng-08",
+      "text": "没有发烧但胸痛",
+      "emergency": true,
+      "rules": [
+        "chest_pain"
+      ]
+    },
+    {
+      "id": "ng-09",
+      "text": "无胸痛，后来胸痛加重",
+      "emergency": true,
+      "rules": [
+        "chest_pain"
+      ]
+    },
+    {
+      "id": "ng-10",
+      "text": "无胸痛",
+      "emergency": false,
+      "rules": []
+    },
+    {
+      "id": "ng-11",
+      "text": "没有胸痛",
+      "emergency": false,
+      "rules": []
+    },
+    {
+      "id": "ng-12",
+      "text": "无呼吸困难",
+      "emergency": false,
+      "rules": []
+    },
+    {
+      "id": "ng-13",
+      "text": "无意识丧失",
+      "emergency": false,
+      "rules": []
+    },
+    {
+      "id": "ng-14",
+      "text": "无出血",
+      "emergency": false,
+      "rules": []
+    },
+    {
+      "id": "ng-15",
+      "text": "不发热",
+      "emergency": false,
+      "rules": []
+    },
+    {
+      "id": "ng-16",
+      "text": "无诱因发热",
+      "emergency": false,
+      "rules": []
+    },
+    {
+      "id": "neg-01",
+      "text": "发烧38度，浑身酸痛",
+      "emergency": false,
+      "rules": []
+    },
+    {
+      "id": "neg-02",
+      "text": "手划破了出血",
+      "emergency": false,
+      "rules": []
+    },
+    {
+      "id": "neg-04",
+      "text": "胃疼反酸一周了",
+      "emergency": false,
+      "rules": []
+    },
+    {
+      "id": "neg-05",
+      "text": "孩子发烧38度",
+      "emergency": false,
+      "rules": []
+    },
+    {
+      "id": "neg-06",
+      "text": "最近有点乏力",
+      "emergency": false,
+      "rules": []
+    }
+  ]
+}

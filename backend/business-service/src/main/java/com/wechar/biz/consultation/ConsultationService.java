@@ -606,8 +606,47 @@ public class ConsultationService {
         }
     }
 
-    /** safetyFor：取会话最近一次任务的上游 safety；无任务时给规则态安全提示。 */
+    /**
+     * safetyFor：**规则优先**的安全合并（2026-11-22 L1 修正）。
+     *
+     * <p>原实现直接取最近一次 AI 任务的 result.safety；任务未成功、AI 不产出 safety
+     * 或 AI 判 false 时返回 INFO(false)。这会让「幂等重放 / 轮询」链路把确定性红旗
+     * 结果覆盖成 false —— 前端 consultation.js 只认 safety.emergency，等于急救横幅丢失。
+     *
+     * <p>现在两条来源取 OR，且规则优先：
+     *   ① 最近 6 条用户文本 → {@link TriageRuleEngine#scanText}（确定性，命中即 EMERGENCY）；
+     *   ② AI 快照 safety（仅当它自己 emergency=true 时采纳）；
+     *   两者都未命中才返回 INFO。规则命中绝不能被 AI 的 false 降级。
+     */
     private SafetyData safetyFor(String consultationId) {
+        SafetyData rule = ruleSafetyRecentUserText(consultationId);
+        if (rule.emergency()) {
+            return rule;
+        }
+        SafetyData ai = aiSafetySnapshot(consultationId);
+        if (ai != null && Boolean.TRUE.equals(ai.emergency())) {
+            return ai;
+        }
+        return rule;
+    }
+
+    /** 最近用户文本（跳过图片消息）拼起来跑红旗规则：轮询/重放链路也必须能触发急症。 */
+    private SafetyData ruleSafetyRecentUserText(String consultationId) {
+        StringBuilder sb = new StringBuilder();
+        for (ConsultationRepository.MessageRow m : repository.listRecentMessages(consultationId, 6)) {
+            if (!"user".equals(m.role()) || m.content() == null || m.content().isBlank()) {
+                continue;
+            }
+            if ("IMAGE_NOTE".equals(m.contentType())) {
+                continue;
+            }
+            sb.append(m.content()).append('\n');
+        }
+        return ruleSafety(sb.toString());
+    }
+
+    /** AI 任务 result.safety 快照；缺失/未终态/解析失败一律 null（交给规则兜底）。 */
+    private SafetyData aiSafetySnapshot(String consultationId) {
         return aiTaskService.findLatestForConsultation(consultationId)
                 .map(t -> {
                     if (t.resultJson() == null || !"SUCCEEDED".equals(t.status())) {
@@ -627,8 +666,7 @@ public class ConsultationService {
                         return null;
                     }
                 })
-                .orElseGet(() -> new SafetyData(false, "INFO", "未命中急症红线，AI 回复仅供参考，不构成诊断。",
-                        "RULE_RESULT", TriageRuleEngine.RULESET_VERSION));
+                .orElse(null);
     }
 
     // ---------------------------------------------------------------- 真实 AI 问诊：上下文与分诊

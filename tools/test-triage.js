@@ -23,6 +23,17 @@ function check(name, cond, extra) {
 
 function section(title) { console.log('\n— ' + title + ' —') }
 
+// ==================== ⓪ 急救横幅与 120 引导（页面模板静态断言）====================
+// 逻辑层返回 emergency=true 还不够：老人看到的是页面横幅。这里锁住两条关键链路
+// （导诊结果页、在线问诊）的横幅条件渲染与一键拨号入口，防止后续改版把入口删掉。
+section('急救横幅与 120 引导（WXML）')
+const fs = require('fs')
+;['pages/triage/triage.wxml', 'pages/consultation/consultation.wxml'].forEach((rel) => {
+  const src = fs.readFileSync(path.join(ROOT, rel), 'utf8')
+  check(rel + ' 含 emergency 横幅条件', /wx:if="\{\{emergency\}\}"/.test(src))
+  check(rel + ' 含一键拨打 120', /onCall120/.test(src) && /120/.test(src))
+})
+
 // ==================== ① 红旗症状：一个都不能漏（安全底线）====================
 section('红旗症状（急诊识别）全覆盖')
 const RED_CASES = [
@@ -67,6 +78,23 @@ NEG_CASES.forEach(([text, id]) => {
 })
 check('否定-槽位不误抽发热', E.extractSlots('不发烧，就是咳嗽').associated.indexOf('发热') < 0)
 check('肯定-正常抽出发热', E.extractSlots('发烧两天了').associated.indexOf('发热') >= 0)
+
+// ==================== ②b 否定语义 B1：无诱因 = 阳性主诉 ====================
+// 语料与词表同源（shared/triage-redflags.json），服务端 TriageRedFlagParityTest 跑同一份。
+section('否定语义（无诱因/无原因不得吞掉急症）')
+const SHARED = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'shared', 'triage-redflags.json'), 'utf8'))
+SHARED.negationCases.forEach((c) => {
+  const ids = E.matchRedFlags(c.text).map((f) => f.id)
+  if (c.redFlag) {
+    check('否定语义-命中 ' + c.id, ids.indexOf(c.redFlag) >= 0,
+      '「' + c.text + '」flags=[' + ids.join(',') + ']')
+  } else {
+    check('否定语义-不误报 ' + c.id, ids.length === 0,
+      '「' + c.text + '」flags=[' + ids.join(',') + ']')
+  }
+})
+check('否定语义-无诱因发热仍抽出症状', E.extractSlots('无诱因发热').associated.indexOf('发热') >= 0)
+check('否定语义-不舒服3天不吞时长', E.extractSlots('不舒服3天').duration !== '')
 
 // ==================== ③ 科室匹配 ====================
 section('科室匹配（加权 + 人群修正）')
