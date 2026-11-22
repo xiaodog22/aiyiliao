@@ -255,13 +255,13 @@ clinic-his 退费（对端退费接口未在 openapi 暴露），页面固定标
 | 层 | 载体 | 规模 |
 | --- | --- | --- |
 | Java 单元/契约/集成 | `backend/business-service/src/test` | 63 个测试类 / 401 项（`mvnw -o test` 实测，2026-11-20） |
-| 网关行为 | `backend/edge-gateway/tests` | 134 项 pytest（含全链路 `X-Request-Id` 2 项） |
+| 网关行为 | `backend/edge-gateway/tests` | 149 项 pytest（含全链路 `X-Request-Id` 2 项） |
 | SQL 次数预算（防 N+1） | `DoctorQueryBudgetTest` + `QueryCounter` | 5 项 |
 | 端点级 SQL 画像 | `EndpointSqlProfileTest` | 2 项（逐端点上限 + 与数据量无关） |
-| **小程序逻辑层（并发）** | `miniprogram/tests/` + `tools/test-fe.js` | **68 项 / 15 个测试文件**（零依赖 `node:test`；含隐私授权 6 项、患者端问诊/消息/接诊状态回归 5 项、音色映射/语速/语音取消与预取回归 5 项） |
+| **小程序逻辑层（并发）** | `miniprogram/tests/` + `tools/test-fe.js` | **81 项 / 17 个测试文件**（零依赖 `node:test`；含隐私授权 6 项、患者端问诊/消息/接诊状态回归 5 项、音色映射/语速/语音取消与预取回归 5 项） |
 | **导诊效果（golden set）** | `tools/data/triage-golden.json` + `tools/eval-triage.js` | **66 科室 + 20 红旗 + 3 兜底**；红旗召回/兜底 100% 为硬门禁，科室 Top-1 门槛 85% |
 | **前后端契约快照** | `tools/contract-snapshot.js` + `contracts/snapshots/` | **5 端点**结构快照 |
-| 持续集成 | `.github/workflows/ci.yml` | 4 job：前端 / Java / 网关 / AI（PR 阻断） |
+| 持续集成 | `.github/workflows/ci.yml` | 6 job：安全门禁 / 前端 / Java / clinic-his / 网关 / AI（PR 阻断） |
 | 性能回归门禁 | `tools/perf-gate.js` | 25VU/20s，支持 `--rounds=N` + 配置指纹 |
 | **真库验证（MySQL）** | `tools/db-verify.js` | **37 项**（连接/Schema/约束/原子性/时区/Flyway/索引/权限），报告 `backend/deploy/DB_VERIFY_20261112.md` |
 | **站点首页合规回归** | `tools/test-site-index.js` | **16 项**（免责声明原样展示 / 手机号·验证码控件缺失 / 原有结构交互 / 静态服务），报告 `docs/回归测试_站点首页_20261113.md` |
@@ -270,6 +270,8 @@ clinic-his 退费（对端退费接口未在 openapi 暴露），页面固定标
 - 日常门禁：`node tools/check-readme-links.js`（README / `docs/INDEX.md` 不得引用未入库路径）+ `node tools/check-project.js`（路径/禁址/图标/类名/事实源一致性/品牌名唯一性）+ `node tools/check-v4-docs.js`（路由登记与提示词结构）+ `mvnw -o test` + `pytest tests` + `node tools/test-fe.js` + `node tools/eval-triage.js` + `node tools/contract-snapshot.js --token=…`
   - `check-v4-docs` 自 2026-10-14 起长期因「路由登记缺口」红，**2026-11-16 已清零**（`DOC_CHECK_OK routes=36 prompts=24`）；它不并入 `check-project` 的原因是要读 `design-output/` 大文档，单跑更清晰——但必须与 `check-project` 同批执行，否则会再次静默漂移。
   - ⚠️ `check-v4-docs` / `check-v4-prototypes` 校验的 `design-output/`、`prototype-web/` **在 `.gitignore` 内**（设计存档与早期原型不入库）。干净 clone 下两者输出 `*_SKIP` 并 exit 0（不假红、也不冒充通过）；只有本机存在存档时才执行严格校验。因此这两项**不能作为 CI 阻断项**，只能作本地质量门禁。
+  - ⚠️ **`miniprogram/config/env.local.js` 同样在 `.gitignore` 内**（档位/隧道/联调密钥来源，审计 H8/H9）。因此：① `check-require` / `check-exports` 对它的缺失按**确切路径**豁免（只提示、不 FAIL）；② `test-fe` / `test-triage` 会注入 `WB_NODE_TEST=1`，让 `config/env.js` 在 Node 测试进程里走 `local` 档——否则干净 clone 下 `production` 档缺 HTTPS 网关会在 `require` 期 fail-fast，测试文件整片崩（2026-11-22 CI 实测）。小程序运行时没有 `process` 对象，该分支不可达，**生产 fail-closed 未放宽**。
+  - 复现 CI 环境的正确方式：`git archive HEAD | tar -x -C /tmp/clean`（LF 行尾 + 缺 `.gitignore` 内文件）。本机工作区带 `env.local.js`，**永远复现不了这类红项**。
 - **契约快照语义**：只比结构与类型、不比值；字段消失/类型变化 → FAIL；**新增字段 → WARN 不阻断**。`--update` 会先打印差异，必须人工 review。
 - **组件测试与 E2E 仍空白**（小程序原生栈无 DOM，需 `miniprogram-simulate`，代价高、优先级 P3）。
 - **PERF-11（未修，P1）**：每请求**固定 5 次会话语句**（`Com_set_option` 4.08 + `Com_commit` 1.00），占 SQL 报文 83%。连接复用已证（`Threads_created` 40 次请求零增长），非建连成本；`useLocalSessionState` / `elideSetAutoCommits` 两个常见参数**实测无效**。端点自身只 1~4 次（`home/summary` 最贵），无 N+1 形态。
