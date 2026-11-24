@@ -2,6 +2,7 @@
   "pages": [
     "pages/auth/login/login",
     "pages/auth/consent/consent",
+    "pages/auth/health-consent/health-consent",
     "pages/auth/patient-login/patient-login",
     "pages/auth/manual-login/manual-login",
     "pages/auth/doctor-login/doctor-login",

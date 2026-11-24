@@ -57,12 +57,14 @@ public class CarePlanService {
 
     private final CarePlanRepository repository;
     private final AiTaskService aiTaskService;
+    private final com.wechar.biz.consent.HealthDataConsentGate healthDataConsentGate;
     private final ObjectMapper mapper;
     private final Clock clock;
     /** 模型档位（2026-11-04 可配置）：默认 large-upgrade=7b；small-default=0.5b 更快但会误判拒答。 */
     private final String modelProfile;
 
     public CarePlanService(CarePlanRepository repository, AiTaskService aiTaskService,
+                           com.wechar.biz.consent.HealthDataConsentGate healthDataConsentGate,
                            ObjectMapper mapper, Clock clock,
                            @org.springframework.beans.factory.annotation.Value(
                                    "${wechar.care-plan.await-seconds:75}") long awaitSeconds,
@@ -70,6 +72,7 @@ public class CarePlanService {
                                    "${app.ai.careplan-profile:large-upgrade}") String modelProfile) {
         this.repository = repository;
         this.aiTaskService = aiTaskService;
+        this.healthDataConsentGate = healthDataConsentGate;
         this.mapper = mapper;
         this.clock = clock;
         this.taskBudget = Duration.ofSeconds(Math.max(5, awaitSeconds));
@@ -82,6 +85,8 @@ public class CarePlanService {
 
     @Transactional
     public CarePlanGenerated create(String userId, String idempotencyKey, CarePlanRequest request) {
+        // 审计 F4-1：养生方案要读取并生成与健康相关的建议，属健康数据处理，先校验单独同意。
+        healthDataConsentGate.requireHealth(userId, " AI 养生");
         String constraintsJson = request.constraints() == null || request.constraints().isEmpty()
                 ? null : toListJson(request.constraints());
         String digest = Digests.sha256Hex(canonical(request.goal(), constraintsJson, request.locale(),

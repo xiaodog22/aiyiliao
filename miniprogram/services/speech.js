@@ -20,6 +20,7 @@
 const ENV = require('../config/env.js')
 const req = require('./request.js')
 const capabilities = require('./capabilities.js')
+const healthConsent = require('./health-consent.js')
 const { errText } = require('../utils/err-text.js')
 const { ensurePrivacy } = require('../utils/privacy.js')
 const API = req.API
@@ -690,7 +691,16 @@ function startRecord(handlers, opts) {
       if (h.onEnd) h.onEnd()
       return null
     }
-    return checkAuth()
+    // 审计 F4-1：录音/转写属敏感个人信息，需 VOICE_RECORDING 单独同意；
+    // 拒绝时只让本次语音输入退回文字，不阻断页面。
+    return healthConsent.ensure({ voice: true }).then((granted) => {
+      if (!granted) {
+        if (h.onError) h.onError('需同意健康数据与语音录制授权后才能使用语音输入，请改用文字输入')
+        if (h.onEnd) h.onEnd()
+        return null
+      }
+      return checkAuth()
+    })
   }).then((gate) => {
     if (gate === null) return  // 隐私未授权，回调已发出
     if (_isWechatSILocale(locale)) {

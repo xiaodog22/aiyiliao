@@ -26,6 +26,16 @@ const PAGE_SIZE = 50
 const CHAT_POLL = 2000   // 会话内新消息（2026-11-15：4s→2s，与患者端同步）
 const LIST_POLL = 4000   // 列表模式：患者新发起 / 新消息（8s→4s）
 
+/**
+ * 轮询错误退避（审计 F2-3）：连续失败 1~2 次仍按基础周期（多数是瞬时抖动）；
+ * 第 3 次起 8s → 12s → 15s 封顶，避免后端/网关抖动时每 2s 空转放大故障。
+ * 成功一次立即回到基础周期。
+ */
+function pollDelay(base, fails) {
+  if (!fails || fails < 3) return base
+  return Math.min(15000, 8000 + (fails - 3) * 4000)
+}
+
 Page({
   data: {
     icons,
@@ -162,6 +172,7 @@ Page({
     if (!quiet) this.setData({ listLoading: true, listError: '', list: [], nextCursor: '' })
     return doctorService.listConsultations({ cursor: quiet ? undefined : (this.data.nextCursor || undefined) })
       .then(({ items, nextCursor }) => {
+        this._listLastOk = true
         if (this._gone) return
         const rows = (Array.isArray(items) ? items : []).map((it) => this._mapRow(it))
         // 最新消息置顶（微信聊天惯例）；后端 listByDoctor 仍按 created_at ASC（未分配置前），前端纠正展示
@@ -186,6 +197,7 @@ Page({
         }
       })
       .catch((e) => {
+        this._listLastOk = false
         if (this._gone) return
         this.setData({ listLoading: false, listError: errText(e) })
       })
@@ -215,10 +227,14 @@ Page({
   _startListPoll() {
     this._stopListPoll()
     if (this._gone || this.data.mode !== 'LIST') return
+    const delay = pollDelay(LIST_POLL, this._listFails || 0)
     this._listTimer = setTimeout(() => {
       if (this._gone || this.data.mode !== 'LIST') return
-      this.loadList(true).then(() => this._startListPoll())
-    }, LIST_POLL)
+      this.loadList(true).then(() => {
+        this._listFails = this._listLastOk ? 0 : Math.min((this._listFails || 0) + 1, 6)
+        this._startListPoll()
+      })
+    }, delay)
   },
 
   _stopListPoll() {
@@ -423,7 +439,12 @@ Page({
   _startPoll() {
     this._stopPoll()
     if (this._gone || this.data.mode !== 'CHAT' || !this.data.active) return
-    this._pollTimer = setTimeout(() => this._pollTick(), CHAT_POLL)
+    const activeId = this.data.active.id
+    if (this._pollActiveId !== activeId) {
+      this._pollActiveId = activeId
+      this._pollFails = 0
+    }
+    this._pollTimer = setTimeout(() => this._pollTick(), pollDelay(CHAT_POLL, this._pollFails || 0))
   },
 
   _stopPoll() {
@@ -441,6 +462,7 @@ Page({
       .then(({ items }) => {
         if (this._gone || this.data.mode !== 'CHAT' || !this.data.active
           || this.data.active.id !== active.id) return
+        this._pollFails = 0
         const rendered = this._normMessages(items)
         const sig = rendered.map((m) => m.id).join(',')
         if (sig !== this._lastSig) {
@@ -450,7 +472,10 @@ Page({
           this.setData(patch, () => this._scrollBottom())
         }
       })
-      .catch(() => { /* 轮询失败静默：不打断医生输入，下一轮重试 */ })
+      .catch(() => {
+        // 轮询失败静默：不打断医生输入；连续失败按 8s→12s→15s 退避（审计 F2-3）
+        this._pollFails = Math.min((this._pollFails || 0) + 1, 6)
+      })
       .then(() => this._startPoll())
   },
 

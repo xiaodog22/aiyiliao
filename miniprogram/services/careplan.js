@@ -13,6 +13,7 @@
  * ⚠️ 分层约束：页面只调本服务，不得再直连 request.js / config/api.js / config/env.js。
  */
 const request = require('./request.js')
+const healthConsent = require('./health-consent.js')
 const API = require('../config/api.js')
 const ENV = require('../config/env.js')
 
@@ -66,7 +67,12 @@ function generate(input, opts) {
   const o = opts || {}
   const reqOpts = { timeout: ENV.carePlanTimeout }
   if (o.idempotencyKey) reqOpts.idempotencyKey = o.idempotencyKey
-  return request.withFallback(request.post(API.CARE_PLAN_CREATE, payload, reqOpts), demoPlan)
+  // 审计 F4-1：养生建议需要结合年龄/慢病/诉求等健康信息，先过单独同意门禁。
+  // ⚠️ 必须挡在 withFallback 之前：用户拒绝后不能给"演示方案"冒充结果。
+  return healthConsent.ensure().then((ok) => {
+    if (!ok) return Promise.reject({ code: 'CONSENT_DECLINED', message: '未同意健康数据处理授权，本次操作已取消' })
+    return request.withFallback(request.post(API.CARE_PLAN_CREATE, payload, reqOpts), demoPlan)
+  })
 }
 
 module.exports = {

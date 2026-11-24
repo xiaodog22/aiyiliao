@@ -95,6 +95,13 @@
       <view class="next-item" wx:for="{{r.nextSteps}}" wx:key="*this" wx:for-item="st">· {{st}}</view>
     </view>
 
+    <!-- ⑤.1 自动化决策的人工复核入口（审计 F4-2） -->
+    <view class="card review-card">
+      <view class="card-title"><image class="card-title-icon" src="{{icons.chat}}" /> 对结果有疑问？</view>
+      <view class="review-text">导诊结果由规则与 AI 辅助生成，不构成诊断。您可以转人工复核，由医生结合症状进一步判断。</view>
+      <view class="btn btn-outline review-btn" bindtap="onHumanReview">转人工复核</view>
+    </view>
+
     <view class="btn btn-ghost act-btn" bindtap="onRetry">补充症状，重新分析</view>
 
     <!-- ⑥ 合规 / 隐私 -->

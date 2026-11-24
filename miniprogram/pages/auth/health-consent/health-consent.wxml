@@ -1,0 +1,44 @@
+<view class="hc-page theme-{{theme}}">
+  <view class="hc-hero">
+    <image class="hc-hero-icon" src="{{icons.shield}}" mode="aspectFit" />
+    <view class="hc-title">健康数据处理授权</view>
+    <view class="hc-sub">这是一次独立于《隐私政策》的单独同意，仅在您主动使用 AI 健康功能时生效。</view>
+  </view>
+
+  <view class="card hc-card">
+    <view class="hc-section-title">我们将处理哪些信息</view>
+    <view class="hc-item">
+      <view class="hc-item-name">症状与病情描述</view>
+      <view class="hc-item-text">您在 AI 问诊、导诊中主动填写的文字，或经您确认后的语音转写文字。</view>
+    </view>
+    <view class="hc-item">
+      <view class="hc-item-name">健康档案与报告摘要</view>
+      <view class="hc-item-text">您授权解读的检查报告、体检记录及既往史等，仅截取与本次问题相关的摘要。</view>
+    </view>
+    <view wx:if="{{voice}}" class="hc-item">
+      <view class="hc-item-name">语音录音</view>
+      <view class="hc-item-text">仅在您按下录音按钮时采集，用于转写为文字；转写完成即按语音域规则清理临时音频。</view>
+    </view>
+  </view>
+
+  <view class="card hc-card">
+    <view class="hc-section-title">处理目的与边界</view>
+    <view class="hc-p">仅用于 AI 导诊分诊、AI 问诊辅助回复、健康报告解读与养生建议生成，不用于广告推送、不用于与本次就医无关的场景。</view>
+    <view class="hc-p">AI 输出为辅助性参考，不构成诊断或处方；您可以在结果页选择“转人工复核”，由医生进一步判断。</view>
+    <view class="hc-p">您可随时在“我的 — 系统设置 — 健康数据授权”中撤回。撤回后 AI 功能将停止处理您的健康数据，已完成就诊的病历与订单不受影响。</view>
+  </view>
+
+  <view class="hc-check" bindtap="onToggle" aria-role="checkbox" aria-checked="{{checked}}">
+    <view class="hc-box {{checked ? 'hc-box-on' : ''}}">{{checked ? '✓' : ''}}</view>
+    <view class="hc-check-label">
+      我已阅读并同意《健康数据处理授权说明》<text wx:if="{{voice}}">与《语音录制授权说明》</text>
+      <text class="hc-policy-link" catchtap="onOpenPolicy">查看隐私政策全文</text>
+    </view>
+  </view>
+
+  <view class="hc-version" wx:if="{{version}}">当前文本版本：{{version}}<text wx:if="{{effectiveAt}}"> · 生效 {{effectiveAt}}</text></view>
+  <view wx:if="{{error}}" class="hc-error">{{error}}</view>
+
+  <button class="btn btn-primary hc-agree" loading="{{granting}}" disabled="{{!checked || granting || loading}}" bindtap="onAgree">同意并授权</button>
+  <button class="btn hc-decline" disabled="{{granting}}" bindtap="onDecline">暂不使用 AI 健康功能</button>
+</view>

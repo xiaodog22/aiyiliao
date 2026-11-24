@@ -68,6 +68,7 @@ public class VoiceService {
     private final AiClientConfig aiClientConfig;
     private final VoiceProperties properties;
     private final com.wechar.biz.consultation.ConsultationService consultationService;
+    private final com.wechar.biz.consent.HealthDataConsentGate healthDataConsentGate;
     /** ai-service 侧读取音频的目录（AI_ASR_AUDIO_DIR）。两端口径必须一致，否则任务取不到音频。 */
     private final String asrAudioDir;
     private final Clock clock;
@@ -75,7 +76,9 @@ public class VoiceService {
 
     public VoiceService(VoiceRepository repository, AiTaskService aiTaskService,
                         AiClientConfig aiClientConfig, VoiceProperties properties,
-                        com.wechar.biz.consultation.ConsultationService consultationService, Clock clock,
+                        com.wechar.biz.consultation.ConsultationService consultationService,
+                        com.wechar.biz.consent.HealthDataConsentGate healthDataConsentGate,
+                        Clock clock,
                         @org.springframework.beans.factory.annotation.Value("${AI_ASR_AUDIO_DIR:}")
                         String asrAudioDir) {
         this.repository = repository;
@@ -83,6 +86,7 @@ public class VoiceService {
         this.aiClientConfig = aiClientConfig;
         this.properties = properties;
         this.consultationService = consultationService;
+        this.healthDataConsentGate = healthDataConsentGate;
         this.clock = clock;
         this.asrAudioDir = asrAudioDir;
     }
@@ -253,6 +257,9 @@ public class VoiceService {
     @Transactional
     public AsrResultData recognize(String userId, MultipartFile audio, Long durationMs,
                                    String locale, String consultationId) {
+        // 审计 F4-1：录音/转写属敏感个人信息，必须先有 VOICE_RECORDING 单独同意；
+        // 转写文本随后进入问诊链路，另需 HEALTH_DATA_PROCESSING（由会话发送端点再次校验）。
+        healthDataConsentGate.requireVoice(userId, " 语音输入");
         if (audio == null || audio.isEmpty()) {
             throw new ApiException("VALIDATION_FAILED", HttpStatus.BAD_REQUEST, "音频为空", false, null);
         }

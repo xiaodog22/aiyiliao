@@ -1,5 +1,12 @@
 server:
   port: ${SERVER_PORT:8088}
+  # 响应压缩（审计 F3-2，2026-11-23）：医疗文本类 JSON（问诊消息/科普正文/照护方案）压缩比
+  # 通常 60~80%，中老年用户弱网场景收益明显。**必须排除 text/event-stream** —— SSE 逐块下发，
+  # 压缩会改变分块语义、破坏流式。网关侧已改为透传 Accept-Encoding 与 Content-Encoding。
+  compression:
+    enabled: ${SERVER_COMPRESSION_ENABLED:true}
+    mime-types: application/json,application/javascript,text/css,text/html,text/plain,text/xml
+    min-response-size: 1024
 
 spring:
   application:
@@ -78,6 +85,10 @@ app:
     current-version: ${APP_CONSENT_VERSION:v1.0}
     effective-at: ${APP_CONSENT_EFFECTIVE_AT:2026-11-18}
     title: ${APP_CONSENT_TITLE:隐私政策}
+    # 审计 F4-1（2026-11-23）：健康数据/语音处理前的单独同意门禁。默认开启（生产合规口径）；
+    # 单测档（application-itest.yml）显式置 false，避免 900+ 既有用例逐个预置同意数据。
+    # 关闭只允许出现在测试档，生产由 ProductionSecurityCheck 的 strict 口径兜底（见 README 安全基线）。
+    require-health-data: ${APP_CONSENT_REQUIRE_HEALTH_DATA:true}
   # 审计 M5：匿名头像读取必须短签；未配置时回落附件签名密钥（生产由 ProductionSecurityCheck 强制非空）。
   avatar:
     sign-secret: ${APP_AVATAR_SIGN_SECRET:${APP_ATTACHMENT_SIGN_SECRET:}}

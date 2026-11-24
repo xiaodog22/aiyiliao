@@ -110,6 +110,8 @@
           <view class="hrc-ai-sec-b">{{sec.body}}</view>
         </view>
         <view wx:if="{{interpretation.disclaimer}}" class="hrc-ai-dis">{{interpretation.disclaimer}}</view>
+        <!-- 审计 F4-2：自动化解读必须提供人工复核入口，不能只靠免责声明 -->
+        <view class="hrc-ai-review" bindtap="onInterpretReview">对解读结果有疑问？转人工复核</view>
       </view>
 
     </view>

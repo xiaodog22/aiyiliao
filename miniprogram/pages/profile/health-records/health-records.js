@@ -324,6 +324,26 @@ Page({
       })
   },
 
+  /**
+   * 转人工复核（审计 F4-2）：报告解读是辅助性自动化决策，患者有权要求医生人工判断。
+   * 直达在线问诊医生选择页；不可用时给院内导诊台兜底提示，不假装已转接。
+   */
+  onInterpretReview() {
+    wx.showModal({
+      title: '转人工复核',
+      content: 'AI 解读仅供理解报告参考，不构成诊断。您可以转到在线问诊，由医生结合原始报告判断。',
+      confirmText: '在线问诊',
+      cancelText: '暂不需要',
+      success: (res) => {
+        if (!res.confirm) return
+        wx.navigateTo({
+          url: '/pages/consult/picker/picker',
+          fail: () => wx.showToast({ title: '在线问诊暂不可用，请到院咨询导诊台', icon: 'none' })
+        })
+      }
+    })
+  },
+
   /** 查看附件：包内图片走全屏浮层；远端图片走 previewImage；pdf 走「downloadFile → openDocument」 */
   onPreviewAttachment(e) {
     const ds = e.currentTarget.dataset || {}

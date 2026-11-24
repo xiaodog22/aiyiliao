@@ -38,7 +38,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class NurseBedApplicationController {
 
     private static final int PATH_ID_MAX = 64;
-    private static final String REVIEWER = "nurse-station";
 
     private final BedApplicationService applicationService;
     private final NurseStationGuard guard;
@@ -63,6 +62,7 @@ public class NurseBedApplicationController {
     public ResponseEntity<Envelope<BedApplicationData>> approve(
             @PathVariable String id,
             @RequestHeader(value = NurseStationGuard.HEADER, required = false) String stationToken,
+            @RequestHeader(value = NurseStationGuard.TERMINAL_HEADER, required = false) String terminalId,
             @RequestParam(required = false) String wardId,
             @RequestBody(required = false) ReviewRequest request) {
         guard.require(stationToken);
@@ -70,13 +70,15 @@ public class NurseBedApplicationController {
         String bedId = request == null ? null : request.bedId();
         String note = request == null ? null : request.note();
         return ResponseEntity.ok(Envelope.ok(RequestIds.current(),
-                applicationService.reviewForNurse(id, "APPROVED", note, REVIEWER, wardId, bedId)));
+                applicationService.reviewForNurse(id, "APPROVED", note,
+                        guard.reviewerOf(terminalId), wardId, bedId)));
     }
 
     @PostMapping("/{id}/reject")
     public ResponseEntity<Envelope<BedApplicationData>> reject(
             @PathVariable String id,
             @RequestHeader(value = NurseStationGuard.HEADER, required = false) String stationToken,
+            @RequestHeader(value = NurseStationGuard.TERMINAL_HEADER, required = false) String terminalId,
             @RequestParam(required = false) String wardId,
             @RequestBody(required = false) ReviewRequest request) {
         guard.require(stationToken);
@@ -87,7 +89,8 @@ public class NurseBedApplicationController {
                     "驳回必须填写原因（便于医生补充材料后重新申请）");
         }
         return ResponseEntity.ok(Envelope.ok(RequestIds.current(),
-                applicationService.reviewForNurse(id, "REJECTED", note, REVIEWER, wardId, null)));
+                applicationService.reviewForNurse(id, "REJECTED", note,
+                        guard.reviewerOf(terminalId), wardId, null)));
     }
 
     private static void requireId(String id) {

@@ -15,6 +15,8 @@ const gateway = require('../../../services/gateway.js')
 const speech = require('../../../services/speech.js')
 const session = require('../../../services/session.js')
 const voice = require('../../../services/voice.js')
+const healthConsent = require('../../../services/health-consent.js')
+const { errText } = require('../../../utils/err-text.js')
 
 // 后端健康探针间隔：设置页是低频页面，30s 足够反映"后端是否可用"，
 // 且 onHide/onUnload 都会立即停表。
@@ -35,6 +37,8 @@ Page({
     highContrast: false,
     voiceRead: true,
     healthItems: [],
+    healthConsentLabel: '检查中',
+    healthConsentGranted: false,
     sheetOpen: false,
     // 三档：label 用词与 app.wxss 的 .theme-* 语义对齐（large=放大一档，xlarge=最大）
     themeOptions: [
@@ -63,6 +67,7 @@ Page({
     if (vr !== this.data.voiceRead) this.setData({ voiceRead: vr })
     this._loadHealth()
     this._loadVoiceName()
+    this._loadHealthConsent()
     if (this._healthTimer) clearInterval(this._healthTimer)
     this._healthTimer = setInterval(() => this._loadHealth(), HEALTH_INTERVAL)
   },
@@ -108,6 +113,23 @@ Page({
       }))
       if (name) this.setData({ voiceName: name })
     }).catch(() => {})
+  },
+
+  /**
+   * 健康数据单独同意状态（审计 F4-1）：
+   * 设置页是用户找到「撤回」的必经入口，状态必须来自服务端 consents，而不是本地布尔值。
+   */
+  _loadHealthConsent() {
+    healthConsent.load(true).then((st) => {
+      const granted = !!(st && st.healthGranted && st.healthVersion === st.policyVersion)
+      this.setData({
+        healthConsentGranted: granted,
+        healthConsentLabel: granted ? '已授权' : (st && st.healthGranted ? '需重新确认' : '未授权')
+      })
+    }).catch(() => {
+      // 未登录/断网时不给假状态；仍可点进授权页，由页面自己拉版本
+      this.setData({ healthConsentGranted: false, healthConsentLabel: '状态未知' })
+    })
   },
 
   /**
@@ -233,6 +255,37 @@ Page({
 
   onPolicy() {
     wx.navigateTo({ url: '/pages/profile/privacy/privacy' })
+  },
+
+  /**
+   * 健康数据授权管理（审计 F4-1）：已授权 → 二次确认后真正撤回（POST withdraw）；
+   * 未授权/版本过期 → 进入独立授权页，授予后返回本页刷新状态。
+   */
+  onHealthConsent() {
+    if (!this.data.healthConsentGranted) {
+      wx.navigateTo({ url: '/pages/auth/health-consent/health-consent' })
+      return
+    }
+    wx.showModal({
+      title: '撤回健康数据授权',
+      content: '撤回后，AI 导诊、AI 问诊与报告解读将立即停止处理您的健康数据；已完成的就诊记录与订单不受影响。可随时重新授权。',
+      confirmText: '撤回授权',
+      confirmColor: '#C62828',
+      success: (res) => {
+        if (!res.confirm) return
+        wx.showLoading({ title: '正在撤回', mask: true })
+        healthConsent.withdraw(healthConsent.HEALTH, '用户在系统设置页撤回')
+          .then(() => {
+            wx.hideLoading()
+            wx.showToast({ title: '已撤回健康数据授权', icon: 'none' })
+            this._loadHealthConsent()
+          })
+          .catch((err) => {
+            wx.hideLoading()
+            wx.showToast({ title: errText(err, '撤回失败，请稍后重试'), icon: 'none' })
+          })
+      }
+    })
   },
 
   onAgreement() {

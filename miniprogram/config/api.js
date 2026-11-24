@@ -24,6 +24,9 @@ const AUTH_LOGOUT         = { base: 'java', path: '/api/v1/auth/logout' }
 const AUTH_WHOAMI         = { base: 'java', path: '/api/v1/auth/whoami' }
 // M11：最新隐私政策版本（匿名只读）
 const CONSENT_LATEST      = { base: 'java', path: '/api/v1/consent/latest' }
+// 审计 F4-1：处理目的维度的单独同意记录（列表只读 / 追加授予 / 撤回）
+const CONSENTS            = { base: 'java', path: '/api/v1/consents' }
+const CONSENT_WITHDRAW    = { base: 'java', path: '/api/v1/consents/{purpose}/withdraw' }
 const ME                  = { base: 'java', path: '/api/v1/me' }
 // 个人信息设置扩展（V8）：联系方式/住址/实名/医保/账号改名/头像
 const ME_EXTENDED         = { base: 'java', path: '/api/v1/me/extended' }
@@ -176,7 +179,7 @@ const GW_HEALTH           = { base: 'gateway', path: '/api/gw/health' }
 const GW_ROUTES           = { base: 'gateway', path: '/api/gw/routes' }
 
 module.exports = {
-  AUTH_WECHAT_LOGIN, AUTH_REFRESH, AUTH_LOGOUT, AUTH_WHOAMI, CONSENT_LATEST, ME,
+  AUTH_WECHAT_LOGIN, AUTH_REFRESH, AUTH_LOGOUT, AUTH_WHOAMI, CONSENT_LATEST, CONSENTS, CONSENT_WITHDRAW, ME,
   ME_EXTENDED, ME_IDENTITY, ME_INSURANCE, ME_ACCOUNT, ME_AVATAR,
   USER_LOGIN, USER_WX_LOGIN,
   DOCTOR_LOGIN, DOCTOR_WX_LOGIN, DOCTOR_LIST, DOCTOR_BY_DEPT,

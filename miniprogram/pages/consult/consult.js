@@ -53,6 +53,15 @@ const INPUT_MAX_TIP = '已达字数上限，可先发送再补充'
 const POLL_INTERVAL = 2000   // 等待医生/AI 回复的轮询间隔（2026-11-15：4s→2s，同步更快）
 const POLL_FIRST_DELAY = 400 // 首轮不等满一个间隔：发送/进页后尽快拿到新消息与接诊态
 const POLL_MAX = 24          // 最多 24 次（≈48s），超时不再打扰服务端
+
+/**
+ * 轮询错误退避（审计 F2-3）：连续失败 1~2 次保持 2s；第 3 次起 8s→12s→15s 封顶。
+ * 患者端常驻同步在弱网/服务端抖动时不能每 2s 空转放大故障。
+ */
+function pollDelay(base, fails) {
+  if (!fails || fails < 3) return base
+  return Math.min(15000, 8000 + (fails - 3) * 4000)
+}
 const IMG_RE = /\.(png|jpe?g|webp)(\?|$)/i
 // 图片消息白名单（2026-11-15 上传合规）：与后端 validateImageContent 同口径
 const IMAGE_MAX_BYTES = 10 * 1024 * 1024
@@ -342,6 +351,7 @@ Page({
 
     return p
       .then((list) => {
+        this._lastLoadOk = true
         const raw = Array.isArray(list) ? list : []
         const prevCount = this.data.messages.length
         const items = []
@@ -382,6 +392,7 @@ Page({
         if (items.length !== prevCount) this._scrollToBottom()
       })
       .catch((err) => {
+        this._lastLoadOk = false
         this.setData({ messages: [], attachCount: 0, consultError: errText(err, '历史消息暂不可用') })
       })
   },
@@ -621,6 +632,7 @@ Page({
     this._stopPolling()
     if (!this.data.activeId || this.data.consultError) return
     let tries = 0
+    this._pollFails = 0
     this.setData({ typing: true })
 
     const tick = () => {
@@ -628,6 +640,7 @@ Page({
       tries += 1
       this._loadMessages().then(() => {
         if (this._gone) return
+        this._pollFails = this._lastLoadOk ? 0 : Math.min((this._pollFails || 0) + 1, 6)
         const grew = this.data.messages.length > before
         if (grew || tries >= POLL_MAX) {
           // ⚠️ 必须置 null：常驻同步（_liveTick）以 _pollTimer 是否为空判断"短轮询是否在进行"，
@@ -636,7 +649,7 @@ Page({
           this.setData({ typing: false })
           return
         }
-        this._pollTimer = setTimeout(tick, POLL_INTERVAL)
+        this._pollTimer = setTimeout(tick, pollDelay(POLL_INTERVAL, this._pollFails || 0))
       })
     }
     this._pollTimer = setTimeout(tick, POLL_FIRST_DELAY)
@@ -657,8 +670,13 @@ Page({
   _startLive(immediate) {
     this._stopLive()
     if (this._gone || !this.data.activeId || this.data.closed) return
-    // 首次进页/回到页面走 POLL_FIRST_DELAY，之后按 POLL_INTERVAL 匀速（避免 400ms 空转）
-    this._liveTimer = setTimeout(() => this._liveTick(), immediate ? POLL_FIRST_DELAY : POLL_INTERVAL)
+    if (this._liveActiveId !== this.data.activeId) {
+      this._liveActiveId = this.data.activeId
+      this._liveFails = 0
+    }
+    // 首次进页/回到页面走 POLL_FIRST_DELAY，之后按当前退避周期（成功即回到 2s）
+    const delay = immediate ? POLL_FIRST_DELAY : pollDelay(POLL_INTERVAL, this._liveFails || 0)
+    this._liveTimer = setTimeout(() => this._liveTick(), delay)
   },
 
   _stopLive() {
@@ -681,7 +699,10 @@ Page({
         if (this.data.messages.length !== before && this.data.typing) this.setData({ typing: false })
       })
       .catch(() => { /* 轮询失败静默，下一轮重试 */ })
-      .then(() => this._startLive())
+      .then(() => {
+        this._liveFails = this._lastLoadOk ? 0 : Math.min((this._liveFails || 0) + 1, 6)
+        this._startLive()
+      })
   },
 
   /** 只同步会话元信息（接诊态 / 医生卡 / 剩余时间），不动消息列表 */

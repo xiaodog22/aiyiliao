@@ -22,7 +22,7 @@
 | `miniprogram/` | 前端主项目（pages / services / utils / config / components / 分包） | ✅ 日常改动区 |
 | `backend/` | edge-gateway(:8000) / business-service(:8088) / ai-service(:8001) | ⚠️ 仅联调或改契约时 |
 | `tools/` | 构建 + 验证脚本（check-*.js / test-*.js / build-*.py） | ✅ 改动前先查有没有现成脚本 |
-| `docs/` | 方案 / 契约 / 交付文档 / 手册 / 评审复盘 / 验收文档 + `历史设计规范/`（1.md~5.md、LAYOUT_PLAN.md、页面复刻/）+ `文档整理_20261117/`（246 份原文件的按作用+时间全量分类，入口 `00_索引.md`；不搬迁原文） | ⚠️ 只读为主 |
+| `docs/` | 方案 / 契约 / 交付文档 / 手册 / 评审复盘 / 验收文档 + `历史设计规范/`（1.md~5.md、LAYOUT_PLAN.md、页面复刻/）+ `文档整理_20261117/`（246 份原文件的按作用+时间全量分类，入口 `00_索引.md`；不搬迁原文）+ `security/`（安全审计原始报告与整改闭环，本地不入库） | ⚠️ 只读为主 |
 | `archive/` | 已退出活动链的本地归档（重复副本、被取代的旧版本、一次性流水线产物、备份包）。不参与构建、门禁、运行与人工检索主路径 | ❌ 不碰 |
 | `avatar-backend/` `mao/` `models/` | 已下线数字人相关（备份） | ❌ 不碰 |
 | `design-output/` `ui-design-runs/` | 设计交付存档 | ❌ 不碰 |

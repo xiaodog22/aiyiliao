@@ -82,7 +82,15 @@ public class AuthInterceptor implements HandlerInterceptor {
             // 头像公开读取（V8）：<image> 组件直连无法携带 Authorization；文件名服务端生成
             Map.entry("/api/v1/avatars/*", "GET"),
             // 附件公开读取（V9）：同上，且 URL 带 HMAC 短期签名（expires+sig），无签名 403
-            Map.entry("/api/v1/attachments/*", "GET"));
+            Map.entry("/api/v1/attachments/*", "GET"),
+            // 护士站共享终端（审计 F1-3，2026-11-23）：护士站是浏览器静态页，不能携带 Bearer。
+            // 这些路径本来就由 NurseStationGuard 做 X-Nurse-Station-Token 恒定时间校验，
+            // 但此前漏登记本白名单 → strict 档先被 AuthInterceptor 401，护士站整体不可用。
+            // 放行 ≠ 免鉴权：控制器内仍强制 guard.require(...)，无令牌/错令牌 403。
+            Map.entry("/api/v1/nurse/beds", "GET"),
+            Map.entry("/api/v1/nurse/bed-applications", "GET"),
+            Map.entry("/api/v1/nurse/bed-applications/*/approve", "POST"),
+            Map.entry("/api/v1/nurse/bed-applications/*/reject", "POST"));
 
     /**
      * dev 档演示管理端点（审计 M8）：**只在 dev profile 下并入白名单**。

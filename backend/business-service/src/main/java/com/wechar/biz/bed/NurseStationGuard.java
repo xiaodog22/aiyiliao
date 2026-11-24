@@ -24,6 +24,22 @@ public class NurseStationGuard {
     /** 终端请求头：与 Bearer 分开，避免和医生/患者会话混用。 */
     public static final String HEADER = "X-Nurse-Station-Token";
 
+    /**
+     * 终端标识请求头（审计 F1-4 短期补偿，2026-11-23）。
+     *
+     * <p>当前只有共享令牌、无法区分具体操作人。审批行已有 reviewed_at 时间戳，但 reviewer
+     * 恒为 "nurse-station"，事后无法定位是哪台终端通过/驳回了申请。前端在 localStorage
+     * 生成并持久化一个随机终端号，随审批请求上报；服务端只接受 {@code [A-Za-z0-9._-]{1,32}}，
+     * 拼进 reviewer 列（≤64 字符）作为短期追溯线索。</p>
+     *
+     * <p>⚠️ 该值由客户端自报，只能用于"同一终端行为聚合"，不能当作身份认证；
+     * 彻底方案仍是独立护士账号 + RBAC（见 REPORT 的剩余项）。</p>
+     */
+    public static final String TERMINAL_HEADER = "X-Nurse-Terminal-Id";
+
+    private static final java.util.regex.Pattern TERMINAL_PATTERN =
+            java.util.regex.Pattern.compile("[A-Za-z0-9._-]{1,32}");
+
     private final String configuredToken;
 
     public NurseStationGuard(@Value("${app.nurse.station-token:}") String configuredToken) {
@@ -43,6 +59,16 @@ public class NurseStationGuard {
         if (!constantTimeEquals(configuredToken, presented)) {
             throw new ApiException("FORBIDDEN", HttpStatus.FORBIDDEN, "护士站终端令牌无效");
         }
+    }
+
+    /**
+     * 审批人字段：{@code nurse-station@<terminal>}。终端号非法/缺失时回落 unidentified，
+     * 不拒绝请求（不能因为追溯字段缺失而阻断临床审批），但保留"共享终端、无个体身份"的事实。
+     */
+    public String reviewerOf(String terminalId) {
+        String raw = terminalId == null ? "" : terminalId.trim();
+        String normalized = TERMINAL_PATTERN.matcher(raw).matches() ? raw : "unidentified";
+        return "nurse-station@" + normalized;
     }
 
     private static boolean constantTimeEquals(String expected, String actual) {

@@ -82,6 +82,26 @@ Page({
   // 返回重试；本页是栈首（直接编译打开本页）时 navigateBack 会失败 → 兜底重开导诊页
   onRetry() { wx.navigateBack({ fail: () => wx.redirectTo({ url: '/pages/triage/triage' }) }) },
 
+  /**
+   * 转人工复核（审计 F4-2）：导诊属于辅助性自动化决策，必须给患者"不同意/要求人工判断"的
+   * 现实入口，而不是只在隐私政策里写一句。入口直达在线问诊医生选择页，由医生复核。
+   */
+  onHumanReview() {
+    wx.showModal({
+      title: '转人工复核',
+      content: '导诊结果由规则与 AI 辅助生成，仅供分诊参考。您可以转到在线问诊，由医生结合症状进一步判断。',
+      confirmText: '在线问诊',
+      cancelText: '暂不需要',
+      success: (res) => {
+        if (!res.confirm) return
+        wx.navigateTo({
+          url: '/pages/consult/picker/picker',
+          fail: () => wx.showToast({ title: '在线问诊暂不可用，请到院咨询导诊台', icon: 'none' })
+        })
+      }
+    })
+  },
+
   // 隐私：报告只是本机缓存，用户可一键删除
   onClear() {
     const r = this.data.r

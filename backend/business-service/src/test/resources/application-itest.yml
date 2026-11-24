@@ -14,6 +14,14 @@ app:
     provider: dev
   auth:
     code-hash-secret: test-code-hash-secret-0123456789abcdef
+  # 审计 F4-1（2026-11-23）：健康数据单独同意门禁默认开启（application.yml）。
+  # 单测档显式关闭，避免既有 900+ 用例全部要预置 consents 行；
+  # 门禁本身由 HealthDataConsentGateTest 打开本开关独立验证（不是"只关不测"）。
+  consent:
+    require-health-data: false
+  # 审计 F3-4（2026-11-23）：目录本地 TTL 缓存在单测档关闭，避免用例间读到上一条插入的科室。
+  catalog:
+    cache-seconds: 0
 
 # 2026-11-05（V27）：H2 单测档的 Flyway 迁移停在 V26。
 # 原因：V27__health_report_structure.sql 含 MySQL 专有 DDL

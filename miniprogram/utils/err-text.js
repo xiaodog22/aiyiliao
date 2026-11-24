@@ -68,6 +68,11 @@ function errText(err, fallback) {
   if (code === 'INVITATION_NOT_FOUND') return '授权码无效，请重新申请'
   // 在线问诊：先预约、等医生接单后才能继续对话（后端 409 WAITING_ACCEPT）
   if (code === 'WAITING_ACCEPT') return '医生接单后才能继续对话，请耐心等待'
+  // 健康数据/语音单独同意（审计 F4-1）：后端 422/409 与前端取消分支统一给人话，不透传英文
+  if (code === 'CONSENT_REQUIRED') return '请先阅读并同意《健康数据处理授权说明》后再使用 AI 功能'
+  if (code === 'CONSENT_VERSION_MISMATCH') return '健康数据授权版本已更新，请重新阅读并同意'
+  if (code === 'CONSENT_WITHDRAWN') return '健康数据授权已撤回，请到「设置 — 健康数据授权」重新授权'
+  if (code === 'CONSENT_DECLINED') return '本次未同意健康数据授权，操作已取消'
   // 检查预约（P0-2）：时段被占/项目不存在/状态不可取消一律给人话，不透传 HIS 英文
   if (code === 'EXAM_DISABLED') return '检查预约暂未开放，请到院窗口办理'
   if (code === 'EXAM_SLOT_TAKEN') return '该时段已被预约，请换一个时段'

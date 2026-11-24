@@ -55,6 +55,12 @@
       <view class="st-label">隐私政策</view>
       <image class="st-arrow" src="{{icons.chevronRight}}" />
     </view>
+    <!-- 审计 F4-1：健康数据单独同意的查看/撤回入口（状态来自服务端 consents，不是本地布尔值） -->
+    <view class="st-row" bindtap="onHealthConsent">
+      <view class="st-label">健康数据授权</view>
+      <view class="st-value">{{healthConsentLabel}}</view>
+      <image class="st-arrow" src="{{icons.chevronRight}}" />
+    </view>
     <view class="st-row" bindtap="onRevoke">
       <view class="st-label">撤回授权同意</view>
       <image class="st-arrow" src="{{icons.chevronRight}}" />

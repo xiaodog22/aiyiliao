@@ -415,13 +415,23 @@ function stubRequest(postImpl, getImpl) {
     return postImpl(spec, data, opts)
   }
   // get 用于 AI 任务轮询（GET /api/v1/ai/tasks/{taskId}），场景不给实现时返回空任务（永不终态）
+  // 2026-11-23 审计 F4-1：健康数据单独同意门禁会先 GET /consents + /consent/latest。
+  // 本套用例测的是分诊链路，不是授权流程，统一返回「已按当前版本授予」，避免走授权页。
   stubExports.get = function (spec) {
+    const p = String(spec.path)
+    if (p.indexOf('/consent/latest') >= 0) return Promise.resolve({ version: 'v1.0' })
+    if (/\/consents$/.test(p)) {
+      return Promise.resolve([
+        { purpose: 'HEALTH_DATA_PROCESSING', status: 'GRANTED', policyVersion: 'v1.0' },
+        { purpose: 'VOICE_RECORDING', status: 'GRANTED', policyVersion: 'v1.0' }
+      ])
+    }
     return getImpl ? getImpl(spec) : Promise.resolve({})
   }
   // 只清 triage.js 不够：ai.js / user.js 也被 triage 间接依赖，它们若持有旧桩
   // （或早于首次换桩就已缓存真实 request），换桩后仍走上一场景的实现 —— 场景 3「后端全挂」
   // 因此可能拿到场景 1 的成功响应。凡是 require 过 request 的服务模块都要一并失效。
-  ;['triage.js', 'ai.js', 'user.js'].forEach((f) => {
+  ;['triage.js', 'ai.js', 'user.js', 'consent.js', 'health-consent.js'].forEach((f) => {
     const p = path.join(ROOT, 'services', f)
     delete require.cache[require.resolve(p)]
   })
@@ -510,10 +520,22 @@ stubRequest(
   (spec) => (/\/triage$/.test(String(spec.path))
     ? Promise.resolve({ taskId: 't-ok' })
     : Promise.resolve({ consultation: { id: 'c-1' } })),
-  () => Promise.resolve({
-    status: 'SUCCEEDED',
-    result: { recommendedDepartments: [{ departmentName: '消化内科', reason: '上消化道症状', confidence: 0.9 }] }
-  })
+  // 2026-11-23 审计 F4-1：服务层先做健康数据单独同意门禁（GET /consents + /consent/latest），
+  // 测试进程无 wx 登录态，必须给出「已按当前版本授予」，否则会走授权页并回落本地规则。
+  (spec) => {
+    const p = String(spec.path)
+    if (p.indexOf('/consent/latest') >= 0) return Promise.resolve({ version: 'v1.0' })
+    if (p.indexOf('/consents') >= 0) {
+      return Promise.resolve([
+        { purpose: 'HEALTH_DATA_PROCESSING', status: 'GRANTED', policyVersion: 'v1.0' },
+        { purpose: 'VOICE_RECORDING', status: 'GRANTED', policyVersion: 'v1.0' }
+      ])
+    }
+    return Promise.resolve({
+      status: 'SUCCEEDED',
+      result: { recommendedDepartments: [{ departmentName: '消化内科', reason: '上消化道症状', confidence: 0.9 }] }
+    })
+  }
 )
 const S1 = require(path.join(ROOT, 'services', 'triage.js'))
 

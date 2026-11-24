@@ -13,6 +13,7 @@
  *    调用方必须显示可见失败提示，不得用本地结论冒充 AI 输出。
  */
 const req = require('./request.js')
+const healthConsent = require('./health-consent.js')
 const { post, get, API, withPath } = req
 
 /** 任务终态（与 business-service AiTaskController.TERMINAL 同口径） */
@@ -37,7 +38,11 @@ function requestConsultationTriage(consultationId, opts) {
   const o = opts || {}
   const body = {}
   if (o.requestedProfile) body.requestedProfile = String(o.requestedProfile)
-  return post(withPath(API.CONSULTATION_TRIAGE, { consultationId: String(consultationId || '') }), body)
+  // 审计 F4-1：分诊会聚合会话内全部症状文本，属健康数据处理，先校验单独同意。
+  return healthConsent.ensure().then((ok) => {
+    if (!ok) return Promise.reject({ code: 'CONSENT_DECLINED', message: '未同意健康数据处理授权，本次操作已取消' })
+    return post(withPath(API.CONSULTATION_TRIAGE, { consultationId: String(consultationId || '') }), body)
+  })
 }
 
 /**

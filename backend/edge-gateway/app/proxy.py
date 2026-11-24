@@ -3,7 +3,9 @@
 - 响应以 **raw 字节流式** 回传：SSE（/api/v1/ai/tasks/{id}/events）不会被攒到最后一次性下发。
 - 声明了 `response_adapter` 的兼容条目例外：整体读入 → 校验（仅 2xx + JSON）→ 适配 → 返回；
   适配失败**原样透传**并告警（不中断用户链路）。
-- 上游出站统一 `accept-encoding: identity`，避免解压/再压缩两侧语义不一致（开发流量无收益）。
+- 压缩（审计 F3-2）：普通请求透传客户端的 `accept-encoding` 与上游的 `content-encoding`，
+  业务侧按 MIME 压缩 JSON；兼容适配条目强制 `identity`（适配器需要明文 JSON）。
+  压缩由上游决定，网关不二次编码，`content-length` 与压缩字节一一对应。
 - 失败语义（D1.3 映射表）：连不上 → 503 UPSTREAM_UNAVAILABLE；任一超时 → 504 UPSTREAM_TIMEOUT；
   其他传输错误 → 502 UPSTREAM_ERROR；上游 4xx/5xx 响应体**原样透传**（含统一错误信封）。
 """
@@ -94,7 +96,12 @@ async def forward(
         if lower in HOP_BY_HOP or lower in ("host", "content-length", "accept-encoding", "content-type"):
             continue
         headers[lower] = value
-    headers["accept-encoding"] = "identity"
+    # 审计 F3-2：普通链路透传客户端编码协商，让 business 的 JSON 压缩真正生效；
+    # 兼容适配条目必须拿明文 JSON，强制 identity（适配器用完即弃，不影响主链路）。
+    if response_adapter is not None:
+        headers["accept-encoding"] = "identity"
+    else:
+        headers["accept-encoding"] = request.headers.get("accept-encoding", "").strip() or "identity"
     # X-Forwarded-For 归一（审计 H6）：网关是唯一对外入口，必须由它决定"客户端真实地址"，
     # 否则下游（business 限流按 IP、审计日志）拿到的是网关自身地址 —— 全体用户共享一个桶，
     # 单个攻击者 30 次登录即可让全网 429；或反过来盲信客户端自带的 XFF（每换一个值开一个新桶）。
@@ -169,14 +176,15 @@ async def forward(
         logger.warning("上游异常 %s %s（%s）", request.method, path, exc.__class__.__name__)
         raise upstream_error()
 
-    # 响应头：剔除逐跳头与 content-encoding（出站统一 identity，正常不会出现压缩）。
+    # 响应头：剔除逐跳头；**保留 content-encoding**（审计 F3-2：上游 gzip 压缩的字节
+    # 由 aiter_raw 原样下发，若在这里剥掉编码头，客户端会把压缩字节当明文解析而乱码）。
     # ⚠️ content-length **必须保留**：此前一并剔除后 StreamingResponse 退化为 chunked，
     #    统一入口拿不到长度 —— `<image>` 无法预判、下载无进度、资源端点验收
-    #    「curl -I 必须有 Content-Length」直接失败。上游 identity 编码下长度可信。
+    #    「curl -I 必须有 Content-Length」直接失败。压缩场景下它是压缩后的真实字节数。
     response_headers = {
         key: value
         for key, value in upstream_response.headers.items()
-        if key.lower() not in HOP_BY_HOP and key.lower() != "content-encoding"
+        if key.lower() not in HOP_BY_HOP
     }
 
     if response_adapter is None:

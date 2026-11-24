@@ -41,7 +41,7 @@ public class PatientService {
     private final FamilyRepository family;
     private final AttachmentRepository attachments;
     private final AttachmentStorage attachmentStorage;
-    private final com.wechar.biz.consent.ConsentRepository consentRepository;
+    private final com.wechar.biz.consent.HealthDataConsentGate healthDataConsentGate;
     private final com.wechar.biz.ai.AiTaskService aiTaskService;
     private final FamilyProxyGuard proxyGuard;
     private final PhoneHashing phoneHashing;
@@ -50,7 +50,7 @@ public class PatientService {
 
     public PatientService(HealthRecordRepository healthRecords, FamilyRepository family,
                           AttachmentRepository attachments, AttachmentStorage attachmentStorage,
-                          com.wechar.biz.consent.ConsentRepository consentRepository,
+                          com.wechar.biz.consent.HealthDataConsentGate healthDataConsentGate,
                           com.wechar.biz.ai.AiTaskService aiTaskService,
                           FamilyProxyGuard proxyGuard,
                           PhoneHashing phoneHashing,
@@ -61,7 +61,7 @@ public class PatientService {
         this.family = family;
         this.attachments = attachments;
         this.attachmentStorage = attachmentStorage;
-        this.consentRepository = consentRepository;
+        this.healthDataConsentGate = healthDataConsentGate;
         this.aiTaskService = aiTaskService;
         this.proxyGuard = proxyGuard;
         this.phoneHashing = phoneHashing;
@@ -206,13 +206,9 @@ public class PatientService {
      */
     @Transactional
     public InterpretationData interpret(String userId, String recordId, String scope) {
-        // N11 撤回红线（2026-10-19）：HEALTH_DATA_PROCESSING 同意已撤回 → 停止处理（契约 422）。
-        // 只看"最新一行是否 WITHDRAWN"：从未授意不阻断（无撤回事实），已重新授权即恢复。
-        var consent = consentRepository.findLatest(userId, "HEALTH_DATA_PROCESSING");
-        if (consent.isPresent() && "WITHDRAWN".equals(consent.get().get("status"))) {
-            throw new ApiException("CONSENT_WITHDRAWN", HttpStatus.UNPROCESSABLE_ENTITY,
-                    "健康数据处理授权已撤回，无法进行 AI 解读（可前往设置重新授权后重试）");
-        }
+        // 审计 F4-1（2026-11-23）：从"仅撤回拦截"收紧为"未单独授予即拦"。
+        // 从未授权 → CONSENT_REQUIRED；已撤回 → CONSENT_WITHDRAWN；版本过期 → CONSENT_VERSION_MISMATCH。
+        healthDataConsentGate.requireHealth(userId, " AI 解读");
         var row = healthRecords.findById(userId, recordId)
                 .orElseThrow(() -> new ApiException("HEALTH_RECORD_NOT_FOUND", HttpStatus.NOT_FOUND,
                         "健康档案不存在"));

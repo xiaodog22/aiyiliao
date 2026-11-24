@@ -330,4 +330,20 @@
 
 .law-op:active { background: var(--accent-soft); }
 
+/* 自动化决策复核入口（审计 F4-2）：与普通信息卡区分，但不用警示色制造恐慌 */
+.review-card { border-left: 6rpx solid var(--brand-grad-from); }
+
+.review-text {
+  margin-top: 8rpx;
+  font-size: var(--font-body);
+  color: var(--text-sub);
+  line-height: 1.65;
+}
+
+.review-btn {
+  width: 100%;
+  min-height: 88rpx;
+  margin-top: 18rpx;
+}
+
 .act-btn { margin-bottom: 16rpx; }

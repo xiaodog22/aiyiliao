@@ -78,7 +78,7 @@ flowchart LR
 
 ```
 miniprogram/          原生小程序前端
-  pages/              主包 22 页（首页 / 问诊 / 养生 / 我的 + 登录 5 页 + 我的子页 11 页）
+  pages/              主包 23 页（首页 / 问诊 / 养生 / 我的 + 登录 6 页 + 我的子页 12 页）
     doctor/           分包（root=pages/doctor）：医生端 5 页（2026-11-20 收缩至线上问诊），患者端不预载
     triage/           分包（root=pages/triage）：导诊 2 页（triage + result），首页 all 网络预载
     consult/          分包（root=pages/consult）：在线问诊 2 页（consult + picker）
@@ -87,7 +87,7 @@ miniprogram/          原生小程序前端
     tv/               分包（root=pages/tv）：投屏 1 页
   packageNav/         分包：院内导航
   packageContent/     分包：健康科普
-                      主包 22 + 7 分包 15 = 全量 **37 页**（以 app.json 实测为准，2026-11-20）
+                      主包 23 + 7 分包 15 = 全量 **38 页**（以 app.json 实测为准，2026-11-23）
   services/           数据访问层，页面不直接发请求
   components/         通用组件（app.json 全局注册，页面可直接用标签）
   utils/              纯逻辑真源；submission-actions.js = 提交完成态操作入口状态机
@@ -438,7 +438,27 @@ M11/M13 的真机渲染与全局 `Page` 包装实测。
 - 安全默认值回归：`node tools/test-security-defaults.js` 用合成样例证明 `matchIfMissing=true`、默认口令、`mode: mock` 规则会命中；`security-gate.js` 仍在每次 CI 阻断。
 - clinic-his 已纳入 CI：`python -m unittest discover -s tests`（L4 种子口令/首登改密、L7 盐、L10 限速内存）。
 
-### 本地联调档（`env.local.js`，不入库）
+### 2026-11-23 安全审计与性能合规（HIGH/MEDIUM/LOW 整改）
+
+基线：`康诊云aiyiliao安全审计与性能合规报告`（2026-11-23，仓库快照 2026-11-22）。
+结论：HIGH×1、MEDIUM×6、LOW×4；本轮代码级整改与残留项如下（逐项证据、验证命令与发布前检查见
+`docs/security/2026-11-23-audit-performance/README.md`（仅本地/不入库）；同日日志见 `DEV_LOG.md`）。
+
+| 项 | 级别 | 状态 | 落地口径 |
+| --- | --- | --- | --- |
+| F4-1 健康数据处理单独同意 | HIGH | 已修复 | 新增 `HealthDataConsentGate`（`HEALTH_DATA_PROCESSING` / `VOICE_RECORDING`）：从未授权 422 `CONSENT_REQUIRED`、已撤回 422 `CONSENT_WITHDRAWN`、版本不符 409 `CONSENT_VERSION_MISMATCH`；问诊建会话/追加/分诊、报告 AI 解读、照护计划生成、语音识别入口全部前置校验（落库/建任务之前）。前端新增独立授权页 `/pages/auth/health-consent/health-consent` 与 `services/health-consent.js`，设置页可查看/撤回；拒绝时以 `CONSENT_DECLINED` 中止原操作。开关 `app.consent.require-health-data` 默认 `true`，itest 显式关闭以保留旧用例，另有专测打开开关证明门禁有效 |
+| F1-3 护士站端点未入匿名白名单 | MEDIUM | 已修复 | `AuthInterceptor` 精确登记 4 条 `/api/v1/nurse/beds`、`/nurse/bed-applications`、`.../*/approve`、`.../*/reject`；匿名只放行到 `NurseStationGuard`，共享令牌缺失仍 403 |
+| F1-4 护士站共享静态令牌 | MEDIUM | 短期补偿 | 新增 `X-Nurse-Terminal-Id`（`[A-Za-z0-9._-]{1,32}`），审批 `reviewer` 记为 `nurse-station@<terminal>`，静态页生成并持久化终端号；独立护士账号 + RBAC 未做（需账号体系改造） |
+| F3-2 无响应压缩 | MEDIUM | 已修复 | business 开启 `server.compression`（JSON/JS/CSS/HTML/Text/XML，≥1KB，排除 SSE）；gateway 普通链路透传 `Accept-Encoding`、保留 `Content-Encoding` 与压缩后 `Content-Length`，兼容适配器强制 `identity` |
+| F3-3 同步轮询阻塞 Tomcat 线程 | MEDIUM | 未闭环 | `PatientService.interpret` / `CarePlanService.create` 仍调用 `AiTaskService.await`（内部 `Thread.sleep(400)`）；改为 `202 + taskId` 异步任务链需同步改契约、前端轮询与事务边界，列入下一迭代，不与本轮混改 |
+| F4-2 自动化决策异议/人工复核 | MEDIUM | 已修复 | 分诊结果页与健康档案 AI 解读结果新增「转人工复核」，直达医生选择页；失败提示导诊台，不伪造复核已完成 |
+| F4-3 健康数据保留期 | MEDIUM | 待口径 | 需法务/等保确认保留期限与到期处置方式，未擅自加自动删除任务 |
+| F1-8 `AI_AUTH_MODE=off` 告警弱 | LOW | 已修复 | ai-service 启动与 lifespan 双侧打印「不安全配置」横幅，明确仅限本机调试 |
+| F2-3 轮询无错误退避 | LOW | 已修复 | 医生端/患者端问诊轮询失败 <3 次保持基础周期，3→8s、4→12s、≥5→15s，成功即复位；区分「吞错」的列表/消息加载 |
+| F2-6 `temp/` 0 字节残留 | LOW | 已修复 | 删除两个 JMeter 残留文件，`.gitignore` 增 `/temp/` |
+| F3-4 匿名目录无缓存 | LOW | 已修复 | `CatalogService` 仅缓存 `departments`/`hospitals`（45s TTL，`app.catalog.cache-seconds`，itest=0），号源实时字段不缓存；上限 256 条防膨胀 |
+
+
 
 2026-11-18 起 `miniprogram/config/env.js` **不再包含任何真实地址或密钥**：
 档位、隧道域名、dev 登录密钥全部来自本地未入库的 `miniprogram/config/env.js` 同目录

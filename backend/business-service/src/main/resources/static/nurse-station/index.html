@@ -238,9 +238,24 @@
     return tokenInput.value.trim();
   }
 
+  // 审计 F1-4 短期追溯：共享令牌无法区分操作人，浏览器本地生成一个持久终端号，
+  // 服务端拼进 reviewer（nurse-station@<terminal>），配合 reviewed_at 定位审批来源。
+  function terminalId() {
+    let v = localStorage.getItem('nurse.station.terminal');
+    if (!v) {
+      const raw = (window.crypto && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : (Math.random().toString(36).slice(2) + Date.now().toString(36));
+      v = ('term-' + raw.replace(/[^a-zA-Z0-9]/g, '')).slice(0, 32);
+      localStorage.setItem('nurse.station.terminal', v);
+    }
+    return v;
+  }
+
   function headers() {
     const h = { 'Content-Type': 'application/json' };
     if (token()) h['X-Nurse-Station-Token'] = token();
+    h['X-Nurse-Terminal-Id'] = terminalId();
     return h;
   }
 

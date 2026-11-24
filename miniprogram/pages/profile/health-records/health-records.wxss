@@ -378,6 +378,17 @@
   line-height: 1.6;
 }
 
+/* 自动化解读人工复核入口（审计 F4-2）：可点区域不小于 88rpx，满足适老化触控 */
+.hrc-ai-review {
+  display: flex;
+  align-items: center;
+  min-height: 88rpx;
+  margin-top: 6rpx;
+  color: var(--brand-grad-from);
+  font-size: calc(var(--font-caption) + 2rpx);
+  font-weight: 600;
+}
+
 /* ================= ④ 加密说明条 ================= */
 .hrc-secure {
   margin-top: 18rpx;

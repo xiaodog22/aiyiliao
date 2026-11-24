@@ -51,6 +51,7 @@ public class ConsultationService {
     private final AttachmentRepository attachmentRepository;
     private final AttachmentStorage attachmentStorage;
     private final ResourceAssetRepository resourceAssetRepository;
+    private final com.wechar.biz.consent.HealthDataConsentGate healthDataConsentGate;
     private final ObjectMapper mapper;
     private final Clock clock;
 
@@ -76,6 +77,7 @@ public class ConsultationService {
                                TriageRuleEngine triageRuleEngine, MessageService messageService,
                                CatalogRepository catalogRepository, AttachmentRepository attachmentRepository,
                                AttachmentStorage attachmentStorage, ResourceAssetRepository resourceAssetRepository,
+                               com.wechar.biz.consent.HealthDataConsentGate healthDataConsentGate,
                                ObjectMapper mapper, Clock clock) {
         this.repository = repository;
         this.aiTaskService = aiTaskService;
@@ -85,6 +87,7 @@ public class ConsultationService {
         this.attachmentRepository = attachmentRepository;
         this.attachmentStorage = attachmentStorage;
         this.resourceAssetRepository = resourceAssetRepository;
+        this.healthDataConsentGate = healthDataConsentGate;
         this.mapper = mapper;
         this.clock = clock;
     }
@@ -109,6 +112,8 @@ public class ConsultationService {
      * 也保证急症 safety 提示不被生成失败拖累（契约 createConsultation 描述）。
      */
     public ConsultationCreated create(String userId, String idempotencyKey, ConsultationCreateRequest request) {
+        // 审计 F4-1：健康文本落库与 AI 处理前必须有单独的 HEALTH_DATA_PROCESSING 授权。
+        healthDataConsentGate.requireHealth(userId, " AI 问诊");
         String digest = Digests.sha256Hex(canonical(request.initialMessage(), request.inputMode(),
                 request.requestedProfile(), request.locale(), request.doctorId()));
         Instant now = clock.instant();
@@ -210,6 +215,8 @@ public class ConsultationService {
      */
     public MessageSent send(String userId, String consultationId, String idempotencyKey,
                             MessageCreateRequest request) {
+        // 审计 F4-1：追加症状/检查资料同样属于健康数据处理，先校验单独同意（消息落库前）。
+        healthDataConsentGate.requireHealth(userId, " AI 问诊");
         String digest = Digests.sha256Hex(canonical(request.content(), request.inputMode(),
                 request.requestedProfile(), request.confirmedInputId()));
         Instant now = clock.instant();
@@ -750,6 +757,7 @@ public class ConsultationService {
      * 幂等：不落业务写数据，故不要求 Idempotency-Key；任务自身以 biz-taskId 作为上游幂等键。
      */
     public AiTaskService.AiTaskData recommendDepartment(String userId, String consultationId, String profile) {
+        healthDataConsentGate.requireHealth(userId, " AI 分诊");
         requireWritable(ownedConsultation(userId, consultationId));
         String symptoms = symptomDigest(consultationId);
         if (symptoms.isEmpty()) {

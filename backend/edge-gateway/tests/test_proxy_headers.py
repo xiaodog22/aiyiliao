@@ -28,11 +28,13 @@ UPSTREAM = FastAPI()
 
 
 @UPSTREAM.post("/api/v1/auth/wechat/login")
+@UPSTREAM.post("/api/v1/plain")
 async def echo_headers(request: Request):
     return JSONResponse({
         "x_platform": request.headers.getlist("x-platform"),
         "x_client_version": request.headers.getlist("x-client-version"),
         "authorization": request.headers.getlist("authorization"),
+        "accept_encoding": request.headers.getlist("accept-encoding"),
     })
 
 
@@ -56,7 +58,17 @@ async def legacy_login(request: Request):
                 "X-Client-Version": "1.0.0",
                 "X-Platform": "wechat-miniprogram",
             },
+            response_adapter=lambda doc: doc,
         )
+
+
+@EDGE.post("/api/v1/plain")
+async def plain_proxy(request: Request):
+    """普通链路（无 response_adapter）：编码协商必须原样透传。"""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=UPSTREAM), base_url="http://business.test"
+    ) as client:
+        return await forward(client, request, "http://business.test")
 
 
 @pytest.fixture()
@@ -109,3 +121,24 @@ def test_authorization_is_still_passed_through(edge):
     )
     assert resp.status_code == 200
     assert resp.json()["authorization"] == ["Bearer smoke-token"]
+
+
+def test_accept_encoding_is_passed_through_for_normal_proxy(edge):
+    """审计 F3-2：普通链路必须保留客户端的 gzip 协商，业务侧压缩才会生效。"""
+    resp = edge.post(
+        "/api/v1/plain",
+        headers={"Accept-Encoding": "gzip, deflate"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["accept_encoding"] == ["gzip, deflate"]
+
+
+def test_accept_encoding_is_forced_identity_for_compat_adapter(edge):
+    """兼容适配条目要解析明文 JSON，不能被上游压缩。"""
+    resp = edge.post(
+        "/api/user/login",
+        json={"phone": "13800138001"},
+        headers={"Accept-Encoding": "gzip"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["accept_encoding"] == ["identity"]

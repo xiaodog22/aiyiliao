@@ -66,7 +66,10 @@ def install_auth(app: FastAPI, settings: Settings) -> None:
         raise RuntimeError("AI_AUTH_MODE=jwks 尚未实现（M4）；拒绝以不安全配置启动。")
 
     if mode == "off":
-        logger.warning("服务令牌校验=off（开发档，仅限本机联调；生产必须启用）")
+        logger.warning(
+            "################ 不安全配置 | AI_AUTH_MODE=off | 所有 /internal/** 调用方校验已关闭，"
+            "仅限本机联调；生产上线前必须改为 static 并配置强令牌 ################"
+        )
         return
 
     if mode != "static":

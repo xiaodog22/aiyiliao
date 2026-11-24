@@ -19,9 +19,15 @@ const req = require('./request.js')
 const { post, get, API, withPath } = req
 const session = require('./session.js')
 const consent = require('./consent.js')
+const healthConsent = require('./health-consent.js')
 const ENV = req.ENV
 
 let _user = null
+
+/** 单独同意被用户拒绝（或授权页打开失败）：中止本次健康数据处理，不落库、不建任务。 */
+function consentDeclined() {
+  return { code: 'CONSENT_DECLINED', message: '未同意健康数据处理授权，本次操作已取消' }
+}
 
 function getUser() { return _user }
 
@@ -339,7 +345,10 @@ function listMyConsultations() {
  */
 function createConsultation(payload, opts) {
   const key = (opts && opts.idempotencyKey) || req.newIdempotencyKey()
-  return post(API.CONSULTATION_LIST, payload || {}, { idempotencyKey: key })
+  return healthConsent.ensure().then((ok) => {
+    if (!ok) return Promise.reject(consentDeclined())
+    return post(API.CONSULTATION_LIST, payload || {}, { idempotencyKey: key })
+  })
 }
 
 /**
@@ -348,8 +357,11 @@ function createConsultation(payload, opts) {
  *    后端未实现时返回 501；页面须显示可见降级提示，不得本地编造解读内容。
  */
 function interpretRecord(recordId) {
-  return post(withPath(API.HR_INTERPRET, { recordId: recordId }), { scope: 'SUMMARY' },
-    { idempotencyKey: req.newIdempotencyKey() })
+  return healthConsent.ensure().then((ok) => {
+    if (!ok) return Promise.reject(consentDeclined())
+    return post(withPath(API.HR_INTERPRET, { recordId: recordId }), { scope: 'SUMMARY' },
+      { idempotencyKey: req.newIdempotencyKey() })
+  })
 }
 
 /**
@@ -383,7 +395,10 @@ function listConsultationMessages(consultationId) {
  */
 function sendConsultationMessage(consultationId, payload, opts) {
   const key = (opts && opts.idempotencyKey) || req.newIdempotencyKey()
-  return post(withPath(API.CONSULTATION_MESSAGES, { consultationId }), payload || {}, { idempotencyKey: key })
+  return healthConsent.ensure().then((ok) => {
+    if (!ok) return Promise.reject(consentDeclined())
+    return post(withPath(API.CONSULTATION_MESSAGES, { consultationId }), payload || {}, { idempotencyKey: key })
+  })
 }
 
 /**

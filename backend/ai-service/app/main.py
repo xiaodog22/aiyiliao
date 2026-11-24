@@ -306,6 +306,13 @@ def create_app(
         sweeper: Optional[asyncio.Task] = None
         if settings.sweep_interval_seconds > 0:
             sweeper = asyncio.create_task(_sweep_loop(), name="ai-retention-sweeper")
+        # 审计 F1-8（2026-11-23）：off 档不能只在安全模块里一行 warning —— 启动摘要常被
+        # grep 查看，必须在最显眼的位置重复提示，避免"本机联调配置"被误带到对外服务。
+        if (settings.auth_mode or "").lower() == "off":
+            logger.warning(
+                "################ 不安全配置 | AI_AUTH_MODE=off | 服务令牌校验关闭 | "
+                "生产环境必须设置 AI_AUTH_MODE=static + AI_SERVICE_TOKEN ################"
+            )
         logger.info(
             "ai-service %s 启动 | 令牌校验=%s | 执行器=%d | 内容寻址缓存=%s | 存储=%s | 周期清理=%s | ASR预热=%s | TTS预生成=%s",
             APP_VERSION, settings.auth_mode, service.executor_count,

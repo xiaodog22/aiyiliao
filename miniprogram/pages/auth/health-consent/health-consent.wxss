@@ -1,0 +1,134 @@
+.hc-page {
+  min-height: 100vh;
+  padding: 28rpx 24rpx calc(40rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: var(--bg);
+}
+
+.hc-hero {
+  padding: 16rpx 8rpx 24rpx;
+}
+
+.hc-hero-icon {
+  width: 72rpx;
+  height: 72rpx;
+  margin-bottom: 12rpx;
+}
+
+.hc-title {
+  font-size: var(--font-title);
+  font-weight: 600;
+  color: var(--text-main);
+  line-height: 1.35;
+}
+
+.hc-sub {
+  margin-top: 8rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.55;
+}
+
+.hc-card {
+  margin-bottom: 20rpx;
+  padding: 28rpx 28rpx 8rpx;
+}
+
+.hc-section-title {
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 10rpx;
+}
+
+.hc-item {
+  padding: 14rpx 0;
+  border-top: 1rpx solid var(--border);
+}
+
+.hc-item-name {
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.hc-item-text {
+  margin-top: 4rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+  line-height: 1.6;
+}
+
+.hc-p {
+  padding: 10rpx 0;
+  font-size: var(--font-body);
+  color: var(--text-main);
+  line-height: 1.65;
+}
+
+.hc-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 14rpx;
+  min-height: 88rpx;
+  padding: 20rpx 8rpx;
+  box-sizing: border-box;
+}
+
+.hc-box {
+  flex: 0 0 auto;
+  width: 44rpx;
+  height: 44rpx;
+  line-height: 44rpx;
+  text-align: center;
+  border: 2rpx solid #9BB4D6;
+  border-radius: 8rpx;
+  color: #FFFFFF;
+  font-size: var(--font-body);
+  background: #FFFFFF;
+}
+
+.hc-box-on {
+  background: #0B6EF8;
+  border-color: #0B6EF8;
+}
+
+.hc-check-label {
+  font-size: var(--font-body);
+  line-height: 1.55;
+  color: var(--text-main);
+}
+
+.hc-policy-link {
+  display: block;
+  margin-top: 4rpx;
+  color: #0B6EF8;
+  text-decoration: underline;
+}
+
+.hc-version {
+  padding: 0 8rpx;
+  font-size: var(--font-caption);
+  color: var(--text-sub);
+}
+
+.hc-error {
+  padding: 12rpx 8rpx 0;
+  font-size: var(--font-caption);
+  color: #C62828;
+}
+
+.hc-agree {
+  width: 100%;
+  min-height: 88rpx;
+  margin-top: 28rpx;
+}
+
+.hc-decline {
+  width: 100%;
+  min-height: 88rpx;
+  margin-top: 16rpx;
+  background: transparent;
+  color: var(--text-sub);
+  font-size: var(--font-caption);
+}

@@ -13,6 +13,9 @@ import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,9 +35,41 @@ public class CatalogService {
     private final CatalogRepository repository;
     private final java.time.Clock clock;
 
-    public CatalogService(CatalogRepository repository, java.time.Clock clock) {
+    /**
+     * 目录 TTL 缓存（审计 F3-4，2026-11-23）：科室/院区是匿名只读目录，一次跳转往往触发
+     * 科室 + 院区 + 医生三次重复查询；但号源 remaining/slotState 是实时字段，**不缓存**。
+     * 默认 45s（落在审计建议的 30~60s），单测档置 0 关闭，避免用例间读到上一条插入的科室。
+     */
+    private final long cacheSeconds;
+    private final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
+
+    public CatalogService(CatalogRepository repository, java.time.Clock clock,
+                          @Value("${app.catalog.cache-seconds:45}") long cacheSeconds) {
         this.repository = repository;
         this.clock = clock;
+        this.cacheSeconds = Math.max(0, cacheSeconds);
+    }
+
+    private record CacheEntry(long expiresAtMillis, Object value) {
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> T cached(String key, Supplier<T> loader) {
+        if (cacheSeconds <= 0) {
+            return loader.get();
+        }
+        long now = System.currentTimeMillis();
+        CacheEntry hit = cache.get(key);
+        if (hit != null && hit.expiresAtMillis() > now) {
+            return (T) hit.value();
+        }
+        T value = loader.get();
+        // 目录查询的 keyword 是用户输入，理论上可无限增长；超过阈值整体清空，避免内存无界。
+        if (cache.size() > 256) {
+            cache.clear();
+        }
+        cache.put(key, new CacheEntry(now + cacheSeconds * 1000L, value));
+        return value;
     }
 
     /**
@@ -50,11 +85,16 @@ public class CatalogService {
 
     @Transactional(readOnly = true)
     public List<DepartmentData> departments(String hospitalId, String keyword) {
-        return repository.listDepartments(hospitalId, keyword).stream()
-                .map(d -> new DepartmentData(d.id(), d.name(), d.hospitalId(), hospitalName(d),
-                        d.location(), d.building(), d.floor(), d.area(), d.roomNo(),
-                        d.description(), d.iconKey()))
-                .toList();
+        return cached("dept|" + safeKey(hospitalId) + "|" + safeKey(keyword),
+                () -> repository.listDepartments(hospitalId, keyword).stream()
+                        .map(d -> new DepartmentData(d.id(), d.name(), d.hospitalId(), hospitalName(d),
+                                d.location(), d.building(), d.floor(), d.area(), d.roomNo(),
+                                d.description(), d.iconKey()))
+                        .toList());
+    }
+
+    private static String safeKey(String value) {
+        return value == null ? "" : value;
     }
 
     /** 科室下的医生（契约路径 {departmentId}/doctors）。科室不存在 → 404。 */
@@ -152,11 +192,12 @@ public class CatalogService {
      */
     @Transactional(readOnly = true)
     public List<HospitalData> hospitals() {
-        return repository.listHospitals().stream()
-                .map(h -> new HospitalData(h.id(),
-                        h.name() != null && !h.name().isBlank() ? h.name()
-                                : HOSPITAL_NAMES.getOrDefault(h.id(), HOSPITAL_NAME_DEFAULT)))
-                .toList();
+        return cached("hospitals",
+                () -> repository.listHospitals().stream()
+                        .map(h -> new HospitalData(h.id(),
+                                h.name() != null && !h.name().isBlank() ? h.name()
+                                        : HOSPITAL_NAMES.getOrDefault(h.id(), HOSPITAL_NAME_DEFAULT)))
+                        .toList());
     }
 
     /** specialties_json 容错解析（种子为 JSON 数组字符串）。 */
