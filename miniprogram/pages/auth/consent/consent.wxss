@@ -15,7 +15,7 @@
   z-index: 20;
   padding: 20rpx 32rpx calc(20rpx + env(safe-area-inset-bottom));
   background: #FFFFFF;
-  box-shadow: 0 -6rpx 24rpx rgba(11, 110, 248, 0.10);
+  box-shadow: 0 -6rpx 24rpx rgba(70, 86, 150, 0.10);
 }
 
 .consent-version {
@@ -48,8 +48,8 @@
 }
 
 .consent-box-on {
-  background: #0B6EF8;
-  border-color: #0B6EF8;
+  background: var(--primary);
+  border-color: var(--primary);
 }
 
 .consent-label {

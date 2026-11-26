@@ -89,8 +89,8 @@
 }
 
 .hc-box-on {
-  background: #0B6EF8;
-  border-color: #0B6EF8;
+  background: var(--primary);
+  border-color: var(--primary);
 }
 
 .hc-check-label {
@@ -102,7 +102,7 @@
 .hc-policy-link {
   display: block;
   margin-top: 4rpx;
-  color: #0B6EF8;
+  color: var(--primary);
   text-decoration: underline;
 }
 

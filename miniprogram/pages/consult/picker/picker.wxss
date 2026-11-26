@@ -2,7 +2,7 @@
 
 .cp-page {
   min-height: 100vh;
-  background: #f5f7fa;
+  background: var(--bg);
 }
 
 /* 导航栏 */
@@ -39,7 +39,7 @@
   text-align: center;
   font-size: 34rpx;
   font-weight: 600;
-  color: #17233d;
+  color: var(--text-main);
 }
 .cp-nav-hover { opacity: 0.6; }
 
@@ -54,7 +54,7 @@
   width: 96rpx;
   height: 96rpx;
   border-radius: 48rpx;
-  background: #0b6ef8;
+  background: var(--primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -64,12 +64,12 @@
 .cp-state-title {
   font-size: 32rpx;
   font-weight: 600;
-  color: #17233d;
+  color: var(--text-main);
   margin-bottom: 12rpx;
 }
 .cp-state-sub {
   font-size: 28rpx;
-  color: #86909c;
+  color: var(--text-weak);
   text-align: center;
   line-height: 1.6;
   margin-bottom: 32rpx;
@@ -84,7 +84,7 @@
   justify-content: center;
   font-size: 30rpx;
 }
-.cp-btn-primary { background: #0b6ef8; color: #fff; }
+.cp-btn-primary { background: var(--primary); color: #fff; }
 .cp-state-btn { margin-top: 8rpx; }
 
 /* 科室筛选 */
@@ -108,7 +108,7 @@
   background: #f2f3f5;
 }
 .cp-dept-on {
-  background: #0b6ef8;
+  background: var(--primary);
   color: #fff;
   font-weight: 600;
 }
@@ -146,7 +146,7 @@
 .cp-doc-name {
   font-size: 32rpx;
   font-weight: 600;
-  color: #17233d;
+  color: var(--text-main);
   max-width: 320rpx;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -155,7 +155,7 @@
 .cp-doc-chip {
   margin-left: 16rpx;
   font-size: 22rpx;
-  color: #0b6ef8;
+  color: var(--primary);
   background: #e8f1fe;
   border-radius: 8rpx;
   padding: 4rpx 12rpx;
@@ -170,12 +170,12 @@
   flex-shrink: 0;
 }
 .cp-avail-on { color: #0e9f6e; background: #e7f8f1; }
-.cp-avail-off { color: #86909c; background: #f2f3f5; }
+.cp-avail-off { color: var(--text-weak); background: #f2f3f5; }
 /* 医生已下线：整卡降透明度，仍可点（点了给明确中文提示，不做死按钮） */
 .cp-doc-off { opacity: 0.6; }
 .cp-doc-sub {
   font-size: 26rpx;
-  color: #86909c;
+  color: var(--text-weak);
   margin-bottom: 6rpx;
 }
 .cp-doc-spec {
@@ -199,7 +199,7 @@
 }
 .cp-doc-pick {
   font-size: 26rpx;
-  color: #0b6ef8;
+  color: var(--primary);
   font-weight: 600;
 }
 
@@ -219,7 +219,7 @@
 }
 .cp-foot-t {
   font-size: 28rpx;
-  color: #0b6ef8;
+  color: var(--primary);
   font-weight: 600;
 }
 .cp-foot-disabled {

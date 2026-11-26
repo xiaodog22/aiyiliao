@@ -142,7 +142,7 @@
   box-sizing: border-box;
 }
 
-.date-on { background: var(--primary); }
+.date-on { background: linear-gradient(135deg, var(--brand-grad-from), var(--brand-grad-to)); box-shadow: 0 8rpx 20rpx -10rpx rgba(70, 86, 150, 0.55); }
 
 .date-label {
   font-size: calc(var(--font-caption) - 2rpx);

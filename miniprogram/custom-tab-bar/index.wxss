@@ -34,12 +34,12 @@
 
 .tab-text {
   font-size: 22rpx;
-  color: #8A9BB8;
+  color: var(--text-weak, #8E98B4);  /* V4 ink-3 */
   line-height: 1.2;
 }
 
 .tab-item.active .tab-text {
-  color: var(--tab-active, #0B6EF8);
+  color: var(--tab-active, #7E93CC);
   font-weight: 500;
 }
 
@@ -60,5 +60,5 @@
    未选中色改用本档的 --text-weak（更深）。calc 保证 ≥600px 时跟随 px 化后的 --font-caption。 */
 .tab-xlarge .tab-text {
   font-size: calc(var(--font-caption) + 2rpx);
-  color: var(--text-weak, #8A9BB8);
+  color: var(--text-weak, #8E98B4);
 }

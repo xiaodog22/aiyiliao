@@ -199,13 +199,13 @@
 
 /* 占用：蓝带渐变头（168rpx）+ 浅蓝底（设计稿 102） */
 .bed-occ {
-  background: linear-gradient(180deg, rgba(11, 110, 248, 0.14) 0%, rgba(11, 110, 248, 0.03) 100%);
+  background: linear-gradient(180deg, rgba(70, 86, 150, 0.14) 0%, rgba(70, 86, 150, 0.03) 100%);
 }
 
 .bed-occ .bed-top {
   height: 168rpx;
   width: 100%;
-  background: linear-gradient(180deg, rgba(11, 110, 248, 0.86) 0%, rgba(11, 110, 248, 0.56) 100%);
+  background: linear-gradient(180deg, rgba(70, 86, 150, 0.86) 0%, rgba(70, 86, 150, 0.56) 100%);
 }
 
 .bed-occ .bed-status { color: var(--primary-dark); }
@@ -221,7 +221,7 @@
 
 /* 已预留：整卡浅蓝渐变（设计稿 106 的蓝底变体；106 文案「维修**」按统一规则归到维修中） */
 .bed-reserved {
-  background: linear-gradient(180deg, rgba(11, 110, 248, 0.72) 0%, rgba(11, 110, 248, 0.06) 78%);
+  background: linear-gradient(180deg, rgba(70, 86, 150, 0.72) 0%, rgba(70, 86, 150, 0.06) 78%);
 }
 
 .bed-reserved .bed-status { color: var(--text-sub); }

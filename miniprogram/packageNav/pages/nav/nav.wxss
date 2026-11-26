@@ -135,7 +135,7 @@
 }
 
 .nvm-floor-on {
-  box-shadow: 0 4rpx 20rpx rgba(11, 110, 248, 0.18);
+  box-shadow: 0 4rpx 20rpx rgba(70, 86, 150, 0.18);
 }
 
 .nvm-floor-t {
@@ -163,7 +163,7 @@
   padding: 12rpx 14rpx;
   border-radius: var(--radius-md);
   background: var(--card);
-  box-shadow: 0 6rpx 24rpx rgba(11, 110, 248, 0.16);
+  box-shadow: 0 6rpx 24rpx rgba(70, 86, 150, 0.16);
 }
 
 .nvm-floors-scroll {
@@ -762,7 +762,7 @@
   }
 
   .nvm-floor-on {
-    box-shadow: 0 2px 10px rgba(11, 110, 248, 0.18);
+    box-shadow: 0 2px 10px rgba(70, 86, 150, 0.18);
   }
 
   .nvm-floor-h {
@@ -782,7 +782,7 @@
     right: 10px;
     bottom: 40.5px;
     padding: 6px 7px;
-    box-shadow: 0 3px 12px rgba(11, 110, 248, 0.16);
+    box-shadow: 0 3px 12px rgba(70, 86, 150, 0.16);
   }
 
   .nvm-floor-tab {

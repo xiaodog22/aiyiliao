@@ -13,7 +13,7 @@
    设计实测（x=20 纵向采样）：顶部 #1368E5 ≈ --primary；卡片上沿附近 #237FEE ≈ --accent；
    卡片下沿以深的侧边只剩 #9CC7FA，底部 #F0F3FA ≈ --bg —— 即"蓝 → 浅蓝 → 白"三段，
    且右下角更亮（y=1700 左侧 #338BEF vs 右侧 #61ADFB），故用「右下白色柔光 + 纵向白色渐显」
-   两层叠加在「--primary → --accent」基础渐变之上，同时满足规范里的 #0B6EF8 → #3E8CFF 基调。 */
+   两层叠加在「--primary → --accent」基础渐变之上，同时满足规范里的 var(--primary) → var(--accent) 基调。 */
 .lg-page {
   min-height: 100vh;
   display: flex;

@@ -26,11 +26,13 @@ from PIL import Image
 
 SRC_DIR = os.path.join(os.path.dirname(__file__), '..', 'miniprogram', 'assets', 'icons')
 
-# 目标色 = 参考图实测的「图标字形五色」（装饰色，与状态徽章语义色分工并存，D-01④）
-GREEN = (63, 171, 124)    # #3FAB7C 装饰绿（薄荷底板配字）
-PINK = (239, 84, 129)     # #EF5481 装饰粉
-AMBER = (251, 160, 54)    # #FBA036 装饰橙
-PURPLE = (149, 102, 250)  # #9566FA 装饰紫
+# 目标色 = V4 雾霭版「马卡龙图标字形色」（page-atlas-v4 实测 --*-ic，2026-11-26）
+# 后缀族映射：green/mint→mint-ic · pink→blush-ic · amber→peach-ic · purple→lav-ic
+# 语义红保留（体检/危险），不与装饰色混用。
+GREEN = (92, 156, 138)    # #5C9C8A mint-ic（薄荷绿族，原 #3FAB7C）
+PINK = (190, 124, 152)    # #BE7C98 blush-ic（绯红族，原 #EF5481）
+AMBER = (188, 138, 92)    # #BC8A5C peach-ic（蜜桃橙族，原 #FBA036）
+PURPLE = (124, 114, 186)  # #7C72BA lav-ic（薰衣草紫族，原 #9566FA）
 RED = (245, 63, 63)       # #F53F3F 语义红（体检服务等，保持）
 
 # 输出文件名 -> (源文件名, 目标色)

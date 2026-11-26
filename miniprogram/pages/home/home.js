@@ -36,13 +36,13 @@ const A = {
   svc: '/assets/home/svc-'
 }
 
-/* 四宫格与设计效果图 01-首页.png 一致：
-   AI 智能导诊 / 预约挂号 / 在线问诊(薄荷底) / 报告查询 */
+/* 四宫格与 V4 设计稿 02-首页与Tab（_atlas.html quad）一致：
+   导诊=薰衣草紫 / 预约=雾蓝 / 问诊=薄荷绿 / 报告=蜜桃橙（底板 tint 配同族字形色） */
 const QUAD = [
-  { key: 'triage', icon: 'stethoscope', tint: 'blue', title: '智能导诊', desc: '智能推荐科室医生' },
+  { key: 'triage', icon: 'stethoscope', tint: 'purple', title: '智能导诊', desc: '智能推荐科室医生' },
   { key: 'appoint', icon: 'calendar', tint: 'blue', title: '预约挂号', desc: '预约专家门诊' },
-  { key: 'consult', icon: 'chat', tint: 'mint', title: '在线问诊', desc: '图文电话咨询' },
-  { key: 'reports', icon: 'fileText', tint: 'blue', title: '报告查询', desc: '检验检查结果' }
+  { key: 'consult', icon: 'chatMint', tint: 'mint', title: '在线问诊', desc: '图文电话咨询' },
+  { key: 'reports', icon: 'fileText', tint: 'amber', title: '报告查询', desc: '检验检查结果' }
 ]
 
 /* 常用服务（4 列 × 2 行）—— 图标走素材，命名约定 svc-<key>.png（改 key 就要改文件名） */
