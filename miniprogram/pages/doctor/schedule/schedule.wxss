@@ -2,7 +2,7 @@
 
 .ds-page {
   min-height: 100vh;
-  background: #f5f7fa;
+  background: var(--bg);
   padding-bottom: 60rpx;
 }
 
@@ -36,7 +36,7 @@
   text-align: center;
   font-size: 34rpx;
   font-weight: 600;
-  color: #17233d;
+  color: var(--text-main);
 }
 .ds-hover { opacity: 0.6; }
 
@@ -50,8 +50,8 @@
   align-items: center;
 }
 .ds-online-body { flex: 1; }
-.ds-online-title { font-size: 30rpx; font-weight: 600; color: #17233d; }
-.ds-online-sub { font-size: 24rpx; color: #86909c; margin-top: 8rpx; }
+.ds-online-title { font-size: 30rpx; font-weight: 600; color: var(--text-main); }
+.ds-online-sub { font-size: 24rpx; color: var(--text-weak); margin-top: 8rpx; }
 
 /* 排班已配置但在线接诊未开启：显式提示，避免患者端一直“暂不接诊” */
 .ds-warn {
@@ -82,8 +82,8 @@
 
 /* 状态 */
 .ds-state { padding: 120rpx 48rpx; display: flex; flex-direction: column; align-items: center; }
-.ds-state-title { font-size: 32rpx; font-weight: 600; color: #17233d; margin-bottom: 12rpx; }
-.ds-state-sub { font-size: 28rpx; color: #86909c; margin-bottom: 32rpx; }
+.ds-state-title { font-size: 32rpx; font-weight: 600; color: var(--text-main); margin-bottom: 12rpx; }
+.ds-state-sub { font-size: 28rpx; color: var(--text-weak); margin-bottom: 32rpx; }
 
 /* 周模板 */
 .ds-card {
@@ -92,8 +92,8 @@
   border-radius: 20rpx;
   padding: 24rpx;
 }
-.ds-card-head { font-size: 28rpx; font-weight: 600; color: #17233d; margin-bottom: 8rpx; }
-.ds-card-sub { font-size: 24rpx; color: #86909c; line-height: 1.5; margin-bottom: 16rpx; }
+.ds-card-head { font-size: 28rpx; font-weight: 600; color: var(--text-main); margin-bottom: 8rpx; }
+.ds-card-sub { font-size: 24rpx; color: var(--text-weak); line-height: 1.5; margin-bottom: 16rpx; }
 
 /* 周汇总：X 个接诊时段 · Y 人 / 周可接诊 */
 .ds-sum {
@@ -105,8 +105,8 @@
   background: #f3f7ff;
 }
 .ds-sum-item { flex: 1; display: flex; align-items: baseline; justify-content: center; }
-.ds-sum-num { font-size: 40rpx; font-weight: 700; color: #0b6ef8; }
-.ds-sum-label { margin-left: 8rpx; font-size: 22rpx; color: #86909c; }
+.ds-sum-num { font-size: 40rpx; font-weight: 700; color: var(--primary); }
+.ds-sum-label { margin-left: 8rpx; font-size: 22rpx; color: var(--text-weak); }
 .ds-sum-divider { width: 1rpx; height: 48rpx; background: #dbe4f3; }
 
 .ds-day {
@@ -114,8 +114,8 @@
   padding: 20rpx 0;
 }
 .ds-day-head { display: flex; align-items: center; margin-bottom: 12rpx; }
-.ds-day-name { font-size: 30rpx; font-weight: 600; color: #17233d; flex: 1; }
-.ds-day-state { font-size: 24rpx; color: #86909c; }
+.ds-day-name { font-size: 30rpx; font-weight: 600; color: var(--text-main); flex: 1; }
+.ds-day-state { font-size: 24rpx; color: var(--text-weak); }
 .ds-day-state.ds-day-on { color: #00b42a; }
 .ds-slot {
   display: flex;
@@ -125,7 +125,7 @@
   padding: 16rpx 20rpx;
   margin-bottom: 12rpx;
 }
-.ds-slot-time { font-size: 28rpx; color: #17233d; flex: 1; }
+.ds-slot-time { font-size: 28rpx; color: var(--text-main); flex: 1; }
 
 /* 每时段可接诊人数：− N ＋ 步进 */
 .ds-cap { display: flex; align-items: center; margin-right: 24rpx; }
@@ -137,7 +137,7 @@
   border: 1rpx solid #dbe4f3;
   border-radius: 8rpx;
   font-size: 28rpx;
-  color: #0b6ef8;
+  color: var(--primary);
   background: #fff;
 }
 .ds-cap-btn-off { color: #c9cdd4; border-color: #eef0f3; }
@@ -146,11 +146,11 @@
   text-align: center;
   font-size: 26rpx;
   font-weight: 600;
-  color: #17233d;
+  color: var(--text-main);
 }
 .ds-slot-del { font-size: 26rpx; color: #f53f3f; }
-.ds-day-add { font-size: 26rpx; color: #0b6ef8; text-align: center; padding: 12rpx 0; }
-.ds-day-empty { font-size: 26rpx; color: #0b6ef8; text-align: center; padding: 12rpx 0; }
+.ds-day-add { font-size: 26rpx; color: var(--primary); text-align: center; padding: 12rpx 0; }
+.ds-day-empty { font-size: 26rpx; color: var(--primary); text-align: center; padding: 12rpx 0; }
 
 /* 保存 */
 .ds-save { padding: 24rpx; }
@@ -162,9 +162,9 @@
   justify-content: center;
   font-size: 30rpx;
 }
-.ds-btn-primary { background: #0b6ef8; color: #fff; }
+.ds-btn-primary { background: var(--primary); color: #fff; }
 .ds-btn-off { opacity: 0.6; }
 .ds-save-btn { margin-top: 8rpx; }
-.ds-tip { margin-top: 16rpx; font-size: 22rpx; color: #86909c; line-height: 1.6; text-align: center; }
+.ds-tip { margin-top: 16rpx; font-size: 22rpx; color: var(--text-weak); line-height: 1.6; text-align: center; }
 
 .ds-footbar-space { height: 140rpx; }

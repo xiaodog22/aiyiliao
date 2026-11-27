@@ -96,13 +96,13 @@ function main() {
   const names = Object.keys(ICONS)
 
   // 1) 写出 SVG 源文件（供 tools/svg2png.py 光栅化）
-  //    ⚠️ 2026-10-16 基调对齐：基色改 #0B6EF8（D-01①）。icons.js 现由人工维护
+  //    ⚠️ 2026-11-26 V4 雾霭版：基色改 #7E93CC（与 --tab-active 同值）。icons.js 现由人工维护
   //    （含彩色变体块），**不要直接整跑本脚本覆盖**，新增图标请手工同步 svg + icons.js。
   //    2026-11-05：SVG 输出改到 tools/_assets_src/icons/（构建源移出发布树，
   //    配合开发者工具「代码质量」的包内资源统计口径，见 svg2png.py 同日注释）。
   if (!fs.existsSync(SVG_OUT_DIR)) fs.mkdirSync(SVG_OUT_DIR, { recursive: true })
   names.forEach((name) => {
-    fs.writeFileSync(path.join(SVG_OUT_DIR, name + '.svg'), wrapSvg(ICONS[name], '#0B6EF8', 24), 'utf8')
+    fs.writeFileSync(path.join(SVG_OUT_DIR, name + '.svg'), wrapSvg(ICONS[name], '#7E93CC', 24), 'utf8')
   })
 
   // 2) icons.js 引用 PNG（微信 <image> 与 tabBar 均不支持 SVG，必须用 PNG）

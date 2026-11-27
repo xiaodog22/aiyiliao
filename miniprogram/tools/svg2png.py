@@ -291,7 +291,7 @@ def render_svg(svg_text, size, color):
 
 
 COLORS = {
-    '': '#0B6EF8',        # 主蓝（默认 / TabBar 选中；2026-10-16 基调对齐 D-01①，原 #165DFF）
+    '': '#7E93CC',        # 雾蓝（默认 / TabBar 选中；2026-11-26 V4 基调对齐，原 #0B6EF8）
     '_gray': '#86909C',   # 灰（TabBar 未选中）
     '_white': '#FFFFFF',  # 白（深色底）
 }

@@ -51,12 +51,14 @@
   --h-ic-md: 28rpx;
 
   background-color: var(--bg);
-  /* 两层：右上角淡蓝光斑（参考图 hero 的浅蓝光晕）+ 顶部整条渐变 */
+  /* V4 雾霭版（2026-11-26，对照 page-atlas-v4/02-首页 07-home.png）：
+     左上雾蓝主光斑 + 右中紫调辅光斑 + 顶部渐变带（替代原亮蓝光晕） */
   background-image:
-    radial-gradient(620rpx 520rpx at 86% 4%, rgba(150, 194, 255, 0.42) 0%, rgba(214, 232, 255, 0) 68%),
-    linear-gradient(180deg, #EAF3FF 0%, #EDF4FF 58%, var(--bg) 100%);
-  background-repeat: no-repeat, no-repeat;
-  background-size: 100% 100%, 100% var(--h-band);
+    radial-gradient(600rpx 520rpx at -12% 2%, rgba(185, 199, 236, 0.85) 0%, rgba(185, 199, 236, 0) 70%),
+    radial-gradient(560rpx 480rpx at 108% 30%, rgba(196, 182, 230, 0.55) 0%, rgba(196, 182, 230, 0) 70%),
+    linear-gradient(180deg, #DCE5F9 0%, #E6EBF7 58%, var(--bg) 100%);
+  background-repeat: no-repeat, no-repeat, no-repeat;
+  background-size: 100% 100%, 100% 100%, 100% var(--h-band);
   /* app.json 已启用自定义 TabBar（fixed 悬浮在页面之上），页面需预留其高度，
      否则末屏内容（科普卡片/服务入口）会被遮挡：100rpx TabBar + 24rpx 呼吸位。 */
   padding-bottom: calc(124rpx + env(safe-area-inset-bottom));
@@ -129,7 +131,7 @@
   border-radius: 50%;
   overflow: hidden;
   background: var(--accent-soft);
-  box-shadow: 0 0 0 10rpx rgba(255, 255, 255, 0.55), 0 10rpx 24rpx rgba(11, 110, 248, 0.16);
+  box-shadow: 0 0 0 10rpx rgba(255, 255, 255, 0.55), 0 10rpx 24rpx rgba(70, 86, 150, 0.16);
   flex-shrink: 0;
 }
 
@@ -210,14 +212,16 @@
   padding: 0 var(--h-s5);
   box-sizing: border-box;
   border-radius: 999rpx;
-  background: var(--primary);
+  /* V4：发送胶囊改品牌渐变 + 彩色柔影（原实色蓝） */
+  background: linear-gradient(135deg, var(--brand-grad-from), var(--brand-grad-to));
+  box-shadow: 0 12rpx 32rpx -14rpx rgba(70, 86, 150, 0.65);
   color: #FFFFFF;
   font-size: var(--font-body);
   font-weight: 600;
   transition: background-color var(--dur-fast) ease, transform var(--dur-fast) ease;
 }
 
-.hm-ask-send:active { background: var(--primary-dark); transform: scale(0.985); }
+.hm-ask-send:active { background: var(--primary-dark); box-shadow: none; transform: scale(0.985); }
 
 /* 发送/语音输入按钮组：仅适老化大字模式展示（标准档把发送放在输入行内） */
 .hm-ask-btns {
@@ -318,9 +322,9 @@
 .hm-tile-ic { width: var(--h-tile-ic); height: var(--h-tile-ic); }
 
 .hm-tile-blue { background: var(--tile-blue); }
-.hm-tile-green { background: var(--tile-blue); }
-.hm-tile-amber { background: var(--tile-blue); }
-.hm-tile-purple { background: var(--tile-blue); }
+.hm-tile-green { background: var(--tile-mint); }
+.hm-tile-amber { background: var(--tile-amber); }
+.hm-tile-purple { background: var(--tile-purple); }
 /* 在线问诊 = 薄荷浅底板（设计效果图 01 第三格） */
 .hm-tile-mint { background: var(--tile-mint); }
 .hm-tile-red { background: #FFDCDB; }   /* 语义扩展位（体检/危险），与全局 .tile-red 同值 */
@@ -811,7 +815,7 @@
   .apt-empty-btn { padding: 0 28px; }
   .apt-card { padding: 14px 16px 16px; }
   .apt-head { min-height: 28px; }
-  .hm-ai { box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.55), 0 5px 12px rgba(11, 110, 248, 0.16); }
+  .hm-ai { box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.55), 0 5px 12px rgba(70, 86, 150, 0.16); }
 
   /* 顶部品牌行/问候：rpx 在 ≥600px 会按屏宽放大（2rpx≈1.4px），此处按 ÷2 折成 px。
      大字档整行隐藏，不必再分主题给值。 */
@@ -904,7 +908,7 @@
   --h-sos-pad: 28rpx;
 
   /* 08 稿底色是均匀浅蓝（≈#EDF5FF）：白底 + 6% 主色叠加实现，不引入新色值 */
-  background-image: linear-gradient(180deg, rgba(11, 110, 248, 0.06) 0%, rgba(11, 110, 248, 0.06) 100%);
+  background-image: linear-gradient(180deg, rgba(70, 86, 150, 0.06) 0%, rgba(70, 86, 150, 0.06) 100%);
   background-size: 100% 100%;
   background-repeat: no-repeat;
   padding-bottom: 32rpx;

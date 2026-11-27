@@ -1,63 +1,67 @@
 /**
  * app.wxss —— 全局设计 Token（康诊云蓝调 · 参考图基调对齐版 2026-10-16）
- * 主色体系：品牌蓝 #0B6EF8 / 深海军蓝标题+正文 #14264C / 极淡蓝底 #F3F8FF
+ * 主色体系（V4 雾霭版 2026-11-26）：品牌渐变 #5F78C4→#8BA0DC / 墨色标题+正文 #28324F / 雾霭底 #EDF2FB + 玻璃卡
  * 组件体系：.hero-light（浅色 hero）· .tile-*（五色图标底板）· .li-*（列表行规约）
  *           .notice-bar（信息条）· .section-*（区块标题）· .page-wave（波浪）· .anim-*（入场动效）
  * 三档主题：standard / large（适老）/ xlarge（无障碍超大字）
  */
 
 page {
-  /* 康诊云蓝调 · 效果图对齐版（2026-10-18，design-output 29 张效果图 + 设计规范说明.md 取色）
-     全仓唯一色源：改色只动这里；旧值（#165DFF/#F5F7FA/#1D2129…）全仓归零。
-
-     ⚠️ 与设计规范的**唯一有意的偏离**：--text-sub 保持 #5064A0 而非规范里的 #8A9BB8。
-     原因：#8A9BB8 在 #F3F8FF 底上对比度约 2.8:1，不达正文 4.5:1（KNOWN_ISSUES #27 已立过案）；
-     #8A9BB8 改作 --text-placeholder / --divider 的视觉基准，不再承担正文职责。 */
-  --primary: #0B6EF8;        /* 医疗科技蓝：主按钮、选中态、链接、品牌（规范一致） */
-  --primary-dark: #0A5AD8;   /* 深蓝：按下态（同族深一档，真机目检候选） */
-  --accent: #3E8CFF;         /* 浅蓝：辅助高亮 */
-  --accent-soft: #E4F1FF;    /* 浅蓝底板：chip/信息条/次按钮/图标底板（规范 §一 浅蓝底板） */
-  --accent-press: #CBE3FF;   /* 浅蓝底按下态（跟随 soft 提亮，按压仍有可辨加深） */
-  --accent-green: #00B42A;   /* 语义绿：在线/空闲等"可用"状态 */
-  --accent-amber: #FF8C00;   /* 提醒橙：待处理、号源紧张、紧急提示（规范 §一） */
+  /* V4 雾霭紫蓝 · 玻璃拟态版（2026-11-26，page-atlas-v4 设计稿 _atlas.html CSS 变量取色）
+     全仓唯一色源：改色只动这里。
+     设计语言：页面底 --mist 雾霭蓝 + 玻璃卡（半透明白 + 白描边 + 蓝调柔影）
+     + 主渐变 #5F78C4→#8BA0DC + 马卡龙五色图标底板。
+     V4 变量对照：ink=#28324F ink-2=#5E6A8C ink-3=#8E98B4 mist=#EDF2FB
+     blue=#B9C7EC blue-deep=#7E93CC grad=135deg(#5F78C4,#8BA0DC)
+     glass=rgba(255,255,255,.78) sh=0 10px 30px -14px rgba(70,86,150,.30) */
+  --primary: #5F78C4;        /* 雾霭主色（V4 渐变起点）：主按钮、选中态、链接、品牌 */
+  --primary-dark: #4C63A8;   /* 雾霭深档：按下态（同族深一档） */
+  --accent: #8BA0DC;         /* 渐变浅端：辅助高亮 */
+  --accent-soft: #E2E9F9;    /* 雾蓝底板（V4 sky-bg）：chip/信息条/次按钮/图标底板 */
+  --accent-press: #C3D1F2;   /* 雾蓝底按下态（跟随 soft 提亮，按压仍有可辨加深） */
+  --accent-green: #1F9E77;   /* 语义绿（V4 在线色）：在线/空闲等"可用"状态 */
+  --accent-amber: #F59A2B;   /* 提醒橙（V4 呼叫按钮色）：待处理、号源紧张、紧急提示 */
   --accent-red: #F53F3F;
-  /* —— 薄荷绿副色族（规范 §一：成功状态、已完成、在线问诊区分色）——
-     ⚠️ --mint 只用于**底色/图标/圆点/大按钮**，不可直接当小字色（#54C8A7 on 白 ≈ 2.1:1）；
+  /* —— 薄荷绿副色族（V4 mint-bg/mint-ic）——
+     ⚠️ --mint 只用于**底色/图标/圆点/大按钮**，不可直接当小字色（#5C9C8A on 白 ≈ 3.0:1）；
      标签文字一律用 --mint-text。 */
-  --mint: #54C8A7;           /* 医疗薄荷绿：实心按钮底、图标、状态圆点 */
-  --mint-dark: #3FB08F;      /* 薄荷按下态 */
-  --mint-soft: #E0F7F0;      /* 薄荷浅底：已完成/问诊中标签底 */
-  --mint-text: #178F6B;      /* 薄荷文字：浅底上的标签字（≈4.6:1，达正文标准） */
-  /* —— 橙色软底族（规范 §一：紧急/紧张提示条）—— */
-  --amber-soft: #FFF4E5;     /* 浅橙底：紧急提示条背景 */
+  --mint: #5C9C8A;           /* 雾霭薄荷（V4 mint-ic）：实心按钮底、图标、状态圆点 */
+  --mint-dark: #4C8A78;      /* 薄荷按下态 */
+  --mint-soft: #DCEFE8;      /* 薄荷浅底（V4 mint-bg）：已完成/问诊中标签底 */
+  --mint-text: #3D7A6C;      /* 薄荷文字：浅底上的标签字（#DCEFE8 上 ≈4.7:1，达正文标准） */
+  /* —— 橙色软底族（紧急/紧张提示条）—— */
+  --amber-soft: #FFF4E5;     /* 浅橙底：紧急提示条背景（V4 safety 条原样保留） */
   --amber-text: #CC6600;     /* 深橙文字：浅橙底上的正文 */
-  --bg: #F3F8FF;             /* 页面底：全局页面底色（规范 §一） */
-  --card: #FFFFFF;
-  --text-main: #14264C;      /* 深海军蓝：标题/正文（规范 §一/§二） */
-  --text-sub: #5064A0;       /* 灰蓝：次要文字（可读性优先，见上方偏离说明） */
-  --text-weak: #828CA0;      /* 弱文字：白卡说明 */
-  --text-placeholder: #B0BEC5; /* 占位文字：输入框 placeholder（规范 §一） */
-  --border: #E4E9F0;         /* 分割灰：列表分割线（规范 §一） */
+  --bg: #EDF2FB;             /* 页面底：全局页面底色（V4 --mist 雾霭蓝） */
+  --card: rgba(255, 255, 255, 0.78); /* 玻璃卡底（V4 --glass；描边见 --glass-line） */
+  --glass-line: rgba(255, 255, 255, 0.9); /* 玻璃卡描边（V4 --glass-line） */
+  --text-main: #28324F;      /* 墨色：标题/正文（V4 --ink） */
+  --text-sub: #5E6A8C;       /* 灰紫蓝：次要文字（V4 --ink-2，#EDF2FB 上 ≈5.4:1 达标） */
+  --text-weak: #8E98B4;      /* 弱文字（V4 --ink-3）：白卡说明 */
+  --text-placeholder: #A8B2C8; /* 占位文字：输入框 placeholder（雾蓝调） */
+  --border: #D8E0F0;         /* 分割线：列表分割线（雾蓝调，白卡上可辨） */
   /* —— 参考图基调组件令牌（hero / 底板 / 装饰）—— */
-  --hero-grad: linear-gradient(135deg, #D9EEFE 0%, #B6DDFE 100%);  /* 淡蓝渐变 hero */
-  --section-bar: #BDE0FA;    /* 区块标题浅蓝竖条 */
+  --hero-grad: linear-gradient(135deg, #DCE5F9 0%, #B9C7EC 100%);  /* 雾蓝渐变 hero（V4 空卡/图标底渐变） */
+  --section-bar: #B9C7EC;    /* 区块标题雾蓝竖条（V4 --blue） */
   /* —— 品牌渐变固定基色（2026-11-16）：.theme-xlarge 把 --primary 压成纯黑以取最大对比，
      但登录页天空、AI 徽标等**装饰性渐变**若跟着变，会得到「黑→蓝」的脏渐变（配色异常）。
      这两个令牌在全部档位恒定，只供渐变使用；正文/按钮仍走 --primary。 */
-  --brand-grad-from: #0B6EF8;
-  --brand-grad-to: #3E8CFF;
-  /* 底部导航选中色（文字）：图标是蓝色 PNG 位图、无法跟随 --primary 变色，
-     所以选中文字必须留在蓝色系，不能跟着超大字档的黑色主色走（否则蓝图标配黑字＝两套配色）。 */
-  --tab-active: #0B6EF8;
-  --tile-blue: #B2D8F9;      /* 图标底板五色（参考图实测 pastel） */
-  --tile-mint: #CDF1E6;
-  --tile-pink: #FBCBD5;
-  --tile-amber: #FDE6C8;
-  --tile-purple: #DCC8FB;
-  --wave-deep: #C9E2F9;      /* 底部波浪：深色层 */
-  --wave-light: #E4F1FD;     /* 底部波浪：浅色层 */
-  --script-blue: #2E6DC4;    /* 手写体蓝（标语/注解） */
-  --shadow-card: 0 2rpx 12rpx rgba(11, 110, 248, 0.06);
+  --brand-grad-from: #5F78C4;
+  --brand-grad-to: #8BA0DC;
+  /* 底部导航选中色（文字）：图标是 PNG 位图、无法跟随 --primary 变色，
+     所以选中文字必须留在雾蓝系，不能跟着超大字档的黑色主色走（否则蓝图标配黑字＝两套配色）。 */
+  --tab-active: #7E93CC;     /* V4 --blue-deep：与重生成后的 tab 图标同色 */
+  --tile-blue: #E2E9F9;      /* 图标底板马卡龙五色（V4 sky-bg） */
+  --tile-mint: #DCEFE8;      /* V4 mint-bg */
+  --tile-pink: #F8E4ED;      /* V4 blush-bg */
+  --tile-amber: #F8EADB;     /* V4 peach-bg */
+  --tile-purple: #E8E4F7;    /* V4 lav-bg */
+  --wave-deep: #B9C7EC;      /* 底部波浪：深色层（V4 --blue） */
+  --wave-light: #DCE5F9;     /* 底部波浪：浅色层 */
+  --script-blue: #7E93C4;    /* 手写体蓝（标语/注解，V4 雾蓝调） */
+  --shadow-card: 0 20rpx 60rpx -28rpx rgba(70, 86, 150, 0.30);  /* V4 --sh 蓝调柔影 */
+  /* —— V4 光斑背景（blob）：两个 radial-gradient 叠加模拟设计稿 blur 光斑 ——
+     用法：页面根节点 class 加 .v4-blob（见文件尾实现，不用 filter:blur，全机型兼容） */
   /* 动效时值（全局唯一来源，见文件尾 .anim-* / .pressable） */
   --dur-fast: 140ms;
   --dur-base: 280ms;
@@ -113,9 +117,9 @@ page {
   --text-placeholder: #6F7C90;
   --section-bar: #5B8FC7;    /* 区块竖条：原 #BDE0FA 在白底 1.4:1，缩到 8rpx 就看不清 */
   --space-page: 40rpx;       /* 38rpx 正文下 32rpx 页边距偏挤 */
-  --shadow-card: 0 4rpx 16rpx rgba(11, 110, 248, 0.14);
+  --shadow-card: 0 4rpx 16rpx rgba(70, 86, 150, 0.14);
   --tab-label-size: 30rpx;   /* 组件（医生端 tabBar）通过 var 继承：本档标签不再固定 22rpx */
-  --tab-active: #0055FF;     /* 与 --accent 同值：本档主色是纯黑，选中文字留蓝色系并达 ≈5.7:1 */
+  --tab-active: #5F78C4;     /* 与 --accent 同族：本档主色是纯黑，选中文字留雾蓝系并达对比 */
 }
 
 /* 超大字档的结构补偿：细线加粗、留白同步放大（选择器只在本档命中，其它档零影响） */
@@ -189,9 +193,12 @@ page {
 /* 仅平板可见（手机端完全不占位） */
 .side-only { display: none; }
 
-/* ============ 治管家卡片 ============ */
+/* ============ 治管家卡片（V4 玻璃拟态：半透明白 + 白描边 + 蓝调柔影） ============
+   底色走 --card（rgba .78），描边走 --glass-line；
+   半透明卡在 --bg 雾霭底上自带"磨砂"观感（无 backdrop-filter，全机型兼容）。 */
 .card {
   background: var(--card);
+  border: 1rpx solid var(--glass-line);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
   padding: 32rpx;
@@ -202,7 +209,7 @@ page {
 .card-title {
   font-size: var(--font-h2);
   font-weight: 600;
-  color: var(--primary-dark);
+  color: var(--text-main);
   margin-bottom: 16rpx;
 }
 
@@ -237,11 +244,13 @@ page {
 .btn::after { border: none; }
 
 .btn-primary {
-  background: var(--primary);
+  /* V4 渐变主按钮：紫蓝渐变 + 彩色投影；按下态渐变整体加深（走 --primary-dark） */
+  background: linear-gradient(135deg, var(--brand-grad-from), var(--brand-grad-to));
   color: #FFFFFF;
+  box-shadow: 0 12rpx 32rpx -12rpx rgba(70, 86, 150, 0.65);
 }
 
-.btn-primary:active { background: var(--primary-dark); }
+.btn-primary:active { background: var(--primary-dark); box-shadow: none; }
 
 .btn-outline {
   background: #FFFFFF;
@@ -292,8 +301,8 @@ page {
 .badge-mint { background: var(--mint-soft); color: var(--mint-text); }
 
 /* ============ 文本层级 ============ */
-.title { font-size: var(--font-title); font-weight: 700; color: var(--primary-dark); }
-.h2 { font-size: var(--font-h2); font-weight: 600; color: var(--primary-dark); }
+.title { font-size: var(--font-title); font-weight: 700; color: var(--text-main); }  /* V4：标题走墨色，--primary-dark 只承担按下态 */
+.h2 { font-size: var(--font-h2); font-weight: 600; color: var(--text-main); }
 .body { font-size: var(--font-body); color: var(--text-main); }
 .caption { font-size: var(--font-caption); color: var(--text-weak); }
 
@@ -473,13 +482,13 @@ page {
 /* ============ V3.1 设计系统增强（UI 填充层） ============ */
 
 /* 阴影层级（2026-10-16：旧治管绿基 rgba(31,85,79,*) → 品牌蓝基，与蓝调一致） */
-.shadow-sm { box-shadow: 0 2rpx 8rpx rgba(11, 110, 248, 0.05); }
-.shadow-md { box-shadow: 0 8rpx 24rpx rgba(11, 110, 248, 0.10); }
-.shadow-lg { box-shadow: 0 16rpx 40rpx rgba(11, 110, 248, 0.16); }
+.shadow-sm { box-shadow: 0 2rpx 8rpx rgba(70, 86, 150, 0.05); }
+.shadow-md { box-shadow: 0 8rpx 24rpx rgba(70, 86, 150, 0.10); }
+.shadow-lg { box-shadow: 0 16rpx 40rpx rgba(70, 86, 150, 0.16); }
 
-/* 深蓝渐变卡（品牌蓝底白字，auth/三诊等页保留；参考图五页已改 .hero-light 浅色 hero） */
+/* 雾蓝渐变卡（V4 品牌渐变底白字，auth/三诊等页保留；参考图五页已改 .hero-light 浅色 hero） */
 .grad-hero {
-  background: linear-gradient(135deg, #0B6EF8 0%, #3E8CFF 100%);
+  background: linear-gradient(135deg, var(--brand-grad-from) 0%, var(--brand-grad-to) 100%);
   border-radius: var(--radius-lg);
   color: #FFFFFF;
   position: relative;
@@ -623,7 +632,7 @@ page {
   font-size: var(--font-caption);
   color: var(--text-sub);
   line-height: 1.45;
-  box-shadow: 0 4rpx 14rpx rgba(11, 110, 248, 0.10);
+  box-shadow: 0 4rpx 14rpx rgba(70, 86, 150, 0.10);
 }
 
 /* ============ 底部信息条（守护/提示）============
@@ -733,7 +742,7 @@ page {
   z-index: 60;
   background: var(--card);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  box-shadow: 0 -8rpx 32rpx rgba(11, 110, 248, 0.12);
+  box-shadow: 0 -8rpx 32rpx rgba(70, 86, 150, 0.12);
   padding: 0 var(--space-page) calc(var(--space-page) + env(safe-area-inset-bottom));
 }
 
@@ -826,7 +835,7 @@ page {
   width: 40rpx;
   height: 40rpx;
   border-radius: 50%;
-  border: 3rpx solid rgba(11, 110, 248, 0.30);
+  border: 3rpx solid rgba(70, 86, 150, 0.30);
   background: transparent;
   display: flex;
   align-items: center;
@@ -854,7 +863,7 @@ page {
 .flow-dot-cur {
   background: var(--primary);
   border-color: var(--primary);
-  box-shadow: 0 0 0 8rpx rgba(11, 110, 248, 0.14);
+  box-shadow: 0 0 0 8rpx rgba(70, 86, 150, 0.14);
 }
 
 .flow-dot-cur .flow-dot-num { color: #FFFFFF; font-weight: 700; }
@@ -863,7 +872,7 @@ page {
   flex: 1;
   height: 6rpx;
   border-radius: 3rpx;
-  background: rgba(11, 110, 248, 0.16);
+  background: rgba(70, 86, 150, 0.16);
   margin: 0 10rpx;
 }
 
@@ -916,7 +925,7 @@ page {
   align-items: center;
   font-size: var(--font-h2);
   font-weight: 700;
-  color: var(--primary-dark);
+  color: var(--text-main);
   margin: 8rpx 0 20rpx;
 }
 
@@ -1176,7 +1185,7 @@ page {
   .flow-dot { width: 20px; height: 20px; border-width: 2px; }
   .flow-dot-num { font-size: 10px; }
   .flow-check { width: 10px; height: 10px; }
-  .flow-dot-cur { box-shadow: 0 0 0 4px rgba(11, 110, 248, 0.14); }
+  .flow-dot-cur { box-shadow: 0 0 0 4px rgba(70, 86, 150, 0.14); }
   .flow-line { height: 3px; border-radius: 2px; margin: 0 5px; }
   .flow-labels { margin-top: 6px; }
   .flow-detail-btn { margin-top: 10px; height: 32px; }
@@ -1239,7 +1248,7 @@ page {
     --radius-sm: 8px;
     --space-page: 20px;
     /* 极弱阴影（§7：浅灰分割线 + 极弱阴影 代替"每卡一大块阴影"） */
-    --shadow-card: 0 2px 8px rgba(11, 110, 248, 0.06);
+    --shadow-card: 0 2px 8px rgba(70, 86, 150, 0.06);
   }
 
   /* 大字档：保持适老比例（覆盖生效） */
@@ -1384,3 +1393,17 @@ page {
      <view class="section-header section-header-plain">标题 + .section-more</view>
    ⚠️ 只隐藏伪元素竖条，不改字号/间距，因此不影响其它页面。 */
 .section-header-plain::before { display: none; }
+
+/* ============ V4 光斑背景（2026-11-26） ============
+   设计稿 .phone::before/after 的两个 blur 光斑，此处用双层 radial-gradient
+   画在 background 层实现：
+   ① 永远位于内容之下（不需要给每页内容包 z-index 容器）；
+   ② 不用 filter:blur（低端安卓微信内核不稳）；
+   ③ 用法：页面根节点 class="page v4-blob" 即得"雾霭底 + 双光斑"基调。
+   光斑取值对照 V4 设计稿：左上 #B9C7EC 主光斑 / 右中 #C4B6E6 紫调辅光斑。 */
+.v4-blob {
+  background-image:
+    radial-gradient(circle 600rpx at -180rpx 120rpx, rgba(185, 199, 236, 0.95), rgba(185, 199, 236, 0) 70%),
+    radial-gradient(circle 620rpx at calc(100% + 220rpx) 420rpx, rgba(196, 182, 230, 0.6), rgba(196, 182, 230, 0) 70%);
+  background-color: var(--bg);
+}

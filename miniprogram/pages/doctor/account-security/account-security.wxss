@@ -2,7 +2,7 @@
 
 .as-page {
   min-height: 100vh;
-  background: #f5f7fa;
+  background: var(--bg);
 }
 
 .as-nav {
@@ -35,7 +35,7 @@
   text-align: center;
   font-size: 34rpx;
   font-weight: 600;
-  color: #17233d;
+  color: var(--text-main);
 }
 .as-hover { opacity: 0.6; }
 
@@ -52,7 +52,7 @@
   border-bottom: 1rpx solid #f2f3f5;
 }
 .as-row:last-child { border-bottom: none; }
-.as-row-k { font-size: 30rpx; color: #17233d; flex: 1; }
+.as-row-k { font-size: 30rpx; color: var(--text-main); flex: 1; }
 .as-row-v { font-size: 30rpx; color: #4e5969; }
 
 .as-tip {
@@ -61,7 +61,7 @@
   border-radius: 20rpx;
   padding: 24rpx;
 }
-.as-tip-title { font-size: 28rpx; font-weight: 600; color: #0b6ef8; margin-bottom: 12rpx; }
+.as-tip-title { font-size: 28rpx; font-weight: 600; color: var(--primary); margin-bottom: 12rpx; }
 .as-tip-line { font-size: 26rpx; color: #4e5969; line-height: 1.8; }
 
 .as-logout {

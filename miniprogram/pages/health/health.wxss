@@ -75,7 +75,7 @@
   background: #FFFFFF;
   border-radius: 3rpx;
   transform: rotate(45deg);
-  box-shadow: 0 4rpx 14rpx rgba(11, 110, 248, 0.10);
+  box-shadow: 0 4rpx 14rpx rgba(70, 86, 150, 0.10);
 }
 
 /* 机器人插画（设计实测约 189×216rpx） */

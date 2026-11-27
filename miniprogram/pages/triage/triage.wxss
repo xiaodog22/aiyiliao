@@ -55,7 +55,7 @@
 }
 
 .tg-hero-title {
-  /* 复刻文档 §2-①：34rpx / 700 / #0B6EF8（= --primary）。原用 --primary-dark，比参考图偏深一档。 */
+  /* 复刻文档 §2-①：34rpx / 700 / var(--primary)（= --primary）。原用 --primary-dark，比参考图偏深一档。 */
   font-size: var(--font-h2);
   font-weight: 700;
   color: var(--primary);
