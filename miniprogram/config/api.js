@@ -61,6 +61,9 @@ const PAY_ORDER_GET       = { base: 'java', path: '/api/v1/payment/orders/{order
 const PAY_DEMO_PAY        = { base: 'java', path: '/api/v1/payment/orders/{orderNo}/demo-pay' }
 // 演示退费（2026-11-21）：仅本地状态流转，不触发真实退款
 const PAY_ORDER_REFUND    = { base: 'java', path: '/api/v1/payment/orders/{orderNo}/refund' }
+// 费用清单（2026-11-27）：挂号费 + 诊中处方/检查，金额与状态以院内侧为准
+const PAY_BILL            = { base: 'java', path: '/api/v1/payment/bill' }
+const PAY_BILL_PAY        = { base: 'java', path: '/api/v1/payment/bill/pay' }
 // 检查预约（P0-2）：演示排期，不接真实检查号源；页面固定标注「演示预约」
 const EXAM_CONFIG         = { base: 'java', path: '/api/v1/exam/config' }
 const EXAM_ITEMS          = { base: 'java', path: '/api/v1/exam/items' }
@@ -186,6 +189,7 @@ module.exports = {
   DEPARTMENT_LIST, DEPARTMENT_DOCTORS, DOCTOR_SLOTS,
   APPOINT_SUBMIT, APPOINT_LIST, APPOINT_BY_KEY, APPOINT_UPDATE, APPOINT_CANCEL,
   PAY_CONFIG, PAY_ORDER_CREATE, PAY_ORDER_GET, PAY_DEMO_PAY, PAY_ORDER_REFUND,
+  PAY_BILL, PAY_BILL_PAY,
   EXAM_CONFIG, EXAM_ITEMS, EXAM_SLOTS, EXAM_ORDER_CREATE, EXAM_ORDER_LIST, EXAM_ORDER_GET, EXAM_ORDER_CANCEL,
   DOCTOR_APPOINTMENTS, DOCTOR_APPTS_STATUS, DOCTOR_TODOS,
   DOCTOR_CONSULTATIONS, DOCTOR_CONSULT_MESSAGES, DOCTOR_ACCEPT, DOCTOR_CONSULT_CLOSE, DOCTOR_REPLY,

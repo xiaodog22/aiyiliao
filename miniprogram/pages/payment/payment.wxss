@@ -161,3 +161,85 @@
   line-height: 1.6;
   color: var(--text-weak);
 }
+
+/* ============ 费用清单（P2，2026-11-27）============
+   院内侧 charges 直出：分类/状态文案由后端给，前端只排版。
+   字号一律走 --font-* 令牌（含 calc 增量），不写字面 rpx。 */
+.pay-bill {
+  background: var(--card);
+  border: 1rpx solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 24rpx;
+  margin-bottom: 24rpx;
+}
+.pay-bill-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 12rpx;
+}
+.pay-bill-title {
+  font-size: calc(var(--font-h2) + 0rpx);
+  font-weight: 600;
+  color: var(--text-main);
+}
+.pay-bill-sum {
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+}
+.pay-bill-tip {
+  padding: 12rpx 0;
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+}
+.pay-bill-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 16rpx 0;
+  border-top: 1rpx solid var(--border);
+}
+.pay-bill-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  min-width: 0;
+}
+.pay-bill-cat {
+  font-size: var(--font-body);
+  color: var(--text-main);
+}
+.pay-bill-desc {
+  font-size: var(--font-caption);
+  color: var(--text-weak);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pay-bill-right {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-shrink: 0;
+}
+.pay-bill-amt {
+  font-size: var(--font-body);
+  font-weight: 600;
+  color: var(--text-main);
+}
+.pay-bill-st {
+  font-size: var(--font-caption);
+}
+.pay-bill-st.is-unpaid { color: var(--accent-amber); }
+.pay-bill-st.is-paid { color: var(--mint-text); }
+.pay-bill-btn {
+  margin: 0;
+  padding: 0 20rpx;
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: var(--font-caption);
+  border-radius: var(--radius-sm);
+}
+.pay-bill-btn::after { border: none; }

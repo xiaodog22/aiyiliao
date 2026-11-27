@@ -32,8 +32,32 @@ function loadFresh() {
 const ok = (data) => ({ statusCode: 200, data: { code: 'OK', data } })
 const boom = () => ({ statusCode: 503, data: { code: 'UPSTREAM_UNAVAILABLE', message: '上游不可用' } })
 
+/**
+ * 预置「健康数据单独同意」已授予（审计 F4-1，2026-11-24 · BUG-001）。
+ *
+ * 为什么必须预热：建会话 / 发消息 / 建分诊任务都会先走 healthConsent.ensure()，
+ * 首次调用会先发 GET /api/v1/consents 与 GET /api/v1/consent/latest 两条查询。
+ * 这两条若落到被测用例的响应队列里，会把「建会话 / 建任务 / 轮询」整体挤位（首轮必挂）；
+ * 未授予时还会 navigateTo 到授权页等用户点击，Promise 永挂。所以在这里显式喂两条响应、
+ * 把缓存暖到「已同意且版本一致」，用例队列就只承载被测请求。
+ */
+const GRANTED_ROWS = [{ purpose: 'HEALTH_DATA_PROCESSING', status: 'GRANTED', policyVersion: 'v1' }]
+
+async function warmConsent(stub) {
+  stub.queue(ok(GRANTED_ROWS), ok({ version: 'v1' }))
+  const healthConsent = require('../services/health-consent.js')
+  const state = await healthConsent.load(true)
+  if (!state.healthGranted || state.healthVersion !== state.policyVersion) {
+    throw new Error('预置同意态失败：' + JSON.stringify(state))
+  }
+  // 暖机请求不应出现在用例断言的请求列表里
+  stub.reset()
+  return healthConsent
+}
+
 test('aiTriage 首轮：建会话 → 建分诊任务 → 轮询到 SUCCEEDED', async () => {
   const { stub, triage } = loadFresh()
+  await warmConsent(stub)
   stub.queue(
     ok({ consultation: { id: 'cn-1' }, task: { taskId: 'chat-1' } }),
     ok({ taskId: 'triage-1' }),
@@ -56,8 +80,9 @@ test('aiTriage 首轮：建会话 → 建分诊任务 → 轮询到 SUCCEEDED', 
 
 test('aiTriage 后续轮：追加到同一会话，不再新建', async () => {
   const { stub, triage } = loadFresh()
+  await warmConsent(stub)
   stub.queue(
-    ok({ consultation: { id: 'cn-1' }, task: { taskId: 'chat-2' } }),
+    ok({ message: { id: 'msg-2' } }),
     ok({ taskId: 'triage-2' }),
     ok({ taskId: 'triage-2', status: 'SUCCEEDED', result: { recommendedDepartments: [{ departmentName: '呼吸内科', confidence: 0.7 }] } })
   )
@@ -73,6 +98,7 @@ test('aiTriage 后续轮：追加到同一会话，不再新建', async () => {
 
 test('analyze 在 AI 全不可用时回落本地规则，并标记 aiFallback', async () => {
   const { stub, triage } = loadFresh()
+  await warmConsent(stub)
   stub.setDefault(boom())
 
   const result = await triage.analyze('嗓子疼三天了，吞咽时更痛', { useRemote: true, history: [] })

@@ -564,8 +564,12 @@ tr.abnormal td { background: #fff6f4; }
 /* ---------------------------------------------------------------- AutoComplete 组件 */
 .ac-wrap { position: relative; display: inline-block; min-width: 160px; }
 .ac-wrap > input { width: 100%; }
+/* 候选层固定定位（2026-11-27）：祖先 .panel 有 overflow:hidden，
+   绝对定位的候选层一旦越过面板底边就被裁掉，表现为「输入后无弹窗」。
+   改 fixed 后位置由 autocomplete.js 按输入框 getBoundingClientRect 计算，
+   left/top/width/max-height 全部 inline 写入，这里只给初值与层级。 */
 .ac-pop {
-  position: absolute; z-index: 60; top: calc(100% + 3px); left: 0; right: 0;
+  position: fixed; z-index: 80; top: 0; left: 0; width: 180px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
   box-shadow: var(--shadow); overflow-y: auto; max-height: 280px;
 }

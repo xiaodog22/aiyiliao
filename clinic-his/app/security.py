@@ -318,6 +318,26 @@ def mask_id_card(id_card: str) -> str:
     return id_card[-4:] if len(id_card) >= 4 else ""
 
 
+# ---------------------------------------------------------------- 证件号校验（GB 11643）
+
+_ID_WEIGHTS = (7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2)
+_ID_CHECK_CODES = "10X98765432"
+
+
+def is_valid_id_card(value: str) -> bool:
+    """18 位大陆居民身份证：前 17 位数字 + GB 11643 校验位（末位可为 X）。
+
+    用途：**决定要不要把证件号写进 `patients.id_hash`**。校验不通过时只保留尾 4 位，
+    避免「随便 4 个字符」被当成证件号（2026-11-27 实测：种子档案 P000099 的证件号
+    就是字符串 `0520`，其 `id_hash` 等于姓名哈希，污染了 T1 匹配空间）。
+    """
+    v = (value or "").strip().upper()
+    if len(v) != 18 or not v[:17].isdigit() or v[17] not in "0123456789X":
+        return False
+    total = sum(int(v[i]) * _ID_WEIGHTS[i] for i in range(17))
+    return _ID_CHECK_CODES[total % 11] == v[17]
+
+
 def mask_secret(secret: str) -> str:
     if not secret:
         return ""

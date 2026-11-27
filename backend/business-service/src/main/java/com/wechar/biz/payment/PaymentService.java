@@ -6,6 +6,7 @@ import com.wechar.biz.appointment.his.HisClient.HisChargeCommand;
 import com.wechar.biz.appointment.his.HisClient.HisChargeResult;
 import com.wechar.biz.common.ApiException;
 import com.wechar.biz.payment.PaymentOrderRepository.PaymentOrderRow;
+import com.wechar.biz.payment.dto.PaymentBillData;
 import com.wechar.biz.payment.dto.PaymentConfigData;
 import com.wechar.biz.payment.dto.PaymentDemoCallbackRequest;
 import com.wechar.biz.payment.dto.PaymentOrderData;
@@ -17,6 +18,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -191,9 +193,106 @@ public class PaymentService {
                 .orElseThrow(() -> new IllegalStateException("支付订单更新后不可读")));
     }
 
+    // ------------------------------------------------------------ 费用清单（P2，2026-11-27）
+
+    /** 院内侧费用分类 → 中文（前端只负责展示，不再维护一份映射）。 */
+    private static final Map<String, String> CATEGORY_TEXT = Map.of(
+            "REGISTRATION", "挂号费", "DRUG", "药品费", "LAB", "检查费");
+    private static final Map<String, String> CHARGE_STATUS_TEXT = Map.of(
+            "UNPAID", "待缴费", "PAID", "已缴费", "REFUNDED", "已退费", "VOID", "已作废");
+
     /**
-     * 本地演示回调：先验签，再按订单号幂等入账。
-     * 重复回调 N 次只允许第一次 markPaid 生效；HIS 失败不置 PAID。
+     * 费用清单：按预约归属校验后透传院内侧账单（挂号费 + 诊中处方/检查）。
+     *
+     * <p>没有 HIS 单号（本地演示预约）返回空清单，不伪造金额。
+     */
+    public PaymentBillData bill(String userId, String appointmentId) {
+        AppointmentRepository.AppointmentRow appt = requireOwnedAppointment(userId, appointmentId);
+        if (appt.hisOrderNo() == null || appt.hisOrderNo().isBlank()) {
+            return new PaymentBillData(appointmentId, null, List.of(),
+                    new PaymentBillData.Summary(BigDecimal.ZERO, BigDecimal.ZERO, 0));
+        }
+        return toBillData(appointmentId, loadBill(appt.hisOrderNo()));
+    }
+
+    /**
+     * 缴纳单笔院内侧费用（演示态，不调起微信支付）。
+     *
+     * <p>前置：费用单必须属于该预约且状态为 UNPAID（以院内侧为准，客户端不可指定金额）；
+     * 只有 HIS 把账单置 PAID 才返回成功，否则 503 且不改任何本地状态。
+     */
+    public PaymentBillData payBillItem(String userId, String appointmentId, String chargeNo) {
+        AppointmentRepository.AppointmentRow appt = requireOwnedAppointment(userId, appointmentId);
+        if (appt.hisOrderNo() == null || appt.hisOrderNo().isBlank()) {
+            throw new ApiException("PAYMENT_HIS_UNAVAILABLE", HttpStatus.CONFLICT,
+                    "该预约没有院内费用单（本地演示预约），请到院窗口缴费");
+        }
+        if (chargeNo == null || chargeNo.isBlank()) {
+            throw new ApiException("VALIDATION_FAILED", HttpStatus.BAD_REQUEST, "缺少费用单号");
+        }
+        HisClient.HisBill bill = loadBill(appt.hisOrderNo());
+        HisClient.HisChargeItem item = bill.items().stream()
+                .filter(i -> chargeNo.equals(i.chargeNo()))
+                .findFirst()
+                .orElseThrow(() -> new ApiException("CHARGE_NOT_FOUND", HttpStatus.NOT_FOUND,
+                        "费用单不存在或不属于该预约"));
+        if (!"UNPAID".equals(item.status())) {
+            throw new ApiException("CHARGE_STATE_CONFLICT", HttpStatus.CONFLICT,
+                    "该费用单当前不可缴费（" + CHARGE_STATUS_TEXT.getOrDefault(item.status(), item.status()) + "）");
+        }
+        try {
+            HisChargeResult his = hisClient.payDemoCharge(item.chargeNo(), item.amount(),
+                    "BILLPAY:" + item.chargeNo());
+            if (!"PAID".equals(his.status())) {
+                throw new IllegalStateException("HIS 未置 PAID: " + his.status());
+            }
+        } catch (ApiException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            log.warn("费用单缴费失败 appointment={} charge={}：{}", appointmentId, chargeNo, e.getMessage());
+            throw new ApiException("PAYMENT_HIS_UNAVAILABLE", HttpStatus.SERVICE_UNAVAILABLE,
+                    "缴费未完成，请稍后重试；如已扣款请联系窗口", true, null);
+        }
+        log.info("费用单缴费完成 appointment={} charge={} amount={}（演示，未真实扣款）",
+                appointmentId, chargeNo, item.amount());
+        return toBillData(appointmentId, loadBill(appt.hisOrderNo()));
+    }
+
+    private AppointmentRepository.AppointmentRow requireOwnedAppointment(String userId, String appointmentId) {
+        AppointmentRepository.AppointmentRow appt = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new ApiException("APPOINTMENT_NOT_FOUND", HttpStatus.NOT_FOUND, "预约不存在"));
+        if (!appt.userId().equals(userId)) {
+            throw new ApiException("APPOINTMENT_NOT_PAYABLE", HttpStatus.FORBIDDEN, "无权查看该预约费用");
+        }
+        return appt;
+    }
+
+    private HisClient.HisBill loadBill(String hisOrderNo) {
+        try {
+            return hisClient.listCharges(hisOrderNo);
+        } catch (ApiException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            log.warn("费用清单读取失败 order={}：{}", hisOrderNo, e.getMessage());
+            throw new ApiException("PAYMENT_HIS_UNAVAILABLE", HttpStatus.SERVICE_UNAVAILABLE,
+                    "费用清单暂不可用，请稍后重试", true, null);
+        }
+    }
+
+    private static PaymentBillData toBillData(String appointmentId, HisClient.HisBill bill) {
+        List<PaymentBillData.Item> items = bill.items().stream()
+                .map(i -> new PaymentBillData.Item(
+                        i.chargeNo(), i.category(),
+                        CATEGORY_TEXT.getOrDefault(i.category(), "其他费用"),
+                        i.description(), i.amount(), i.status(),
+                        CHARGE_STATUS_TEXT.getOrDefault(i.status(), i.status()), i.paidAt()))
+                .toList();
+        return new PaymentBillData(appointmentId, bill.hisOrderNo(), items,
+                new PaymentBillData.Summary(bill.payable(), bill.paid(), items.size()));
+    }
+
+    /**
+     * 本地演示回调：先验签，再按订单号幂等入账。     * 重复回调 N 次只允许第一次 markPaid 生效；HIS 失败不置 PAID。
      */
     @Transactional
     public PaymentOrderData demoCallback(PaymentDemoCallbackRequest request,

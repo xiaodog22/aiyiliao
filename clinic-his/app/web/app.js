@@ -59,6 +59,10 @@ const STATUS = {
   VOID: ['已作废', 'danger'], REFUNDED: ['已退费', 'danger'],
   APPLIED: ['已申请', 'info'], SAMPLED: ['已采样', 'warn'],
   REPORTED: ['已出报告', 'ok'], WAITING: ['等待中', 'warn'], CALLED: ['已叫号', 'info'],
+  /* 互联网医院受理时预排的队票（未到院，不参与叫号）；到「挂号登记」签到后转 WAITING */
+  RESERVED: ['待签到', 'warn'],
+  /* 费用列兜底：该挂号在 HIS 查不到任何收费单（现场未缴费/平台未建单） */
+  UNKNOWN: ['未开单', ''],
   SKIPPED: ['已过号', 'danger'], SERVING: ['就诊中', 'info'], DONE: ['已完成', 'ok'],
   OPEN: ['待处理', 'warn'],
 };
@@ -745,14 +749,21 @@ async function viewQueue() {
       rows.map(r => {
         const callT = r.calledAt ? esc(String(r.calledAt).slice(11, 16)) : '—';
         const doneT = r.doneAt ? esc(String(r.doneAt).slice(11, 16)) : '—';
+        // 操作列：过号（等待/已叫号）；签到（小程序预排票 RESERVED，签到后转「等待中」才可叫号）
+        const ops = [];
+        if (can('queue.call') && ['WAITING', 'CALLED'].includes(r.status)) {
+          ops.push(`<button class="btn small" data-skip="${r.id}">过号</button>`);
+        }
+        if (can('reg.checkin') && r.status === 'RESERVED' && r.registrationId) {
+          ops.push(`<button class="btn small primary" data-checkin="${r.registrationId}">签到</button>`);
+        }
         return `<tr>
         <td><strong>${esc(r.ticketNo)}</strong></td>
         <td>${patientCell(r.patientId, r.patientName, r.patientMrn)}</td>
         <td>${esc(r.deptName)}</td>
         <td>${badge(r.status)}</td>
         <td>${callT}${r.doneAt ? ' / ' + doneT : ''}</td>
-        <td>${can('queue.call') && ['WAITING', 'CALLED'].includes(r.status)
-          ? `<button class="btn small" data-skip="${r.id}">过号</button>` : '—'}</td>
+        <td>${ops.join(' ') || '—'}</td>
       </tr>`;
       }),
       '当日暂无候诊'
@@ -773,12 +784,18 @@ async function viewQueue() {
   };
   $('#q-table').onclick = e => {
     const btn = e.target.closest('button');
-    if (btn && btn.dataset.skip) {
+    if (!btn) return;
+    if (btn.dataset.skip) {
       confirmAction('确认将本次叫号标记为过号？', async () => {
         await api('POST', `/api/v1/queue/${btn.dataset.skip}/skip`);
         toast('已过号');
         await load();
       });
+    } else if (btn.dataset.checkin) {
+      // 预排票签到后由服务端复用该票置 WAITING（未缴费/非当日会被 409 拦并给出原因）
+      api('POST', `/api/v1/registrations/${btn.dataset.checkin}/checkin`, {})
+        .then(() => { toast('已签到，进入叫号队列'); return load(); })
+        .catch(err => toast(err.message, 'error'));
     }
   };
 

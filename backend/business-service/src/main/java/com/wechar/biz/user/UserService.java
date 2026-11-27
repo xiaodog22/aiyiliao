@@ -224,24 +224,9 @@ public class UserService {
         return contractUser(userId);
     }
 
-    /** 身份证号校验：18 位 + 前 17 位数字 + 校验码（GB 11643）。 */
+    /** 身份证号校验：18 位 + 前 17 位数字 + 校验码（GB 11643）。统一走 {@link com.wechar.biz.common.IdCards}。 */
     private static boolean isValidIdCard(String id) {
-        if (id == null || id.length() != 18) {
-            return false;
-        }
-        int sum = 0;
-        for (int i = 0; i < 17; i++) {
-            char c = id.charAt(i);
-            if (c < '0' || c > '9') {
-                return false;
-            }
-            sum += (c - '0') * ID_WEIGHTS[i];
-        }
-        char last = id.charAt(17);
-        if (!(last >= '0' && last <= '9') && last != 'X') {
-            return false;
-        }
-        return ID_CHECK_CHARS.charAt(sum % 11) == last;
+        return com.wechar.biz.common.IdCards.isValid(id);
     }
 
     /** 证件号掩码：前 4 位 + 定长星号 + 后 4 位。 */

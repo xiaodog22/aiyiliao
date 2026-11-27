@@ -24,6 +24,16 @@ function createWxStub() {
   /** 编排队列：按顺序消费；空队列时按 `defaultResponder` 处理 */
   const queue = []
   let defaultResponder = null
+  /**
+   * 页面跳转后的「用户动作」模拟档位（2026-11-24 · BUG-001）：
+   *   grant    默认。navigateTo 带 events.granted 时自动回调（模拟用户点「同意」）
+   *   decline  回调 events.declined（模拟用户拒绝/返回）
+   *   ignore   不回调 —— 复现"页面打开后用户没有任何动作"的挂起态，仅用于专门测挂起
+   * 背景：health-consent.ensure() 会 navigateTo 到独立授权页并用 events 回调决定 Promise，
+   * 原来的空实现让 Promise 永远 pending，用例被判 cancelledByParent（BUG-001）。
+   */
+  let navPolicy = 'grant'
+  const navLog = []
 
   const stub = {
     // ── 存储 ──
@@ -107,7 +117,20 @@ function createWxStub() {
     },
     showToast() {},
     hideToast() {},
-    navigateTo() {},
+    /**
+     * 页面跳转。真机上目标是独立页面、由用户操作后通过 eventChannel 回调；
+     * 这里按 navPolicy 在下一个微任务里直接回调 events，让被测 Promise 能落地。
+     */
+    navigateTo(options) {
+      const o = options || {}
+      navLog.push({ type: 'navigateTo', url: String(o.url || ''), policy: navPolicy })
+      if (!o.events) return
+      Promise.resolve().then(() => {
+        if (navPolicy === 'ignore') return
+        const fn = navPolicy === 'decline' ? o.events.declined : o.events.granted
+        if (typeof fn === 'function') fn({})
+      })
+    },
     redirectTo() {},
     reLaunch() {},
     switchTab() {},
@@ -184,6 +207,12 @@ function createWxStub() {
     },
     /** 已发出的请求（含 downloadFile / uploadFile） */
     requests,
+    /** 页面跳转记录（含模拟的用户动作档位），用于断言"是否打开了授权页" */
+    navLog,
+    /** 设置跳转后的用户动作：grant（默认）/ decline / ignore */
+    setNavPolicy(policy) {
+      navPolicy = ['grant', 'decline', 'ignore'].indexOf(policy) >= 0 ? policy : 'grant'
+    },
     /** 仅 wx.request 的请求 */
     get httpRequests() {
       return requests.filter((r) => !r.kind)
@@ -192,6 +221,7 @@ function createWxStub() {
     reset() {
       requests.length = 0
       queue.length = 0
+      navLog.length = 0
       defaultResponder = null
     },
     storage,

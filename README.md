@@ -44,7 +44,7 @@
 | 模块 | 做什么 | 实现要点 |
 | --- | --- | --- |
 | 智能导诊 | 一句话描述症状，直接落到科室 | 15 类红旗症状先做急症筛查，18 个科室画像加权匹配，输出五级分级与命中理由；**红旗命中 → 结果页置顶红条 + 一键拨 120**（首页应急条同样可点，不只给文字） |
-| AI 问诊 | 一句话出分诊结论 | 本地规则引擎先出结果，同时并发请求后端大模型融合；急诊信号取并集，任一通道报警即报警 |
+| AI 问诊 | 一句话出分诊结论 | 本地规则引擎先出结果，同时并发请求后端大模型融合科室建议；**急诊判定目前只有本地单通道**（本地红旗命中即置顶报警、不等后端；后端 TRIAGE 结果不含 emergency 字段，远端暂不参与并集，`mergeRemote` 已预留该入参待 AI 侧扩字段） |
 | AI 养生 | 体质辨识 → 三天方案 | 膳食、功法、睡眠各一节，可投屏到电视 |
 | 分步挂号 | 科室 → 医生 → 时段 → 确认 | 四步走完，由院内模拟系统受理并回传 HIS 单号（`bookingSource=HIS_MOCK`），记录页可查、可取消；取消会联动撤销 HIS 受理单 |
 | 门诊缴费（演示） | 挂号成功后查看演示账单并入账 | 仅 DEMO 档，不调用 `wx.requestPayment`；金额取号源费，clinic-his 演示账单按 `appId+refType+refId` 幂等；成功文案固定「演示支付成功（未真实扣款）」；`PAID` 后可申请**演示退费**（`PAID→REFUNDED`，只改本地状态、不触发真实退款）；`APP_PAYMENT_ENABLED=false` 时仅显示「请到院窗口缴费」，并额外提供 0.01 元**本地模拟收银台**（不写后端） |
@@ -121,7 +121,7 @@ archive/              已退出活动链的本地归档（重复副本 / 旧产�
 留观床位与护理执行，以及药房、收费、医技、公卫、报表与审计；
 对外 `/openapi/v1/*` 提供 HMAC 签名、Idempotency-Key 幂等与撤销受理，对应 `HisClient#book/cancel`。
 后端已内置 `HttpHisClient`（`APP_HIS_MODE=http`）直接对接，联调三件套见
-[clinic-his/README.md](clinic-his/README.md) §八；回归：`python clinic-his/scripts/smoke_test.py`（98 项，
+[clinic-his/README.md](clinic-his/README.md) §八；回归：`python clinic-his/scripts/smoke_test.py`（99 项，
 自动使用隔离临时数据目录，可重复运行）。本机 `env.local` 已**默认接通**：
 `APP_HIS_ENABLED=true` + `APP_HIS_MODE=http`（地址/凭据见同文件），挂号回执带 `his_order_no=CLN…`，
 取消预约会联动撤销 HIS 受理单；要回到纯本地演示，把两值改回 `false`/`mock` 并重启 business。
@@ -259,11 +259,11 @@ clinic-his 退费（对端退费接口未在 openapi 暴露），页面固定标
 | 层 | 载体 | 规模 |
 | --- | --- | --- |
 | Java 单元/契约/集成 | `backend/business-service/src/test` | 63 个测试类 / 401 项（`mvnw -o test` 实测，2026-11-20） |
-| 网关行为 | `backend/edge-gateway/tests` | 149 项 pytest（含全链路 `X-Request-Id` 2 项） |
+| 网关行为 | `backend/edge-gateway/tests` | 151 项 pytest（含全链路 `X-Request-Id` 2 项） |
 | SQL 次数预算（防 N+1） | `DoctorQueryBudgetTest` + `QueryCounter` | 5 项 |
 | 端点级 SQL 画像 | `EndpointSqlProfileTest` | 2 项（逐端点上限 + 与数据量无关） |
 | **小程序逻辑层（并发）** | `miniprogram/tests/` + `tools/test-fe.js` | **81 项 / 17 个测试文件**（零依赖 `node:test`；含隐私授权 6 项、患者端问诊/消息/接诊状态回归 5 项、音色映射/语速/语音取消与预取回归 5 项） |
-| **导诊效果（golden set）** | `tools/data/triage-golden.json` + `tools/eval-triage.js` | **66 科室 + 20 红旗 + 3 兜底**；红旗召回/兜底 100% 为硬门禁，科室 Top-1 门槛 85% |
+| **导诊效果（golden set）** | `tools/data/triage-golden.json` + `tools/eval-triage.js` | **66 科室 + 35 红旗 + 3 兜底**（`triage-golden-v2`，共 104 例）；红旗召回/兜底 100% 为硬门禁，科室 Top-1 门槛 85% |
 | **前后端契约快照** | `tools/contract-snapshot.js` + `contracts/snapshots/` | **5 端点**结构快照 |
 | 持续集成 | `.github/workflows/ci.yml` | 6 job：安全门禁 / 前端 / Java / clinic-his / 网关 / AI（PR 阻断） |
 | 性能回归门禁 | `tools/perf-gate.js` | 25VU/20s，支持 `--rounds=N` + 配置指纹 |
@@ -283,14 +283,16 @@ clinic-his 退费（对端退费接口未在 openapi 暴露），页面固定标
 
 ## 持续集成
 
-`.github/workflows/ci.yml` 在 push / PR 上跑四组**干净 clone 可复现**的门禁：
+`.github/workflows/ci.yml` 在 push / PR 上跑六组**干净 clone 可复现**的门禁（与「测试体系」表的 6 job 同口径）：
 
 | job | 跑什么 |
 | --- | --- |
+| 安全门禁 | `security-gate.js`（仓库级敏感信息扫描）+ `test-security-defaults.js` + `test-config-examples.js` + `check-build-env.js`（发版档位 / 后端默认 fail-closed）+ 本地覆盖文件不得入库 |
 | 前端 | `check-readme-links`（README + `docs/INDEX.md`）→ `check-require` / `check-exports` / `check-project` → `test-fe` / `test-triage` → `eval-triage` |
-| Java | `mvnw -B test`（JDK 17 + H2，401 项） |
-| 网关 | `pip install -r requirements.txt` + `pytest tests`（134 项） |
-| AI | `pip install -r requirements.txt` + `pytest tests`（242 项） |
+| Java | `mvnw -B test`（JDK 17 + H2） |
+| clinic-his | `python -m unittest discover -s tests`（演示 HIS 安全回归 L4/L7/L10）；全链路冒烟 `python scripts/smoke_test.py` 需自起隔离实例，仍只在本地跑 |
+| 网关 | `pip install -r requirements.txt` + `pytest tests`（151 项） |
+| AI | `pip install -r requirements.txt` + `pytest tests`（287 项） |
 
 刻意不纳入 CI（不是遗漏，是口径）：`db-verify`（需真实 MySQL）、`perf-gate`（需三服务在线）、真机 / E2E（需设备与开发者工具）、`check-v4-docs` / `check-v4-prototypes`（依赖 `.gitignore` 内设计存档，clone 下只会 SKIP）。**SKIP 不等于通过**，因此不作阻断项。
 

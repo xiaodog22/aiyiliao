@@ -173,6 +173,56 @@ public class HttpHisClient implements HisClient {
         log.info("clinic-his cancel orderNo={} reason={}", hisOrderNo, truncate(reason, 50));
     }
 
+    @Override
+    public HisOrderStatus queryOrder(String hisOrderNo) {
+        if (!hasText(hisOrderNo)) {
+            throw new IllegalArgumentException("HIS 单号为空");
+        }
+        if (!hisOrderNo.matches("[A-Za-z0-9-]{1,64}")) {
+            throw new IllegalArgumentException("非法的 HIS 单号: " + hisOrderNo);
+        }
+        // GET /openapi/v1/appointments/{his_order_no}：受理单 + 院内挂号/预排号进度
+        JsonNode data = get("/openapi/v1/appointments/" + hisOrderNo);
+        return new HisOrderStatus(
+                textOf(data, "hisOrderNo", hisOrderNo),
+                textOf(data, "status", ""),
+                textOf(data, "registrationNo", null),
+                textOf(data, "registrationStatus", ""),
+                textOf(data, "queueNo", null));
+    }
+
+    private static String textOf(JsonNode node, String field, String fallback) {
+        return node != null && node.hasNonNull(field) ? node.get(field).asText() : fallback;
+    }
+
+    @Override
+    public HisBill listCharges(String hisOrderNo) {
+        if (!hasText(hisOrderNo) || !hisOrderNo.matches("[A-Za-z0-9-]{1,64}")) {
+            throw new IllegalArgumentException("非法的 HIS 单号: " + hisOrderNo);
+        }
+        JsonNode data = get("/openapi/v1/appointments/" + hisOrderNo + "/charges");
+        java.util.List<HisChargeItem> items = new java.util.ArrayList<>();
+        JsonNode arr = data.get("items");
+        if (arr != null && arr.isArray()) {
+            for (JsonNode n : arr) {
+                items.add(new HisChargeItem(
+                        textOf(n, "chargeNo", ""),
+                        textOf(n, "category", ""),
+                        textOf(n, "description", ""),
+                        n.hasNonNull("amount") ? n.get("amount").decimalValue() : BigDecimal.ZERO,
+                        textOf(n, "status", ""),
+                        textOf(n, "createdAt", null),
+                        textOf(n, "paidAt", null)));
+            }
+        }
+        JsonNode sum = data.get("summary");
+        BigDecimal payable = sum != null && sum.hasNonNull("payable")
+                ? sum.get("payable").decimalValue() : BigDecimal.ZERO;
+        BigDecimal paid = sum != null && sum.hasNonNull("paid")
+                ? sum.get("paid").decimalValue() : BigDecimal.ZERO;
+        return new HisBill(hisOrderNo, items, payable, paid);
+    }
+
     // ------------------------------------------------------------ 演示账单（P0-1）
 
     @Override

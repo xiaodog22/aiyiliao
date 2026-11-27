@@ -52,6 +52,7 @@
 | [`docs/v4/04-FastAPI-AI后端开发指南.md`](v4/04-FastAPI-AI后端开发指南.md) | AI 服务接口面与降级策略 |
 | [`docs/v4/02-页面数据与交互契约.md`](v4/02-页面数据与交互契约.md) | 页面 ↔ 接口字段映射 |
 | [`backend/contracts/business-openapi.yaml`](../backend/contracts/business-openapi.yaml) | 业务后端契约（唯一事实源） |
+| [`患者主索引接口契约_20261127.md`](患者主索引接口契约_20261127.md) | 就诊人主索引 + HIS 建档 + 降级读的接口契约与单测清单（**待评审**，yaml 尚未追加） |
 | [`backend/contracts/ai-openapi.yaml`](../backend/contracts/ai-openapi.yaml) | AI 服务契约 |
 | [`docs/设计/对外流式契约提案.md`](设计/对外流式契约提案.md) | 一期 SSE **内部冻结契约**（已实现；仅 CHAT） |
 | [`docs/设计/对外流式二期_小程序接入设计.md`](设计/对外流式二期_小程序接入设计.md) | 二期小程序接入方案 + 七项裁决（主方案 chunked 透传，WS 降备选），**未开工** |
@@ -69,6 +70,7 @@
 | [`backend/deploy/DB_SCHEMA_DESIGN_20261105.md`](../backend/deploy/DB_SCHEMA_DESIGN_20261105.md) | 检查报告体系结构定稿 |
 | [`backend/deploy/REPORT_DELIVERY_20261105.md`](../backend/deploy/REPORT_DELIVERY_20261105.md) | 检查报告体系交付报告（15 项 + 未解决问题） |
 | [`docs/v4/07-隐私数据流与保留策略.md`](v4/07-隐私数据流与保留策略.md) | 隐私字段流转与保留口径 |
+| [`患者主索引映射对账方案_20261127.md`](患者主索引映射对账方案_20261127.md) | 平台就诊人 ↔ HIS 患者档案映射（B 方案，**待评审**，P3 病历/报告前置） |
 
 > 迁移脚本本身即结构事实源：`backend/business-service/src/main/resources/db/migration/`，
 > 开发种子在 `db/dev/`。文档与迁移冲突时以迁移为准。

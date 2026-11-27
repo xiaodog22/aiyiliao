@@ -9,6 +9,9 @@ from .. import db, security
 from ..errors import ApiError, conflict, not_found
 from .common import (as_int, as_list, as_str, one_of, pagination, parse_date,
                      require_fields)
+# 挂号收费单口径与挂号列表共用一处（REGISTRATION/id 与 APPOINTMENT/平台预约号两套引用并存，
+# 见 registration._FEE_OF_REG 注释）；basic 不反向依赖 registration 的路由注册。
+from .registration import FEE_STATUS_SUBQ
 
 # L7（2026-11-23）：患者主索引支持用证件号/手机号精确检索。
 # 落库只存加盐哈希（不可逆），因此查询必须走 patient_hash_candidates()：
@@ -271,7 +274,7 @@ def create_patient(ctx):
     birth_date = as_str(body, "birthDate", max_len=10)
     if birth_date and not __import__("re").fullmatch(r"\d{4}-\d{2}-\d{2}", birth_date):
         raise ApiError(400, "VALIDATION_FAILED", "出生日期格式须为 YYYY-MM-DD")
-    id_card = as_str(body, "idCard", max_len=20)
+    id_card = as_str(body, "idCard", max_len=20).upper()
     phone = as_str(body, "phone", max_len=20)
     address = as_str(body, "address", max_len=100)
     allergy = as_str(body, "allergy", max_len=100) or "无"
@@ -287,10 +290,14 @@ def create_patient(ctx):
                         (int(max_row["m"] or 0),))
         mrn = f"P{db.next_sequence(con, 'patient'):06d}"
         id_last4 = security.mask_id_card(id_card)
+        # 证件号只有通过 18 位 + GB 11643 校验位才进 id_hash；否则仅留尾 4 位（可为空）。
+        # 2026-11-27 整改：原实现把任意 ≤20 字符串都哈希入库，种子档案因此出现
+        # 「id_hash == 姓名哈希」的假身份，污染患者主索引的 T1 匹配。
+        id_hash = security.patient_hash(id_card) if security.is_valid_id_card(id_card) else ""
         cur = con.execute(
             "INSERT INTO patients(mrn,name,gender,birth_date,id_last4,id_hash,phone_mask,phone_hash,address,allergy,chronic_tags,created_at,created_by) "
             "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (mrn, name, gender, birth_date, id_last4, security.patient_hash(id_card),
+            (mrn, name, gender, birth_date, id_last4, id_hash,
              security.mask_phone(phone), security.patient_hash(phone), address, allergy,
              json.dumps(tags, ensure_ascii=False), db.now_str(), ctx.user["id"]))
         patient_id = int(cur.lastrowid)
@@ -415,9 +422,7 @@ def patient_overview(ctx):
     today = db.today_str()
     today_rows = db.query(
         "SELECT r.id, r.reg_no, r.status, r.queue_no, r.source, d.name AS dept_name, "
-        "s.name AS doctor_name, "
-        "(SELECT c.status FROM charges c WHERE c.ref_type='REGISTRATION' AND c.ref_id=r.id "
-        " ORDER BY c.id DESC LIMIT 1) AS fee_status "
+        "s.name AS doctor_name, " + FEE_STATUS_SUBQ +
         "FROM registrations r JOIN departments d ON d.id=r.dept_id JOIN staff s ON s.id=r.doctor_id "
         "WHERE r.patient_id=? AND r.reg_date=? ORDER BY r.id DESC", (patient_id, today))
 

@@ -127,7 +127,14 @@ class OpenApiRegistrationTest(unittest.TestCase):
         self.assertEqual("2026-12-01", reg["reg_date"])
         self.assertEqual(doctor["id"], reg["doctor_id"])
         self.assertEqual(dept_id, reg["dept_id"])
-        self.assertIsNone(reg["slot_id"], "平台号源与院内号源不同源，不得伪造外键")
+        # 2026-11-22 起受理会联动院内号源：命中同医生+同日+同午别的号源时必须占号并回填 slot_id。
+        # 旧断言（slot_id is None）是号源联动上线前的口径，已失效 —— 号源不同源不等于不占号。
+        if reg["slot_id"] is not None:
+            with db.tx() as con:
+                slot = con.execute("SELECT * FROM doctor_slots WHERE id=?", (reg["slot_id"],)).fetchone()
+            self.assertEqual(doctor["id"], slot["doctor_id"], "占用的号源必须属于同一医生")
+            self.assertEqual("2026-12-01", slot["work_date"], "占用的号源必须是同一就诊日")
+            self.assertGreaterEqual(slot["booked"], 1, "命中号源必须占号")
         self.assertEqual(data["queueNo"], reg["queue_no"])
         self.assertEqual("RESERVED", ticket["status"], "预排号不得直接进入叫号队列")
         self.assertEqual("2026-12-01", ticket["queue_date"])

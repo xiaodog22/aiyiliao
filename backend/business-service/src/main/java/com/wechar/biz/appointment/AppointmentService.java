@@ -17,9 +17,14 @@ import com.wechar.biz.patient.FamilyProxyGuard;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -269,10 +274,76 @@ public class AppointmentService {
     }
 
     /** 我的预约列表（服务端身份范围过滤：user_id 在查询条件内）。 */
-    @Transactional(readOnly = true)
+    @Transactional
     public List<AppointmentData> list(String userId, String status, int limit) {
-        return repository.listViewByUser(userId, status, limit).stream()
-                .map(v -> toData(v, null)).toList();
+        var views = repository.listViewByUser(userId, status, limit);
+        boolean changed = false;
+        int tried = 0;
+        for (var v : views) {
+            // 每个列表最多向 HIS 拉 HIS_SYNC_LIMIT 条；只挑「临近就诊日且未终态」的单
+            if (tried >= HIS_SYNC_LIMIT) break;
+            if (!needsHisSync(v.appt(), v.startTime())) continue;
+            tried++;
+            if (syncFromHis(v.appt())) changed = true;
+        }
+        if (changed) {
+            // 状态已推进：重查一次，保证返回的是同步后的行（含 version 递增后的视图）
+            views = repository.listViewByUser(userId, status, limit);
+        }
+        return views.stream().map(v -> toData(v, null)).toList();
+    }
+
+    // ------------------------------------------------------------ HIS 进度回流（读时懒同步）
+
+    /** HIS 院内侧状态 → 平台状态。未列出的值视为「不改变」。 */
+    private static final Map<String, String> HIS_TO_LOCAL = Map.of(
+            "BOOKED", "CONFIRMED",          // 院内已受理挂号
+            "CHECKED_IN", "CHECKED_IN",     // 已签到（到院）
+            "IN_PROGRESS", "CHECKED_IN",    // 已接诊，小程序仍显示「就诊中」
+            "FINISHED", "COMPLETED",        // 就诊完成
+            "CANCELLED", "CANCELLED");
+
+    /** 平台终态：不再向 HIS 拉进度，也不允许被回流覆盖。 */
+    private static final Set<String> LOCAL_TERMINAL =
+            Set.of("COMPLETED", "CANCELLED", "EXPIRED", "NO_SHOW");
+
+    /** 一次列表最多拉几条 HIS 进度（单条 3s 超时；避免读接口被 HIS 拖慢）。 */
+    private static final int HIS_SYNC_LIMIT = 2;
+
+    /**
+     * 是否需要向 HIS 拉进度：有 HIS 单号、非终态、就诊日落在 [今天-1, 今天+1]。
+     *
+     * <p>背景（2026-11-27）：HIS 没有回推通道，签到/接诊/完成只发生在院内；
+     * 不加这条懒同步，患者小程序会永远停在「待确认」。
+     */
+    private boolean needsHisSync(AppointmentRepository.AppointmentRow row, Instant startTime) {
+        if (row == null || row.hisOrderNo() == null || row.hisOrderNo().isBlank()) return false;
+        String local = row.status() == null ? "" : row.status().toUpperCase(Locale.ROOT);
+        if (LOCAL_TERMINAL.contains(local)) return false;
+        if (startTime == null) return false;
+        LocalDate visitDay = startTime.atZone(ZoneId.systemDefault()).toLocalDate();
+        LocalDate today = LocalDate.now(clock);
+        return !visitDay.isBefore(today.minusDays(1)) && !visitDay.isAfter(today.plusDays(1));
+    }
+
+    /**
+     * 从 HIS 拉一次院内侧进度并落库。
+     *
+     * @return 是否真的改了状态
+     */
+    private boolean syncFromHis(AppointmentRepository.AppointmentRow row) {
+        Optional<HisClient.HisOrderStatus> his = hisGateway.queryOrderQuietly(row.hisOrderNo());
+        if (his.isEmpty()) return false;
+        String raw = his.get().registrationStatus();
+        String mapped = raw == null ? null : HIS_TO_LOCAL.get(raw.toUpperCase(Locale.ROOT));
+        String local = row.status() == null ? "" : row.status().toUpperCase(Locale.ROOT);
+        if (mapped == null || mapped.equals(local)) return false;
+        boolean ok = repository.updateStatus(row.id(), row.version(), mapped, clock.instant());
+        if (ok) {
+            log.info("预约状态随院内进度更新 appointment={} {} -> {}（HIS {}）",
+                    row.id(), local, mapped, raw);
+        }
+        return ok;
     }
 
     /**

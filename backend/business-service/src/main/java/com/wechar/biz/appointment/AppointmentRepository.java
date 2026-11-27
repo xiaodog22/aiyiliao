@@ -180,6 +180,17 @@ public class AppointmentRepository {
         return updated == 1;
     }
 
+    /**
+     * 仅改状态（HIS 进度回流用）：保留其它字段，乐观锁 version+1。
+     * 并发下若版本已变（用户同时在改预约）→ false，由调用方下次读取再同步。
+     */
+    public boolean updateStatus(String id, int expectedVersion, String status, Instant now) {
+        int updated = jdbc.update("UPDATE appointments SET status = ?, version = version + 1, updated_at = ? "
+                        + "WHERE id = ? AND version = ?",
+                status, Timestamp.from(now), id, expectedVersion);
+        return updated == 1;
+    }
+
     public List<AppointmentRow> listByUser(String userId, String status, int limit) {
         StringBuilder sql = new StringBuilder("SELECT " + APPT_COLS
                 + " FROM appointments WHERE user_id = ?" + EXCLUDE_TEST_APPTS);

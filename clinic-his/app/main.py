@@ -289,6 +289,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self._dispatch("POST")
 
+    def do_PUT(self):
+        # 患者主索引 upsert（2026-11-27）：PUT 语义 = 按 patientRef 幂等建档/补字段。
+        # BaseHTTPRequestHandler 默认没有 do_PUT，缺这个方法会返回 501 而非业务错误。
+        self._dispatch("PUT")
+
     def do_PATCH(self):
         self._dispatch("PATCH")
 

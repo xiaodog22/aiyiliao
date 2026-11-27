@@ -8,9 +8,17 @@
  *   生产隔离此前只有"发版时人工把它改成 production"这一处开关，没有任何自动校验。
  *
  * 本脚本把"人工开关"变成可执行断言：
- *   ① BUILD_ENV 必须等于 'production'（local/development 一律拒绝）
- *   ② production.gateway 必须是非空 https，且不含临时调试域名
- *      （env.js 自身也会 throw，但构建期先拦下来，报错信息更直接）
+ *   ① 不注入 env.local.js 时，env.js 必须落 production 且加载期 fail-closed（缺 HTTPS 网关）
+ *   ② env.local.js 注入 production + HTTPS 网关后必须能正常加载，且 gateway 取注入值
+ *   ③ production 档禁止携带 devLoginKey（env.local.js 误配即构建失败）
+ *   ④ 源码里不得出现真实隧道域名 / 联调密钥形态
+ *   ⑤ 后端默认 profile 与联调登录闸门必须 fail-closed
+ *
+ * ⚠️ 2026-11-24（BUG-004）：原实现用**字面量正则**匹配 BUILD_ENV 表达式，
+ *    env.js 为 Node 单测加了 `IS_NODE_TEST ? 'local' : (...)` 三元后正则必然不匹配，
+ *    门禁恒红（exit 1）—— README「两者应同时为绿」不可达成。
+ *    现改为**行为级校验**：把 env.js 复制到临时目录、配不同 env.local.js 真实加载一次，
+ *    断言"加载结果/抛错"而不是源码写法。档位表达式以后怎么改都不会假红。
  *
  * 用法：
  *   node tools/check-build-env.js             # 发版流水线/出体验版前必跑；失败 exit 1
@@ -19,11 +27,42 @@
  * 退出码：0 = 可发版；1 = 不可发版（含具体原因）
  */
 const fs = require('fs')
+const os = require('os')
 const path = require('path')
 
 const ENV_PATH = path.join(__dirname, '..', 'miniprogram', 'config', 'env.js')
 const ALLOW_DEV = process.argv.indexOf('--allow-dev') >= 0
-const TEMPORARY_HOST = /(vicp\.fun|ngrok|natapp|localhost|127\.0\.0\.1)/i
+
+/**
+ * 行为级探测：把 env.js 复制到临时目录，按需配一份 env.local.js，真实 require 一次。
+ * @param {Object|null} overrides env.local.js 的内容；null = 不放该文件
+ * @returns {{ok:true, env:Object}|{ok:false, error:Error}}
+ */
+function probeEnv(overrides) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wb-env-probe-'))
+  // WB_NODE_TEST 会让 env.js 强制走 local 档（Node 单测专用），探测时必须屏蔽，
+  // 否则"默认档位是否 production"永远测不出来。
+  const savedNodeTest = process.env.WB_NODE_TEST
+  delete process.env.WB_NODE_TEST
+  try {
+    fs.copyFileSync(ENV_PATH, path.join(dir, 'env.js'))
+    if (overrides) {
+      fs.writeFileSync(path.join(dir, 'env.local.js'),
+        'module.exports = ' + JSON.stringify(overrides) + '\n', 'utf8')
+    }
+    try {
+      // eslint-disable-next-line global-require, import/no-dynamic-require
+      return { ok: true, env: require(path.join(dir, 'env.js')) }
+    } catch (e) {
+      return { ok: false, error: e }
+    }
+  } finally {
+    if (savedNodeTest === undefined) delete process.env.WB_NODE_TEST
+    else process.env.WB_NODE_TEST = savedNodeTest
+    Object.keys(require.cache).forEach((k) => { if (k.indexOf(dir) === 0) delete require.cache[k] })
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+}
 
 function main() {
   if (!fs.existsSync(ENV_PATH)) {
@@ -31,17 +70,54 @@ function main() {
     process.exitCode = 1
     return
   }
-  const src = fs.readFileSync(ENV_PATH, 'utf8')
+  const src = fs.readFileSync(ENV_PATH, 'utf8').replace(/\r\n/g, '\n')
+  const problems = []
 
-  // 2026-11-18（审计 C1/H8/H9）：档位不再写死，改由未入库的 env.local.js 注入。
-  // 门禁因此从"读字面量"变成"读默认值表达式 + 反查源码里有没有真实地址/密钥"。
-  const m = /const BUILD_ENV\s*=\s*String\(LOCAL_OVERRIDES\.buildEnv\s*\|\|\s*'([^']*)'\)/.exec(src)
-  if (!m) {
-    console.error('✗ env.js 的 BUILD_ENV 必须为 `String(LOCAL_OVERRIDES.buildEnv || \'production\')`（H9）')
-    process.exitCode = 1
-    return
+  // ── ① 默认档位：无 env.local.js 时必须落 production 且加载期 fail-closed ──
+  const bare = probeEnv(null)
+  let defaultEnv = 'production'
+  if (bare.ok) {
+    defaultEnv = String(bare.env.name || '')
+    if (defaultEnv !== 'production') {
+      problems.push({ devOnly: true, msg: '无 env.local.js 时默认档位不是 production（当前：' + (defaultEnv || '(空)') + '）' })
+    }
+    if (bare.env.gateway) {
+      problems.push({ devOnly: true, msg: 'env.js 内置了 production.gateway（正式域名不得入库）' })
+    }
+  } else {
+    const msg = String((bare.error && bare.error.message) || bare.error || '')
+    // 预期就是这句：默认 production + 无内置网关 → 加载期直接拒绝
+    if (!/production 档缺少 HTTPS 网关/.test(msg)) {
+      problems.push({ devOnly: false, msg: '无 env.local.js 时 env.js 未按预期 fail-closed：' + msg })
+    }
   }
-  const defaultEnv = m[1]
+
+  // ── ② 发版路径：注入 production + HTTPS 网关后必须能加载 ──
+  const release = probeEnv({ buildEnv: 'production', productionGateway: 'https://release.example.com' })
+  if (!release.ok) {
+    problems.push({ devOnly: false, msg: 'production 档在注入 HTTPS 网关后仍加载失败：' + ((release.error && release.error.message) || release.error) })
+  } else {
+    const gw = String(release.env.gateway || '')
+    if (release.env.name !== 'production' || !/^https:\/\//i.test(gw)) {
+      problems.push({ devOnly: false, msg: 'production 档未按 env.local.js 生效（档位=' + release.env.name + '，gateway=' + (gw || '(空)') + '）' })
+    }
+  }
+
+  // ── ③ production 档禁止携带 devLoginKey（误配即构建失败） ──
+  const leak = probeEnv({
+    buildEnv: 'production',
+    productionGateway: 'https://release.example.com',
+    devLoginKey: 'probe-only-not-a-real-key'
+  })
+  if (leak.ok && String(leak.env.devLoginKey || '')) {
+    problems.push({ devOnly: false, msg: 'production 档未拒绝 env.local.js 注入的 devLoginKey（应构建失败）' })
+  }
+
+  // ── ④ 联调档仍可正常装配（白名单不能被改坏） ──
+  const localProbe = probeEnv({ buildEnv: 'local', localGateway: 'http://127.0.0.1:8080' })
+  if (!localProbe.ok || localProbe.env.name !== 'local' || !localProbe.env.legacyManualLoginEnabled) {
+    problems.push({ devOnly: false, msg: 'local 档加载异常：' + (localProbe.ok ? ('档位=' + localProbe.env.name) : ((localProbe.error && localProbe.error.message) || localProbe.error)) })
+  }
 
   // 构建期实际档位：有 env.local.js 时以它为准（发布流水线生成），否则就是默认值
   let effectiveEnv = defaultEnv
@@ -58,24 +134,8 @@ function main() {
     }
   }
 
-  const prodBlock = /production:\s*\{([\s\S]*?)\}/.exec(src)
-  const gwMatch = prodBlock ? /gateway:\s*String\(LOCAL_OVERRIDES\.productionGateway\s*\|\|\s*'([^']*)'\)/.exec(prodBlock[1]) : null
-  const gateway = (gwMatch ? gwMatch[1] : '').trim()
-
   console.log('· BUILD_ENV 默认 = ' + defaultEnv + '（本次生效：' + effectiveEnv + '）')
-  console.log('· production.gateway 内置值 = ' + (gateway || '(空，由 env.local.js 注入)'))
-
-  // devOnly=true：只影响「能否发正式包」，--allow-dev 下降级为提示（联调包用隧道网关）；
-  // devOnly=false：安全默认项，任何模式都不降级（后端档位/闸门/生产不携带联调头）。
-  const problems = []
-  if (defaultEnv !== 'production') problems.push({ devOnly: true, msg: 'BUILD_ENV 默认值不是 production（当前：' + defaultEnv + '）' })
-  // 默认值必须为空：真实正式域名只允许由 env.local.js / 流水线注入
-  if (gateway) problems.push({ devOnly: true, msg: 'env.js 内置了 production.gateway（正式域名不得入库）' })
-
-  // ③ 前端侧：production 档不得下发联调登录头（devLoginKey 必须被强制为空）
-  if (!/devLoginKey:\s*DEV_ONLY\s*\?\s*DEV_LOGIN_KEY\s*:\s*''/.test(src)) {
-    problems.push({ devOnly: false, msg: 'env.js 的 devLoginKey 未按 `DEV_ONLY ? DEV_LOGIN_KEY : ""` 强制生产为空' })
-  }
+  console.log('· 发版路径探针 = ' + (release.ok ? ('production + ' + String(release.env.gateway || '')) : '失败'))
 
   // ③b 源码里不得出现真实隧道域名 / dev 登录密钥形态（审计 C1/H8）
   // 只认「真实地址形态」（带协议前缀或裸内网 IP）；校验规则里的字面量
@@ -94,7 +154,9 @@ function main() {
   //    且联调登录闸门默认关闭 —— 否则「误以 dev 档部署 + 隧道暴露」就能拿到真会话。
   const appYml = path.join(__dirname, '..', 'backend', 'business-service', 'src', 'main', 'resources', 'application.yml')
   if (fs.existsSync(appYml)) {
-    const y = fs.readFileSync(appYml, 'utf8')
+    // Windows 检出是 CRLF：`.` 不匹配 \r，不归一化会让 `(?:.*\n)*?` 直接匹配失败，
+    // 后端档位检查退化成「(未声明)」——看着跑过、其实没检查（2026-11-24 · BUG-004）。
+    const y = fs.readFileSync(appYml, 'utf8').replace(/\r\n/g, '\n')
     const prof = /profiles:\s*\n(?:.*\n)*?\s*default:\s*(\S+)/.exec(y)
     const defProf = prof ? prof[1] : '(未声明)'
     console.log('· business-service spring.profiles.default = ' + defProf)
@@ -111,7 +173,9 @@ function main() {
   }
 
   if (!problems.length) {
-    console.log('✓ 发版门禁通过：production + 正式 HTTPS 网关 + 后端默认档位/闸门 fail-closed')
+    const gw = (release.ok && String(release.env.gateway || '')) || ''
+    console.log('✓ 发版门禁通过：production 档 + 默认 fail-closed + 后端默认档位/闸门 fail-closed'
+      + '（正式网关：' + (gw || '未注入，发版包由流水线 env.local.js 提供') + '）')
     return
   }
 

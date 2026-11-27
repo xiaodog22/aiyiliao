@@ -34,6 +34,27 @@ public interface HisClient {
     void cancel(String hisOrderNo, String reason);
 
     /**
+     * 查询受理单的**院内侧进度**（只读）。
+     *
+     * <p>背景（2026-11-27）：HIS 不回推「签到 / 接诊 / 完成」，平台只能读时主动拉一次，
+     * 否则患者在小程序里永远停在「待确认」。
+     *
+     * @return 院内侧状态；实现可返回 {@code null} 表示「本地桩没有院内状态机」（如 Mock），
+     *         调用方必须按「无进度」处理，不得把 null 当成已受理
+     * @throws RuntimeException 外部不可用/超时（调用方 HisGateway 会静默降级）
+     */
+    HisOrderStatus queryOrder(String hisOrderNo);
+
+    /**
+     * 受理单的**费用清单**（只读）：挂号费 + 就诊过程中开立的处方/检查费用。
+     *
+     * <p>金额与状态一律以院内侧为准，平台不自行计算、不缓存。
+     *
+     * @throws RuntimeException 外部不可用/超时（调用方转 503，不得用本地额度兜底）
+     */
+    HisBill listCharges(String hisOrderNo);
+
+    /**
      * 创建演示账单（P0-1）。同一 {@code appId + refType + refId} 必须幂等：
      * 重复调用返回同一 chargeNo，{@code replayed=true}。
      */
@@ -116,6 +137,33 @@ public interface HisClient {
      */
     record HisChargeResult(String chargeNo, BigDecimal amount, String status,
                            boolean replayed, boolean mock) {
+    }
+
+    /**
+     * 受理单院内侧进度。
+     *
+     * @param orderStatus        openapi_orders.status（ACCEPTED / CANCELLED）
+     * @param registrationStatus registrations.status（BOOKED / CHECKED_IN / IN_PROGRESS / FINISHED / CANCELLED）
+     * @param registrationNo     院内挂号号（RG…）
+     * @param queueNo            院内预排号（JZ001…），报到后才有实际叫号意义
+     */
+    record HisOrderStatus(String hisOrderNo, String orderStatus, String registrationNo,
+                          String registrationStatus, String queueNo) {
+    }
+
+    /**
+     * 费用单（院内侧）。
+     *
+     * @param category REGISTRATION（挂号）/ DRUG（药品）/ LAB（检查）
+     * @param status   UNPAID / PAID / REFUNDED / VOID
+     */
+    record HisChargeItem(String chargeNo, String category, String description,
+                         BigDecimal amount, String status, String createdAt, String paidAt) {
+    }
+
+    /** 受理单费用清单 + 汇总（payable 只统计 UNPAID，paid 只统计 PAID）。 */
+    record HisBill(String hisOrderNo, List<HisChargeItem> items,
+                   BigDecimal payable, BigDecimal paid) {
     }
 
     /** 检查项目（P0-2）。 */

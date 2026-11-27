@@ -29,6 +29,10 @@ Page({
     refunding: false,
     // 开发/演示档：真实支付关闭时仍可在本地模拟收银台走通界面
     demoEnabled: ENV.legacyManualLoginEnabled,
+    // 费用清单（P2）：挂号费 + 诊中处方/检查，金额与状态以院内侧为准
+    bill: null,
+    billLoading: false,
+    billError: '',
     error: ''
   },
 
@@ -36,6 +40,33 @@ Page({
     const appointmentId = String((options && options.appointmentId) || '')
     this.setData({ appointmentId })
     this.loadConfig(appointmentId)
+    this.loadBill(appointmentId)
+  },
+
+  /** 费用清单：与演示支付解耦，失败只在本区块提示，不影响下方的订单卡片流程。 */
+  loadBill(appointmentId) {
+    if (!appointmentId) return
+    this.setData({ billLoading: true, billError: '' })
+    payment.getBill(appointmentId, { timeout: 8000 })
+      .then((bill) => this.setData({ bill, billLoading: false }))
+      .catch((err) => this.setData({ billLoading: false, billError: errText(err) }))
+  },
+
+  /** 单笔模拟缴费：成功后用后端返回的最新清单刷新（不复用本地金额）。 */
+  onPayBillTap(e) {
+    const chargeNo = String((e.currentTarget.dataset && e.currentTarget.dataset.charge) || '')
+    const appointmentId = this.data.appointmentId
+    if (!chargeNo || !appointmentId || this.data.paying) return
+    this.setData({ paying: true })
+    payment.payBill(appointmentId, chargeNo)
+      .then((bill) => {
+        this.setData({ bill, paying: false })
+        wx.showToast({ title: '缴费成功（演示）', icon: 'success' })
+      })
+      .catch((err) => {
+        this.setData({ paying: false })
+        wx.showToast({ title: errText(err), icon: 'none' })
+      })
   },
 
   loadConfig(appointmentId) {

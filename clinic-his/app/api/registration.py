@@ -48,11 +48,32 @@ def _reg_row(row) -> dict:
     }
 
 
+# ---------------------------------------------------------------- 收费单关联口径（2026-11-27）
+# 互联网医院（小程序）受理的挂号：平台侧演示账单按 ref_type='APPOINTMENT' + 平台预约 ID 落库
+# （business PaymentService.createDemoCharge），院内挂号按 ref_type='REGISTRATION' + registrations.id。
+# 只认院内一套会同时造成：已支付仍显示 UNKNOWN、签到被 REG_FEE_UNPAID 拦、取消不联动退费。
+# 桥：registrations.his_order_no = openapi_orders.his_order_no → openapi_orders.appointment_id = charges.ref_id
+_FEE_OF_REG = (
+    "(c.ref_type='REGISTRATION' AND c.ref_id=r.id) OR "
+    "(c.ref_type='APPOINTMENT' AND r.his_order_no<>'' AND c.ref_id=("
+    "SELECT o.appointment_id FROM openapi_orders o WHERE o.his_order_no=r.his_order_no))"
+)
+# 复用于 SELECT 子句（别名 r 必须是 registrations）
+FEE_STATUS_SUBQ = (
+    "(SELECT c.status FROM charges c WHERE " + _FEE_OF_REG +
+    " ORDER BY c.id DESC LIMIT 1) AS fee_status "
+)
+# 按挂号 id 取单/更新时用（子查询内部再按 his_order_no 桥接）
+_FEE_OF_REG_ID = (
+    "(charges.ref_type='REGISTRATION' AND charges.ref_id=?) OR "
+    "(charges.ref_type='APPOINTMENT' AND charges.ref_id=("
+    "SELECT o.appointment_id FROM openapi_orders o "
+    "JOIN registrations r2 ON r2.his_order_no=o.his_order_no WHERE r2.id=?))"
+)
+
 REG_SELECT = (
     "SELECT r.*, p.name AS patient_name, p.mrn AS patient_mrn, s.name AS doctor_name, "
-    "s.title AS doctor_title, d.name AS dept_name, "
-    "(SELECT c.status FROM charges c WHERE c.ref_type='REGISTRATION' AND c.ref_id=r.id "
-    " ORDER BY c.id DESC LIMIT 1) AS fee_status "
+    "s.title AS doctor_title, d.name AS dept_name, " + FEE_STATUS_SUBQ +
     "FROM registrations r JOIN patients p ON p.id=r.patient_id "
     "JOIN staff s ON s.id=r.doctor_id JOIN departments d ON d.id=r.dept_id "
 )
@@ -86,9 +107,10 @@ def create_registration(ctx):
     source = one_of(as_str(body, "source", default="ONSITE") or "ONSITE",
                     {"ONSITE", "APPOINTMENT", "WECHAT"}, "source")
 
-    # 频控：同一操作人 60 秒内最多 8 单；同一患者 10 分钟内最多 3 单
+    # 频控：同一操作人 60 秒内最多 8 单（防批量刷单，先于业务校验，避免无效请求打库）；
+    # 同一患者 10 分钟内最多 3 单放到**业务校验之后**——停用医生 / 停诊 / 已约满这类
+    # 必被 400/409 拒绝的请求不该吃掉患者配额，也不该把"停用医生"答成 429（BUG-002）。
     _limit(f"reg-create-user:{ctx.user['id']}", 8, 60, "操作过于频繁，请稍后再试（挂号）")
-    _limit(f"reg-create-patient:{patient_id}", 3, 600, "该患者短时间内挂号次数过多，请稍后再试")
 
     with db.tx() as con:
         patient = con.execute("SELECT id FROM patients WHERE id=?", (patient_id,)).fetchone()
@@ -106,6 +128,7 @@ def create_registration(ctx):
                            details=[{"field": "slotId", "reason": "医生非在职"}])
         if slot["work_date"] < db.today_str():
             raise conflict("不能预约已过期号源", "SLOT_CLOSED")
+        _limit(f"reg-create-patient:{patient_id}", 3, 600, "该患者短时间内挂号次数过多，请稍后再试")
         cur = con.execute(
             "UPDATE doctor_slots SET booked=booked+1 WHERE id=? AND booked<capacity AND status='OPEN'",
             (slot_id,))
@@ -158,8 +181,8 @@ def checkin(ctx):
         if reg["reg_date"] != db.today_str():
             raise conflict("仅可对当日挂号签到", "STATE_CONFLICT")
         paid = con.execute(
-            "SELECT 1 FROM charges WHERE ref_type='REGISTRATION' AND ref_id=? AND status='PAID'",
-            (reg_id,)).fetchone()
+            "SELECT 1 FROM charges WHERE status='PAID' AND (" + _FEE_OF_REG_ID + ")",
+            (reg_id, reg_id)).fetchone()
         if paid is None:
             raise conflict("挂号费尚未收取，请先到收费处缴费", "REG_FEE_UNPAID")
 
@@ -203,19 +226,20 @@ def cancel_registration(ctx):
         if reg["status"] != "BOOKED":
             raise conflict("已签到或已就诊的挂号不可取消，请走退号流程", "STATE_CONFLICT")
         paid = con.execute(
-            "SELECT * FROM charges WHERE ref_type='REGISTRATION' AND ref_id=? AND status='PAID'",
-            (reg_id,)).fetchall()
-        if paid:
-            # 退费联动内已置挂号 CANCELLED 并扣回号源
-            for charge_row in paid:
-                _apply_refund(con, ctx, charge_row, "取消挂号自动退费")
-        else:
-            con.execute("UPDATE registrations SET status='CANCELLED' WHERE id=?", (reg_id,))
+            "SELECT * FROM charges WHERE status='PAID' AND (" + _FEE_OF_REG_ID + ")",
+            (reg_id, reg_id)).fetchall()
+        for charge_row in paid:
+            # _apply_refund 只对 ref_type='REGISTRATION' 联动「置 CANCELLED + 扣回号源」；
+            # 平台演示账单是 APPOINTMENT，必须由下面这段收口（rowcount 保证不重复扣）。
+            _apply_refund(con, ctx, charge_row, "取消挂号自动退费")
+        cur = con.execute(
+            "UPDATE registrations SET status='CANCELLED' WHERE id=? AND status<>'CANCELLED'", (reg_id,))
+        if cur.rowcount:
             if reg["slot_id"]:
                 con.execute("UPDATE doctor_slots SET booked=MAX(booked-1,0) WHERE id=?", (reg["slot_id"],))
         con.execute(
             "UPDATE charges SET status='VOID', void_reason='挂号取消' "
-            "WHERE ref_type='REGISTRATION' AND ref_id=? AND status='UNPAID'", (reg_id,))
+            "WHERE status='UNPAID' AND (" + _FEE_OF_REG_ID + ")", (reg_id, reg_id))
         security.audit(con, ctx.user, "REG_CANCEL", "registration", reg_id,
                        f"refunded={len(paid)}", "OK", ctx.ip)
     return {"id": reg_id, "status": "CANCELLED"}

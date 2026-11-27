@@ -37,6 +37,16 @@ public class DisabledHisClient implements HisClient {
     }
 
     @Override
+    public HisOrderStatus queryOrder(String hisOrderNo) {
+        throw disabled();
+    }
+
+    @Override
+    public HisBill listCharges(String hisOrderNo) {
+        throw disabled();
+    }
+
+    @Override
     public HisChargeResult createDemoCharge(HisChargeCommand command) {
         throw disabled();
     }

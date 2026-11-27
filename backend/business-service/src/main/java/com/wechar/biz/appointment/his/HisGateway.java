@@ -38,6 +38,17 @@ public class HisGateway {
     private final String mode;
 
     /**
+     * 读时同步熔断（2026-11-27）：列表查询会按 hisOrderNo 拉院内侧进度，
+     * HIS 挂掉时不能让「我的预约」每次卡 3s×N。连续失败 {@value #SYNC_FAIL_THRESHOLD} 次
+     * 后静默 {@value #SYNC_COOLDOWN_MS} ms 不再尝试，成功一次即复位。
+     */
+    private static final int SYNC_FAIL_THRESHOLD = 3;
+    private static final long SYNC_COOLDOWN_MS = 60_000L;
+    private final java.util.concurrent.atomic.AtomicInteger syncFailures =
+            new java.util.concurrent.atomic.AtomicInteger();
+    private volatile long syncBlockedUntil = 0L;
+
+    /**
      * Spring 装配入口：client 用 {@link ObjectProvider} 取，允许 {@code enabled=false} 时为空。
      *
      * <p>敌意审查 L6（2026-11-22）修复：原实现 {@code app.his.mode} 默认 "mock"，
@@ -127,5 +138,32 @@ public class HisGateway {
      */
     public void cancelQuietly(String hisOrderNo, String reason) {
         cancelAttempt(hisOrderNo, reason);
+    }
+
+    /**
+     * 查受理单院内侧进度（读时懒同步用）。HIS 禁用、无单号、超时、实现返回 null
+     * 一律 {@code Optional.empty()}：列表能不能打开不取决于 HIS 是否活着。
+     */
+    public java.util.Optional<HisClient.HisOrderStatus> queryOrderQuietly(String hisOrderNo) {
+        if (!enabled || client == null || hisOrderNo == null || hisOrderNo.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        if (System.currentTimeMillis() < syncBlockedUntil) {
+            return java.util.Optional.empty();   // 熔断窗口内：直接当「无进度」，不再打 HIS
+        }
+        try {
+            HisClient.HisOrderStatus status = client.queryOrder(hisOrderNo);
+            syncFailures.set(0);
+            return java.util.Optional.ofNullable(status);
+        } catch (RuntimeException e) {
+            if (syncFailures.incrementAndGet() >= SYNC_FAIL_THRESHOLD) {
+                syncBlockedUntil = System.currentTimeMillis() + SYNC_COOLDOWN_MS;
+                syncFailures.set(0);
+                log.warn("HIS 进度查询连续失败，暂停 {}s 同步：{}", SYNC_COOLDOWN_MS / 1000, e.getMessage());
+            } else {
+                log.debug("HIS 受理单进度查询失败 order={}: {}", hisOrderNo, e.getMessage());
+            }
+            return java.util.Optional.empty();
+        }
     }
 }

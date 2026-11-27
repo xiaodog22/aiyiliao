@@ -90,6 +90,8 @@ CREATE TABLE IF NOT EXISTS patients (
   address TEXT NOT NULL DEFAULT '',
   allergy TEXT NOT NULL DEFAULT '',
   chronic_tags TEXT NOT NULL DEFAULT '[]',
+  external_patient_ref TEXT,
+  source_app_id TEXT,
   created_at TEXT NOT NULL,
   created_by INTEGER
 );
@@ -453,6 +455,16 @@ CREATE TABLE IF NOT EXISTS openapi_orders (
 CREATE UNIQUE INDEX IF NOT EXISTS uq_openapi_orders_app_idem ON openapi_orders(app_id, idem_key);
 CREATE INDEX IF NOT EXISTS idx_openapi_orders_app_appt ON openapi_orders(app_id, appointment_id);
 
+-- 患者建档幂等台账（2026-11-27）：同 appId + 同 Idempotency-Key 重放同一 patientRef 时
+-- 返回同一档案且不重复审计。ref 自身幂等，此表只负责「重放」这一层语义。
+CREATE TABLE IF NOT EXISTS openapi_patient_idem (
+  app_id TEXT NOT NULL,
+  idem_key TEXT NOT NULL,
+  patient_ref TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (app_id, idem_key)
+);
+
 CREATE TABLE IF NOT EXISTS openapi_nonces (
   nonce TEXT PRIMARY KEY,
   app_id TEXT NOT NULL,
@@ -577,6 +589,14 @@ LAB_ORDER_MIGRATIONS = [
     ("critical", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
+# 患者主索引关联列（2026-11-27，P3 病历/报告前置）：
+# external_patient_ref 由平台下发（pat-<uuid>），source_app_id 记录建档 appId 防跨租户占用。
+# 新库由 SCHEMA 的 CREATE 直接建成，存量库靠 ensure_column 补。
+PATIENT_MIGRATIONS = [
+    ("external_patient_ref", "TEXT"),
+    ("source_app_id", "TEXT"),
+]
+
 
 def _migrate_openapi_orders(con: sqlite3.Connection) -> None:
     """把旧版全局 idem_key 唯一约束迁移为 (app_id, idem_key) 复合唯一。
@@ -663,6 +683,14 @@ def init_db() -> None:
             ensure_column(con, "lab_items", column, ddl)
         for column, ddl in LAB_ORDER_MIGRATIONS:
             ensure_column(con, "lab_orders", column, ddl)
+        # 患者主索引（P3 前置）：补列 + 外部就诊人引用唯一（空值不占位，历史派生档案不受影响）
+        for column, ddl in PATIENT_MIGRATIONS:
+            ensure_column(con, "patients", column, ddl)
+        con.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_patients_external_ref "
+            "ON patients(external_patient_ref) "
+            "WHERE external_patient_ref IS NOT NULL AND external_patient_ref <> ''"
+        )
         con.commit()
     finally:
         con.close()

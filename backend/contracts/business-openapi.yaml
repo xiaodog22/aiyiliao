@@ -1097,7 +1097,25 @@ paths:
         `from` / `to` 为 `yyyy-MM-dd`（UTC 口径），作用于检查时间；`to` 为开区间（不含当日）。
         `familyMemberId` 不传 = 不按成员过滤；传入则只返回该成员名下报告。
         `abnormalCount` 只统计 abnormalFlag 非 NORMAL / NOT_APPLICABLE 的项目。
+
+        ## 归属降级语义（P1，`APP_PATIENT_INDEX_ENABLED` 开启后生效）
+
+        | 情形 | 行为 |
+        |---|---|
+        | 记录 `patient_ref` 属于当前用户 | 正常返回 |
+        | 记录 `patient_ref IS NULL` 且 `legacy_attribution='UNKNOWN'` | **从列表剔除**，只计 `meta.unreadableCount`；不返回任何 id / 时间 / 类别（防存在性泄露） |
+        | 记录 `patient_ref IS NULL` 但白名单有效 | 返回，条目 `degraded=true`，`meta.degraded` 给 `reason` 与 `expiresAt` |
+        | 白名单已过期 | 409 `PATIENT_REF_REQUIRED`，**不返回半截列表** |
+        | `patientRef` 不属于当前用户 | 404 `PATIENT_NOT_FOUND` |
+
+        `meta.total` 只计**可读**记录；`meta.unreadableCount` 不并入分页总数，跨页恒定。
+        前端文案固定为「N 条记录无法归属，请联系院内档案管理员」，不得显示成「没有报告」。
       parameters:
+        - name: patientRef
+          in: query
+          required: false
+          description: 按就诊人过滤；缺省 = 当前用户全部可读报告。不属于当前用户 → 404。
+          schema: {type: string, pattern: '^pat-[0-9a-f]{32}$'}
         - name: reportType
           in: query
           required: false
@@ -1124,11 +1142,18 @@ paths:
         - $ref: '#/components/parameters/RequestId'
       responses:
         '200':
-          description: 报告列表。
+          description: 报告列表（可读记录；不可归属记录只计数）。
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OkReportSummaryList'}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: 白名单已过期或就诊人映射冲突（`PATIENT_REF_REQUIRED` / `PATIENT_MAPPING_CONFLICT` / `PATIENT_MAPPING_ORPHAN`）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ApiError'}
         '422': {$ref: '#/components/responses/ValidationFailed'}
 
   /api/v1/reports/{recordId}:
@@ -1492,6 +1517,148 @@ paths:
         '422': {$ref: '#/components/responses/ValidationFailed'}
         '429': {$ref: '#/components/responses/TooManyRequests'}
         '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/patients:
+    get:
+      operationId: listPatients
+      tags: [patient]
+      summary: 就诊人列表（本人 + 代管家人）
+      description: |
+        返回当前账号下全部 `patient_index` 记录，按 `created_at` 升序；`ARCHIVED` 默认不返回。
+
+        ⚠️ 归属只认 `Authorization` 解析出的 userId。本接口**不接受**任何
+        `userId / ownerUserId / owner` 入参，客户端传来的归属字段按未知字段拒绝（422）。
+        ⚠️ **不下发 HIS MRN、不下发任何哈希**，只给 `linkState` 表示院内档案关联进度。
+        空列表是合法结果（新用户尚未建档），不得用假数据填充。
+      parameters:
+        - name: includeArchived
+          in: query
+          required: false
+          description: 是否连归档就诊人一起返回；缺省 false。
+          schema: {type: boolean, default: false}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 就诊人列表（可为空数组）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkPatientList'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    post:
+      operationId: createPatient
+      tags: [patient]
+      summary: 新建就诊人
+      description: |
+        建平台主索引（`patient_index`），**不自动调 HIS 建人**——HIS 建档只发生在受理时
+        （避免离线写放大）。同一用户 + 同一 `displayName` 已存在时返回既有记录并置
+        `created=false`，不新建（不变量来自 `uq_patient_index_owner_name`）。
+        一个账号可替多个不同姓名的人建档（代家人/代亲友），不要求先建 `family_members`。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PatientCreate'}
+      responses:
+        '200':
+          description: 建档结果（重复姓名时 `created=false` 并返回既有记录）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkPatient'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/patients/{patientRef}:
+    get:
+      operationId: getPatient
+      tags: [patient]
+      summary: 就诊人详情
+      description: 不属于当前用户 → 404 `PATIENT_NOT_FOUND`（不区分「不存在」与「无权」，避免枚举）。
+      parameters:
+        - $ref: '#/components/parameters/PatientRef'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 就诊人详情。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkPatient'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      operationId: updatePatient
+      tags: [patient]
+      summary: 修改就诊人
+      description: |
+        仅允许改 `displayName / birthDate / sex / idCardNumber / phone`。
+        `version` 不匹配 → 409 `VERSION_CONFLICT`；已 `ARCHIVED` → 409 `PATIENT_ARCHIVED`；
+        改 `idCardNumber` 需重过 18 位 + GB 11643 校验位，通过后 `verificationLevel` 升为 `ID_VERIFIED`。
+        **改姓名不换 `patientRef`**：ref 与院内档案的关联不因改名失效。
+      parameters:
+        - $ref: '#/components/parameters/PatientRef'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PatientUpdate'}
+      responses:
+        '200':
+          description: 修改后的就诊人。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkPatient'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+
+  /api/v1/patients/{patientRef}/archive:
+    post:
+      operationId: archivePatient
+      tags: [patient]
+      summary: 归档就诊人
+      description: |
+        置 `status=ARCHIVED`，保留映射（历史报告仍按 ref 可查，但列表默认不返回）。
+        存在未终态预约（`PENDING / CONFIRMED / CHECKED_IN`）→ 409 `PATIENT_IN_USE`，
+        `details` 给出占用中的预约 id，前端据此后跳到预约详情，不得静默忽略。
+      parameters:
+        - $ref: '#/components/parameters/PatientRef'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: 归档结果（幂等：重复归档返回同样结构）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkPatient'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+
+  /api/v1/patients/{patientRef}/mapping:
+    get:
+      operationId: getPatientMapping
+      tags: [patient]
+      summary: 就诊人档案关联状态
+      description: |
+        供前端显示「档案完善中」。**不含 HIS 侧任何标识**（无 MRN、无 patientId、无哈希），
+        只给状态与裁决时间。`CONFLICT` / `ORPHAN` 不在此接口返回细节，读取报告时按 409 处理。
+      parameters:
+        - $ref: '#/components/parameters/PatientRef'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: 关联状态。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkPatientMapping'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
 
   /api/v1/family-members:
     get:
@@ -2186,6 +2353,64 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OkPaymentOrder'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/payment/bill:
+    get:
+      operationId: getPaymentBill
+      tags: [payment]
+      summary: 查询某次预约的院内费用清单（含挂号费与诊中费用）
+      description: |
+        金额与状态一律取自院内侧 `charges`，平台只做中文映射与汇总，不重算、不猜测。
+        无费用时返回空数组，不返回 404。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - name: appointmentId
+          in: query
+          required: true
+          schema: {type: string, maxLength: 64}
+      responses:
+        '200':
+          description: 费用清单（按 id 倒序）。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkPaymentBill'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '503': {$ref: '#/components/responses/DependencyUnavailable'}
+
+  /api/v1/payment/bill/pay:
+    post:
+      operationId: payPaymentBill
+      tags: [payment]
+      summary: 缴纳单笔院内费用（演示态，不调起微信支付）
+      description: |
+        只允许 `UNPAID` 的账单；HIS 未置 `PAID` 一律 503。重复调用由
+        「只允许 UNPAID」+ HIS 重放语义保证，不另建幂等表。
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [appointmentId, chargeNo]
+              properties:
+                appointmentId: {type: string, maxLength: 64}
+                chargeNo: {type: string, maxLength: 32}
+              additionalProperties: false
+      responses:
+        '200':
+          description: 缴费后的最新清单。
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OkPaymentBill'}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -3682,6 +3907,14 @@ components:
         客户端为本次**操作**生成的唯一键。重试必须复用同一个键；相同键不同载荷返回 `409`。
         键本身不构成读取凭证。
       schema: {type: string, minLength: 8, maxLength: 128}
+    PatientRef:
+      name: patientRef
+      in: path
+      required: true
+      description: |
+        平台就诊人 ID（`pat-` + 32 位小写十六进制，服务端生成的 UUIDv4）。
+        **客户端不得解析其内容**，也不得据此推断顺序或归属；日志只允许记录 `sha256(ref)[:16]`。
+      schema: {type: string, pattern: '^pat-[0-9a-f]{32}$'}
     Cursor:
       name: cursor
       in: query
@@ -3772,6 +4005,18 @@ components:
         version: {type: [string, 'null'], description: 资源版本或快照标识，用于缓存与冲突判断。}
         nextCursor: {type: [string, 'null'], description: 下一页游标；`null` 表示没有更多。}
         total: {type: [integer, 'null'], description: 仅在廉价可得时返回，不承诺精确总数。}
+        unreadableCount:
+          type: [integer, 'null']
+          description: |
+            仅报告列表返回：因无法归属而被剔除的记录数。**不并入 `total`**，
+            跨页返回恒定值；前端据此显示「N 条记录无法归属」，不得显示成「没有报告」。
+        degraded:
+          type: [object, 'null']
+          description: 仅报告列表返回：历史白名单降级读取说明；`null` 表示无降级。
+          properties:
+            reason: {type: string, enum: [LEGACY_NAME_DERIVED]}
+            expiresAt: {type: string, format: date-time, description: 白名单到期时间（到期即 409）。}
+          additionalProperties: false
       additionalProperties: true
 
     ApiError:
@@ -4259,6 +4504,46 @@ components:
     OkPaymentOrder:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/PaymentOrder'}}}]
 
+    # ---------- 费用清单（P2，2026-11-27）----------
+
+    OkPaymentBill:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/PaymentBill'}}}]
+
+    PaymentBill:
+      type: object
+      required: [appointmentId, hisOrderNo, items, summary]
+      properties:
+        appointmentId: {type: string, maxLength: 64}
+        hisOrderNo: {type: string, maxLength: 64}
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/PaymentBillItem'}
+        summary: {$ref: '#/components/schemas/PaymentBillSummary'}
+      additionalProperties: false
+
+    PaymentBillItem:
+      type: object
+      required: [chargeNo, category, categoryText, description, amount, status, statusText]
+      properties:
+        chargeNo: {type: string, maxLength: 32}
+        category: {type: string, enum: [REGISTRATION, DRUG, LAB]}
+        categoryText: {type: string, maxLength: 16, description: 中文分类：挂号费/药品费/检查费/其他费用。}
+        description: {type: string, maxLength: 120}
+        amount: {type: number, format: double}
+        status: {type: string, enum: [UNPAID, PAID, REFUNDED, VOID]}
+        statusText: {type: string, maxLength: 16, description: 中文状态：待缴费/已缴费/已退费/已作废。}
+        paidAt: {type: string, nullable: true}
+      additionalProperties: false
+
+    PaymentBillSummary:
+      type: object
+      required: [payable, paid, count]
+      properties:
+        payable: {type: number, format: double, description: 只统计 UNPAID。}
+        paid: {type: number, format: double, description: 只统计 PAID。}
+        count: {type: integer}
+      additionalProperties: false
+
     # ---------- 检查预约（P0-2）----------
 
     ExamConfig:
@@ -4481,6 +4766,8 @@ components:
         reviewerName: {type: [string, 'null'], description: 报告审核者；未审核为空。}
         examRequestNo: {type: [string, 'null'], description: 关联检查申请号（P0-2 检查预约链路，可空）。}
         referenceRangeNote: {type: [string, 'null'], description: 报告级参考区间说明；项目级参考区间以 items 快照为准。}
+        patientRef: {type: [string, 'null'], description: 归属就诊人；`null` = 历史记录尚未归属（此时必带 degraded=true）。}
+        degraded: {type: boolean, description: 依据历史白名单降级读取时为 true，客户端必须显示归属提示条。}
         isDemo: {type: boolean, description: 演示数据标记；客户端必须显示演示水印。}
       additionalProperties: false
 
@@ -4496,6 +4783,8 @@ components:
         title: {type: string}
         reportType: {type: string, enum: [LAB, IMAGING, CHECKUP, PATHOLOGY, ECG]}
         reportStatus: {type: [string, 'null'], enum: [READY, REVIEWING, PENDING, 'null']}
+        patientRef: {type: [string, 'null'], description: 归属就诊人；`null` = 历史记录降级读取。}
+        degraded: {type: boolean, description: 历史白名单降级读取标记；true 时页面须提示归属未经核验。}
         isDemo: {type: boolean}
         demoNotice: {type: [string, 'null']}
         statusNotice: {type: [string, 'null']}
@@ -5689,6 +5978,91 @@ components:
 
     OkDoctorAvailability:
       allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/DoctorAvailability'}}}]
+
+    # ---------- 就诊人主索引（P3 前置，2026-11-27） ----------
+
+    PatientProfile:
+      type: object
+      required: [patientRef, displayName, status, linkState, version]
+      description: |
+        平台就诊人。**不含 HIS MRN、不含任何哈希**；证件/手机只给掩码。
+        `patientRef` 由服务端生成（`pat-` + UUIDv4），客户端不得解析，日志只记 `sha256(ref)[:16]`。
+      properties:
+        patientRef: {type: string, pattern: '^pat-[0-9a-f]{32}$'}
+        displayName: {type: string, maxLength: 40}
+        relation:
+          type: string
+          enum: [SELF, FAMILY, OTHER]
+          description: 派生字段：`familyMemberId` 为空视为 `SELF`，否则 `FAMILY`；不由客户端写入。
+        familyMemberId: {type: [string, 'null'], maxLength: 64}
+        birthDate: {type: [string, 'null'], format: date}
+        sex: {type: [string, 'null'], enum: [男, 女, 'null']}
+        idMasked: {type: [string, 'null'], description: '证件掩码：12 个星号 + 尾 4 位（如 ************3620）。前 6 位省市区码从未落库，不得回填推测。'}
+        phoneMasked: {type: [string, 'null'], description: 手机掩码（3+4）；无手机为 null。}
+        verificationLevel: {type: string, enum: [NONE, PROFILE, ID_VERIFIED]}
+        status: {type: string, enum: [ACTIVE, ARCHIVED]}
+        linkState:
+          type: string
+          enum: [LINKED, LINKED_PROJECTION_PENDING, PENDING, CONFLICT, ARCHIVED]
+          description: |
+            院内档案关联进度。`LINKED` = 映射投影为 CONFIRMED；`LINKED_PROJECTION_PENDING` =
+            预约行已连但投影待重建（不影响读取，见契约 §3.3 F3）；`PENDING` = 尚未关联；
+            `CONFLICT` = 同名多档待人工裁决（读取报告 409）；`ARCHIVED` = 已归档。
+        version: {type: integer, minimum: 1}
+        created:
+          type: [boolean, 'null']
+          description: 仅创建接口返回：true=本次新建；false=命中「同用户同姓名」既有记录（幂等，不新建）。
+        createdAt: {type: [string, 'null'], format: date-time}
+        updatedAt: {type: [string, 'null'], format: date-time}
+      additionalProperties: false
+
+    PatientCreate:
+      type: object
+      additionalProperties: false
+      required: [displayName]
+      description: 归属字段（userId / ownerUserId / owner）一律不接受，服务端只认令牌。
+      properties:
+        displayName: {type: string, minLength: 1, maxLength: 40}
+        familyMemberId: {type: [string, 'null'], maxLength: 64, description: 必须是当前用户名下的家人，否则 403 `FAMILY_MEMBER_FORBIDDEN`。}
+        birthDate: {type: [string, 'null'], format: date}
+        sex: {type: [string, 'null'], enum: [男, 女, 'null']}
+        idCardNumber:
+          type: [string, 'null']
+          description: 18 位大陆身份证。不通过 GB 11643 校验位 → 422 `INVALID_ID_CARD`；明文不落库、不回显。
+        phone: {type: [string, 'null'], pattern: '^1[3-9][0-9]{9}$', description: 只存哈希 + 掩码。}
+
+    PatientUpdate:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: {type: integer, minimum: 1, description: 乐观锁；不匹配 → 409 `VERSION_CONFLICT`。}
+        displayName: {type: string, minLength: 1, maxLength: 40}
+        birthDate: {type: [string, 'null'], format: date}
+        sex: {type: [string, 'null'], enum: [男, 女, 'null']}
+        idCardNumber: {type: [string, 'null']}
+        phone: {type: [string, 'null'], pattern: '^1[3-9][0-9]{9}$'}
+
+    PatientMapping:
+      type: object
+      required: [linkState, degraded]
+      description: 关联状态摘要。**不含 HIS 侧任何标识**（无 MRN / patientId / 哈希）。
+      properties:
+        linkState: {type: string, enum: [LINKED, LINKED_PROJECTION_PENDING, PENDING, CONFLICT, ARCHIVED]}
+        tier: {type: [string, 'null'], enum: [T1, T2, T3, T4, MANUAL, DEV_ONLY, 'null']}
+        degraded: {type: boolean, description: 是否依赖历史白名单降级读取。}
+        decidedAt: {type: [string, 'null'], format: date-time, description: 人工裁决时间；未裁决为 null。}
+        lastSyncedAt: {type: [string, 'null'], format: date-time, description: 最近一次与 HIS 同步状态的时间。}
+      additionalProperties: false
+
+    OkPatient:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/PatientProfile'}}}]
+
+    OkPatientList:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {type: array, items: {$ref: '#/components/schemas/PatientProfile'}}}}]
+
+    OkPatientMapping:
+      allOf: [{$ref: '#/components/schemas/EnvelopeBase'}, {type: object, required: [data], properties: {data: {$ref: '#/components/schemas/PatientMapping'}}}]
 
 
 x-migration:

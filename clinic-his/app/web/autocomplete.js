@@ -174,6 +174,16 @@
         if (!this.pop.contains(ev.target) && ev.target !== this.input) this._hide();
       };
       document.addEventListener('mousedown', this._docHandler);
+      // 候选层是 position:fixed（避开 .panel 的 overflow:hidden 裁切），
+      // 页面/内部容器滚动或窗口缩放时需跟随输入框；滚出视野则直接收起。
+      this._vpHandler = () => {
+        if (!this._open) return;
+        const r = this.input.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > window.innerHeight) { this._hide(); return; }
+        this._position();
+      };
+      window.addEventListener('scroll', this._vpHandler, true);
+      window.addEventListener('resize', this._vpHandler);
     }
 
     async _query(raw) {
@@ -219,8 +229,26 @@
       this._show();
     }
 
+    /* 按输入框的视口矩形摆放候选层（fixed）：
+       下方空间不足且上方更宽裕时向上弹，避免被窗口底边截断。 */
+    _position() {
+      const r = this.input.getBoundingClientRect();
+      const below = window.innerHeight - r.bottom - 8;
+      const above = r.top - 8;
+      const up = below < 160 && above > below;
+      const space = Math.max(120, up ? above : below);
+      this._maxH = Math.min(VIEW_H, space);
+      this.pop.style.left = Math.max(4, r.left) + 'px';
+      this.pop.style.width = Math.max(180, r.width) + 'px';
+      this.pop.style.maxHeight = this._maxH + 'px';
+      this.pop.style.top = up
+        ? Math.max(4, r.top - this._maxH - 3) + 'px'
+        : (r.bottom + 3) + 'px';
+    }
+
     _show() {
       this._open = true;
+      this._position();
       this.pop.classList.remove('hidden');
       this._render();
     }
@@ -242,7 +270,7 @@
         return;
       }
       const total = n * ITEM_H;
-      this.pop.style.maxHeight = Math.min(VIEW_H, total + 8) + 'px';
+      this.pop.style.maxHeight = Math.min(this._maxH || VIEW_H, total + 8) + 'px';
       const scrollTop = this.pop.scrollTop;
       const viewH = Math.min(VIEW_H, total);
       const from = Math.max(0, Math.floor(scrollTop / ITEM_H) - 4);
@@ -252,13 +280,17 @@
         const { it, label, m } = this._items[i];
         const sub = this.opts.sub(it);
         const hl = m.hl ? highlight(label, m.hl.start, m.hl.end) : esc(label);
-        rows.push(`<div class="ac-item${i === this._sel ? ' sel' : ''}" data-i="${i}"
-          style="top:${i * ITEM_H}px">
+        rows.push(`<div class="ac-item${i === this._sel ? ' sel' : ''}" data-i="${i}">
           <span class="ac-main">${hl}</span><span class="ac-sub">${esc(sub)}</span></div>`);
       }
-      this.pop.innerHTML = `<div class="ac-spacer" style="height:${total}px">${rows.join('')}</div>`;
+      // ⚠️ CSP 是 style-src 'self'（无 unsafe-inline）：HTML 里的行内 style 属性会被丢弃，
+      // 只有 CSSOM（el.style.x=…）生效。候选层的占位高度与行定位因此必须用 style 赋值写，
+      // 否则 spacer 高度恒 0、候选层塌成 2px 边框 —— 表现就是「输入后没有弹窗」。
+      this.pop.innerHTML = `<div class="ac-spacer">${rows.join('')}</div>`;
       this.spacer = this.pop.querySelector('.ac-spacer');
+      this.spacer.style.height = total + 'px';
       this.pop.querySelectorAll('.ac-item').forEach(el => {
+        el.style.top = (Number(el.dataset.i) * ITEM_H) + 'px';
         el.onmousedown = ev => { ev.preventDefault(); this._pick(Number(el.dataset.i), 'mouse'); };
         el.onmousemove = () => { if (this._sel !== Number(el.dataset.i)) { this._sel = Number(el.dataset.i); this._repaintSel(); } };
       });
@@ -317,6 +349,8 @@
 
     destroy() {
       document.removeEventListener('mousedown', this._docHandler);
+      window.removeEventListener('scroll', this._vpHandler, true);
+      window.removeEventListener('resize', this._vpHandler);
       this.pop.remove();
       const wrap = this.input.parentNode;
       if (wrap && wrap.classList.contains('ac-wrap')) {

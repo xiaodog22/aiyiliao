@@ -74,6 +74,20 @@ public class MockHisClient implements HisClient {
     }
 
     @Override
+    public HisOrderStatus queryOrder(String hisOrderNo) {
+        // mock 没有院内状态机（没有签到/接诊/完成），返回 null 表示「无进度」；
+        // 绝不返回假的 BOOKED/CHECKED_IN —— 那会把平台单错误推进到 CONFIRMED。
+        return null;
+    }
+
+    @Override
+    public HisBill listCharges(String hisOrderNo) {
+        // mock 没有院内收费单：返回空清单（前端显示「暂无费用」），不伪造金额
+        return new HisBill(hisOrderNo, java.util.List.of(),
+                BigDecimal.ZERO, BigDecimal.ZERO);
+    }
+
+    @Override
     public synchronized HisChargeResult createDemoCharge(HisChargeCommand command) {
         String refKey = command.refType() + ":" + command.refId();
         MockCharge existing = chargesByRef.get(refKey);

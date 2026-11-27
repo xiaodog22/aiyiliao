@@ -36,8 +36,10 @@ ALLOWED_EXT: dict[str, str] = {
 # 文件名白名单：允许 `icons/x.png` 形式的子目录（2026-11-04 校正）。
 # 原实现只服务**根目录单层**，而 deploy/resources 下实际已有 icons/ content/ img/ nav/ 四个子目录，
 # 这些素材走网关通道一律 404（与目录 README 的「13 张根目录图」旧假设一起失效）。
-# 每段仍限 [a-z0-9._-] 且必须以字母数字开头：禁空段、禁 `..`、禁绝对路径、禁反斜杠。
-_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)*$")
+# 每段限字母数字 . _ - 且必须以字母数字开头：禁空段、禁 `..`、禁绝对路径、禁反斜杠。
+# 2026-11-27：放开**大小写**（原 `[a-z0-9]` 会把 resources/icons 里既有的
+# `arrowUpRight.png` / `fileText.png` 等 camelCase 图标全部判 404）；扩展名白名单仍只认小写。
+_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*$")
 MAX_NAME_LEN = 200
 
 # 单文件上限：公开素材只放图片类小文件；超限视为配置错误（404，不敞开流式）。
@@ -49,7 +51,8 @@ def try_serve(root: Path, filename: str, if_none_match: Optional[str]) -> Option
     if len(filename) > MAX_NAME_LEN or ".." in filename or not _NAME_RE.match(filename):
         return None
 
-    media_type = ALLOWED_EXT.get(Path(filename).suffix.lower())
+    # 扩展名**严格小写**匹配（不做 lower）：`x.PNG` 一律拒，保持白名单语义可被判死。
+    media_type = ALLOWED_EXT.get(Path(filename).suffix)
     if media_type is None:
         return None
 

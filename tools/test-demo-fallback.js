@@ -16,6 +16,12 @@ const fs = require('fs')
 
 const ROOT = path.join(__dirname, '..')
 const MP = path.join(ROOT, 'miniprogram')
+
+// 干净 clone 没有 config/env.local.js：config/env.js 会落到 production 档并在**模块加载期**
+// fail-closed（缺 HTTPS 网关直接 throw）。与 tools/test-fe.js 同口径，先声明本次是 Node 单测，
+// 让 env.js 走 local 档。小程序运行时没有 process 对象，该分支不影响线上（BUG-003）。
+process.env.WB_NODE_TEST = '1'
+
 let PASS = 0
 let FAIL = 0
 const fails = []
@@ -81,6 +87,12 @@ global.App = (cfg) => { appCfg = cfg }
 global.getApp = () => appInst
 global.getCurrentPages = () => [{ route: 'pages/home/home' }]
 require(path.join(MP, 'app.js'))
+
+// devLoginKey 只从本地未入库的 env.local.js 注入，干净 clone 下为空串 —— 手输登录会被
+// services/user.js 的前置校验拦下（BAD_SPEC），D-05 永远拿不到 dev 派生 code。
+// 这里在测试进程内注入固定假值（不是任何环境在用的真实闸门值；桩网络不会真的发给服务端）。
+const ENV = require(path.join(MP, 'config', 'env.js'))
+if (!ENV.devLoginKey) ENV.devLoginKey = 'e2e-fixture-dev-login-key'
 
 function bindApp(cfg) {
   const inst = { globalData: cfg.globalData, MOCK: cfg.MOCK }

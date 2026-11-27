@@ -5,6 +5,8 @@ import com.wechar.biz.common.CurrentUserContext;
 import com.wechar.biz.common.Envelope;
 import com.wechar.biz.common.IdempotencyKeys;
 import com.wechar.biz.common.RequestIds;
+import com.wechar.biz.payment.dto.PaymentBillData;
+import com.wechar.biz.payment.dto.PaymentBillPayRequest;
 import com.wechar.biz.payment.dto.PaymentConfigData;
 import com.wechar.biz.payment.dto.PaymentCreateRequest;
 import com.wechar.biz.payment.dto.PaymentDemoCallbackRequest;
@@ -66,6 +68,37 @@ public class PaymentController {
     public Envelope<PaymentOrderData> get(@PathVariable String orderNo) {
         String userId = authService.ensureUser(currentUserContext.currentUserId());
         return Envelope.ok(RequestIds.current(), paymentService.get(userId, orderNo));
+    }
+
+    /**
+     * 费用清单（P2，2026-11-27）：该预约在院内的全部费用单（挂号费 + 诊中处方/检查）。
+     * 金额与状态以院内侧 charges 为准，平台只做中文映射与汇总。
+     */
+    @GetMapping("/bill")
+    public Envelope<PaymentBillData> bill(
+            @org.springframework.web.bind.annotation.RequestParam("appointmentId") String appointmentId) {
+        String userId = authService.ensureUser(currentUserContext.currentUserId());
+        return Envelope.ok(RequestIds.current(), paymentService.bill(userId, appointmentId));
+    }
+
+    /**
+     * 缴纳单笔院内侧费用（演示态，不调起微信支付）。
+     * 前置：该单属于当前用户的预约且未缴费；HIS 未置 PAID 一律 503。
+     */
+    /**
+     * 缴纳单笔院内侧费用（演示态，不调起微信支付）。
+     * 前置：该单属于当前用户的预约且未缴费；HIS 未置 PAID 一律 503。
+     * 幂等：`Idempotency-Key` 必填（与其它写接口同口径）；真正的重复保护来自
+     * 「只允许 UNPAID 缴」+ HIS `payDemoCharge` 的重放语义，键本身不做去重表。
+     */
+    @PostMapping("/bill/pay")
+    public Envelope<PaymentBillData> payBill(
+            @RequestHeader(value = IdempotencyKeys.HEADER, required = false) String idempotencyKey,
+            @Valid @RequestBody PaymentBillPayRequest request) {
+        IdempotencyKeys.require(idempotencyKey);
+        String userId = authService.ensureUser(currentUserContext.currentUserId());
+        return Envelope.ok(RequestIds.current(),
+                paymentService.payBillItem(userId, request.appointmentId(), request.chargeNo()));
     }
 
     @PostMapping("/orders/{orderNo}/demo-pay")

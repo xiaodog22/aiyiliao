@@ -34,6 +34,28 @@
       </view>
     </view>
 
+    <!-- 费用清单（P2）：院内侧 charges 直出，金额/状态均以后端为准 -->
+    <view class="pay-bill" wx:if="{{billLoading || billError || (bill && bill.count)}}">
+      <view class="pay-bill-head">
+        <text class="pay-bill-title">费用清单</text>
+        <text class="pay-bill-sum" wx:if="{{bill && bill.count}}">待缴 ¥{{bill.payableText}} · 已缴 ¥{{bill.paidText}}</text>
+      </view>
+      <view class="pay-bill-tip" wx:if="{{billLoading}}">正在读取院内费用…</view>
+      <view class="pay-bill-tip" wx:elif="{{billError}}">{{billError}}</view>
+      <view class="pay-bill-item" wx:for="{{bill.items}}" wx:key="chargeNo">
+        <view class="pay-bill-main">
+          <text class="pay-bill-cat">{{item.categoryText}}</text>
+          <text class="pay-bill-desc">{{item.description}}</text>
+        </view>
+        <view class="pay-bill-right">
+          <text class="pay-bill-amt">¥{{item.amountText}}</text>
+          <text class="pay-bill-st {{item.payable ? 'is-unpaid' : 'is-paid'}}">{{item.statusText}}</text>
+          <button wx:if="{{item.payable}}" class="pay-bill-btn" size="mini"
+                  data-charge="{{item.chargeNo}}" bindtap="onPayBillTap" disabled="{{paying}}">模拟缴费</button>
+        </view>
+      </view>
+    </view>
+
     <view wx:if="{{order.status === 'PAID'}}" class="pay-success">
       <view class="pay-success-title">{{order.localDemo ? '模拟支付成功（本地演示，未真实扣款）' : (successMessage || '演示支付成功（未真实扣款）')}}</view>
       <view class="pay-success-note">{{order.localDemo ? '仅本地页面状态，不写订单、不产生真实扣款。' : '本页未发起微信支付，也未产生任何真实扣款。'}}</view>

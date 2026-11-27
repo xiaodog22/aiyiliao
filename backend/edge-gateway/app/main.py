@@ -370,7 +370,7 @@ def create_app(settings: Optional[GateSettings] = None) -> FastAPI:
 
     # ---------- 静态素材公开通道（前端适配：素材经后端传递，docs/v4/09 §4.2） ----------
 
-    @app.api_route("/api/gw/assets/{filename}", methods=["GET", "HEAD"])
+    @app.api_route("/api/gw/assets/{filename:path}", methods=["GET", "HEAD"])
     async def gateway_asset(request: Request, filename: str):
         """把 `backend/deploy/resources/` 中的**白名单图片**经统一入口对外分发。
 

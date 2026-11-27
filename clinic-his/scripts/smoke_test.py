@@ -41,6 +41,10 @@ SMOKE_CHANGED_PASSWORD = "SmokeChanged@2026"
 passed = 0
 failed = 0
 
+# 种子编制（clinic-his/app/seed.py 的 D001~D010，10 名医师）。种子增减时同步这里，
+# 避免断言随演示数据漂移（BUG-002：原断言 5~8 与实际 10 名长期不一致）。
+EXPECTED_DOCTORS = 10
+
 
 def check(name: str, condition: bool, detail: str = "") -> None:
     global passed, failed
@@ -193,7 +197,7 @@ def main() -> int:
 
         staff = ok_data(*call("GET", "/api/v1/staff?role=DOCTOR", token=admin_token), "医师列表")
         doctor_row = next((s for s in staff if s["staffNo"] == "D001"), None)
-        check("医师编制 5~8 人", 5 <= len(staff) <= 8, f"got {len(staff)}")
+        check("医师编制 " + str(EXPECTED_DOCTORS) + " 人", len(staff) == EXPECTED_DOCTORS, f"got {len(staff)}")
         check("医生 D001 存在", doctor_row is not None)
         nurses = ok_data(*call("GET", "/api/v1/staff?role=NURSE", token=admin_token), "护士列表")
         ph_nurses = ok_data(*call("GET", "/api/v1/staff?role=PUBLIC_HEALTH", token=admin_token), "公卫护士")
@@ -769,8 +773,21 @@ def main() -> int:
         if not open8:
             raise SystemExit("无可用号源，无法执行加固测试")
 
-        def reg_and_pay(pid, slot_id, label):
-            r = ok_data(*call("POST", "/api/v1/registrations", token=admin_token, body={
+        # BUG-002：同一患者 600 秒内最多 3 单（registration.py 频控）。第 8 节还要为
+        # 体征/叫号两处各挂一次号，若继续复用 patient2 会被 429 打断（且第 4 笔本该
+        # 校验「停用医生」的请求会先撞限流）。这里另建一名患者，配额互不干扰。
+        patient8 = ok_data(*call("POST", "/api/v1/patients", token=admin_token, body={
+            "name": "冒烟加固" + stamp, "gender": "女", "birthDate": "1988-11-11",
+            "idCard": "440101198811114567", "phone": "13800001111",
+            "address": "演示地址", "allergy": "无", "chronicTags": [],
+        }), "新建患者加固")
+
+        def reg_and_pay(pid, slot_id, label, operator=None):
+            # 挂号操作人默认用收费窗口（admin04，具备 reg.write）：同一操作人 60 秒内最多 8 单，
+            # 第 8 节若全用 admin06 会把配额耗光 → 「叫号甲挂号」429（BUG-002 实测）。
+            # 需要留痕在管理员名下时显式传 admin_token。
+            reg_token = operator or cashier_token
+            r = ok_data(*call("POST", "/api/v1/registrations", token=reg_token, body={
                 "patientId": pid, "slotId": slot_id, "source": "ONSITE"}), label + "挂号")
             rows = ok_data(*call("GET", f"/api/v1/charges?status=UNPAID&date={today}",
                                  token=admin_token), label + "账单")
@@ -794,21 +811,21 @@ def main() -> int:
         ok_data(*call("PATCH", f"/api/v1/staff/{doc2['id']}", token=admin_token,
                       body={"status": "DISABLED"}), "停用医生")
         status, payload = call("POST", "/api/v1/registrations", token=admin_token, body={
-            "patientId": patient2["id"], "slotId": open_d2[0]["id"], "source": "ONSITE"})
+            "patientId": patient8["id"], "slotId": open_d2[0]["id"], "source": "ONSITE"})
         check("停用医生不可挂号（400 DOCTOR_UNAVAILABLE）",
               status == 400 and payload.get("code") == "DOCTOR_UNAVAILABLE", f"{status} {payload}")
         ok_data(*call("PATCH", f"/api/v1/staff/{doc2['id']}", token=admin_token,
                       body={"status": "ACTIVE"}), "恢复医生")
 
         # M-7 分诊体征超范围拒绝
-        reg7, _ = reg_and_pay(patient2["id"], open8[0]["id"], "体征测试")
+        reg7, _ = reg_and_pay(patient8["id"], open8[0]["id"], "体征测试")
         status, payload = call("POST", f"/api/v1/registrations/{reg7['id']}/checkin",
                                token=nurse_token, body={"temperature": 55, "systolic": 120, "diastolic": 78})
         check("体征超范围被拒（400 INVALID_VITALS）",
               status == 400 and payload.get("code") == "INVALID_VITALS", f"{status} {payload}")
 
         # 危急值报告 → 工作台告警 → 报告回写（同一就诊闭环）
-        reg6, charge6 = reg_and_pay(patient["id"], open8[0]["id"], "闭环")
+        reg6, charge6 = reg_and_pay(patient["id"], open8[0]["id"], "闭环", admin_token)
         checkin_ok(reg6["id"], "闭环")
         visit4 = ok_data(*call("POST", "/api/v1/visits", token=doctor_token,
                                body={"registrationId": reg6["id"]}), "接诊闭环")
@@ -901,7 +918,7 @@ def main() -> int:
 
         # M-11 已叫号再叫被拒 / force 自动过号
         reg8, _ = reg_and_pay(patient["id"], open8[0]["id"], "叫号甲")
-        reg9, _ = reg_and_pay(patient2["id"], open8[0]["id"], "叫号乙")
+        reg9, _ = reg_and_pay(patient8["id"], open8[0]["id"], "叫号乙")
         checkin_ok(reg8["id"], "叫号甲")
         checkin_ok(reg9["id"], "叫号乙")
         called1 = ok_data(*call("POST", "/api/v1/queue/call-next", token=nurse_token,

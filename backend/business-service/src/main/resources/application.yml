@@ -149,6 +149,16 @@ app:
       # 下面两个 fallback 只在 demo=true 的演示联调允许使用，demo=false 不得回落。
       fallback-doctor-id: ${APP_HIS_HTTP_FALLBACK_DOCTOR_ID:D001}
       fallback-department-id: ${APP_HIS_HTTP_FALLBACK_DEPARTMENT_ID:QK}
+    # 患者主索引（P3 病历/报告前置，2026-11-27）：
+    #   patient-index.enabled 默认 false —— 关闭时 /api/v1/patients* 全部 404，
+    #   预约与报告继续走旧链路（按姓名派生），这是本功能的回滚手段。
+    #   patient-hash-salt 必须与 HIS 侧 CLINIC_PATIENT_HASH_SALT **同一值**：
+    #   证件号哈希是 sha256(salt + 号码)，盐不同则跨端 T1 匹配永远命中不了
+    #   （平台 user_extended.id_card_hash 是无盐 sha256，与此不是同一哈希空间，禁止互比）。
+    #   未配置盐时不写 id_card_hash（宁可不匹配，也不写一个对不上的值），其余功能不受影响。
+    patient-index:
+      enabled: ${APP_PATIENT_INDEX_ENABLED:false}
+    patient-hash-salt: ${APP_HIS_PATIENT_HASH_SALT:}
   # 护士站终端令牌（2026-11-19）：仅用于床位申请审批端点，不携带患者身份。
   # 未配置时 /api/v1/nurse/bed-applications 返回 503（fail-closed），不会退化成无鉴权审批。
   # 生产应由独立护士账号 + RBAC 替换（见 docs/clinic-his-integration/02）。

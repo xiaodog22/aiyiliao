@@ -60,6 +60,10 @@ jobs:
             echo '::error::project.private.config.json 不得入库（L8）'
             exit 1
           fi
+      # P0-01：发版档位硬门禁。干净 clone 无 env.local.js 时必须落 production 且加载期
+      # fail-closed（缺 HTTPS 网关）；BUG-004 修复后本步骤在 CI 可直接为绿，防止再次假红。
+      - name: 发版档位硬门禁（check-build-env）
+        run: node tools/check-build-env.js
 
   frontend:
     name: 前端静态检查 + 逻辑测试

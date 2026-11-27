@@ -10,6 +10,12 @@
  *   python tools/build-icon-colors.py --force    # 全部重生成
  *   ⚠️ 新增彩色变体后，必须在本文件登记键名，否则 <image src="{{icons.x}}"> 取到 undefined。
  *
+ * 未进主包的图标（2026-11-27）：14 个无页面引用的新增变体已移出包体，
+ * PNG 归档在 backend/deploy/resources/icons/，经网关公开通道
+ * GET {gateway}/api/gw/assets/icons/<file> 分发（白名单 + ETag + 1 天缓存）。
+ * 需要用到时走 utils/icons-remote.js 的 url(key) 按需取，**不要**在这里登记本地路径
+ * （登记了却删了文件 = 运行时 <image> 裂图）。
+ *
  * 说明：微信 <image> 与 tabBar 不支持 SVG，也不支持给 PNG 着色（无 tintColor），
  *       所以「同形状不同颜色」只能预先生成多个 PNG 文件。
  * 用法：<image src="{{icons.home}}" class="ic-md" /> · 深色底用 *Gray / *White / 彩色变体

@@ -84,11 +84,63 @@ function refund(orderNo, reason, opts) {
   }).then(normalizeOrder)
 }
 
+/* ------------------------------------------------ 费用清单（P2，2026-11-27） */
+
+function normalizeBill(data) {
+  const items = Array.isArray(data && data.items) ? data.items : []
+  const sum = (data && data.summary) || {}
+  return {
+    appointmentId: String((data && data.appointmentId) || ''),
+    hisOrderNo: (data && data.hisOrderNo) || '',
+    items: items.map((it) => {
+      const amount = Number(it.amount) || 0
+      return {
+        chargeNo: String(it.chargeNo || ''),
+        categoryText: String(it.categoryText || '其他费用'),
+        description: String(it.description || ''),
+        amount,
+        amountText: amount.toFixed(2),
+        status: String(it.status || ''),
+        statusText: String(it.statusText || ''),
+        paidAt: it.paidAt || '',
+        payable: String(it.status || '') === 'UNPAID'
+      }
+    }),
+    payableText: (Number(sum.payable) || 0).toFixed(2),
+    paidText: (Number(sum.paid) || 0).toFixed(2),
+    count: items.length
+  }
+}
+
+/**
+ * 院内侧费用清单：挂号费 + 就诊过程中开立的处方/检查。
+ * 金额与状态一律以后端（院内侧 charges）为准，前端不做任何计算。
+ */
+function getBill(appointmentId, opts) {
+  const o = opts || {}
+  return get(API.PAY_BILL, { appointmentId: String(appointmentId || '') },
+    { timeout: o.timeout || 15000 }).then(normalizeBill)
+}
+
+/** 缴纳单笔费用（演示态，不调起微信支付；金额由后端按院内侧账单确定）。 */
+function payBill(appointmentId, chargeNo, opts) {
+  const o = opts || {}
+  return post(API.PAY_BILL_PAY, {
+    appointmentId: String(appointmentId || ''),
+    chargeNo: String(chargeNo || '')
+  }, {
+    timeout: o.timeout || 20000,
+    idempotencyKey: o.idempotencyKey || newIdempotencyKey()
+  }).then(normalizeBill)
+}
+
 module.exports = {
   getConfig,
   createOrder,
   getOrder,
   demoPay,
   refund,
+  getBill,
+  payBill,
   newIdempotencyKey
 }
