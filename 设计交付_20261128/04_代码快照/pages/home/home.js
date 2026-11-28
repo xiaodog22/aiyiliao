@@ -1,0 +1,497 @@
+/**
+ * pages/home —— 患者端首页（V1.16 版式对齐设计参考图）
+ * 登录守卫：未登录强制回登录页；医生角色不允许进入患者首页
+ */
+const app = getApp()
+const icons = require('../../utils/icons.js')
+// 科普内容库在主包（utils/），视频本体在分包 packageContent（避免撑爆 2MB 主包）
+const KB = require('../../utils/knowledge-kb.js')
+// 预约日期徽章解析（VF-11）：纯函数放 utils/ 才能被 tools/test-apt-date.js 单测
+const { parseAptDate } = require('../../utils/apt-date.js')
+// 预约状态枚举 → 中文（契约英文枚举，历史页面写死中文已失效）
+const { aptDisplayStatus } = require('../../utils/apt-status.js')
+// 时间展示：契约 ISO Instant → 设备本地日期/时间
+const { fmtLocalDateTime } = require('../../utils/datetime.js')
+// 首页汇总走后端契约（GET /api/v1/home/summary）；禁止再恒定展示 app.MOCK.HOME
+const homeService = require('../../services/home.js')
+const userService = require('../../services/user.js')
+// 远端素材清单（服务端「清单下发绝对 HTTPS URL」→ 页面远端优先、包内兜底）
+const resource = require('../../services/resource.js')
+const ENV = require('../../config/env.js')
+
+/* ============================================================
+   首页配置 —— 改首页内容只动这里，不用碰 WXML。
+   ⚠️ 改动结构后请同步 tools/preview-pad-pages.js 的首页静态骨架（预览/实测靠它）。
+   · tint：图标底色调 blue/green/amber/purple/red（样式见 home.wxss 的 .hm-tile-*）
+   · key ：点击去向，统一由 _route() 解析 —— 页面路径不散落在 WXML 里
+   ============================================================ */
+
+/* 设计交付素材（tools/build-home-assets.py 从交付图裁切/抠圆生成）：
+   · doctor  小安 3D 头像（圆形透明底）        · banner 智能导诊 banner 的医院插画
+   · svc-*   常用服务 8 个图标（自带浅蓝圆底）
+   ⚠️ 全部必须在**主包** assets/home/ 下：首页在主包，引用分包资源会在分包未下载时裂图。 */
+const A = {
+  doctor: '/assets/home/ai-doctor.png',
+  banner: '/assets/home/banner-hospital.jpg',
+  svc: '/assets/home/svc-'
+}
+
+/* 四宫格与 V4 设计稿 02-首页与Tab（_atlas.html quad）一致：
+   导诊=薰衣草紫 / 预约=雾蓝 / 问诊=薄荷绿 / 报告=蜜桃橙（底板 tint 配同族字形色） */
+const QUAD = [
+  { key: 'triage', icon: 'stethoscope', tint: 'purple', title: '智能导诊', desc: '智能推荐科室医生' },
+  { key: 'appoint', icon: 'calendar', tint: 'blue', title: '预约挂号', desc: '预约专家门诊' },
+  { key: 'consult', icon: 'chatMint', tint: 'mint', title: '在线问诊', desc: '图文电话咨询' },
+  { key: 'reports', icon: 'fileText', tint: 'amber', title: '报告查询', desc: '检验检查结果' }
+]
+
+/* 常用服务（4 列 × 2 行）—— 图标走素材，命名约定 svc-<key>.png（改 key 就要改文件名） */
+const SERVICES = [
+  { key: 'triage', name: '智能导诊' },
+  { key: 'doctor', name: '找医生' },
+  { key: 'dept', name: '找科室' },
+  { key: 'archive', name: '健康档案' },
+  { key: 'checkup', name: '检查预约' },
+  { key: 'care', name: '居家护理' },
+  { key: 'advice', name: '健康咨询' },
+  { key: 'more', name: '更多服务' }
+].map((it) => Object.assign(it, { img: A.svc + it.key + '.png' }))
+
+/* 一句话症状快选词（与参考图一致）：
+   点了直接进导诊页并自动出结论 —— triage 页支持 ?text= 预填，见 _route('triage', text)。 */
+const QUICK_SYMPTOMS = ['咳嗽', '头晕', '睡眠不好']
+
+/* 大字档副问候语（设计稿 08-适老化首页）：固定页面文案，不伪造后端问候 */
+const SUB_GREETING_LARGE = '今天感觉怎么样？'
+
+/* 纯问候句：主句已经说了"姓名 + 时段问候"，后端 greeting 若也是这类，
+   副句再说一遍就是同一句话重复两次（2026-11-16 用户反馈）。
+   只有它承载额外信息（如「夜深了，注意休息」）时，才值得占一行。 */
+const PURE_GREETING = /^(早上好|上午好|中午好|下午好|傍晚好|晚上好|晚安|夜深了|您好|你好|哈喽|hello)[。！!～~，,\s]*$/i
+
+/** 时段问候：按本地时间算，不等网络也不依赖后端格式，保证「姓名，××好！」永远成立 */
+function periodGreeting(now) {
+  const h = (now || new Date()).getHours()
+  if (h < 5) return '夜深了'
+  if (h < 9) return '早上好'
+  if (h < 11) return '上午好'
+  if (h < 13) return '中午好'
+  if (h < 18) return '下午好'
+  if (h < 23) return '晚上好'
+  return '夜深了'
+}
+
+/* 「更多服务」/「全部服务」共用的动作面板。
+   项目里没有"服务大全"页，与其编造跳转目标，不如把真实入口列出来给用户选。 */
+const MORE_MENU = ['智能导诊', '预约挂号', '院内导航', '健康科普', 'AI 问诊', 'AI 养生']
+const MORE_ROUTE = ['triage', 'appoint', 'nav', 'knowledge', 'consult', 'health']
+
+/* 后端/页面都还没有的服务 → 给中文说明，不做假跳转（内容红线：不许伪造） */
+const NOT_READY = { care: '居家护理' }
+
+/** 把配置里的图标键解析成真实 PNG 路径（WXML 里不能写 icons[item.icon]） */
+function withIcon(list) {
+  return list.map((it) => Object.assign({}, it, { iconPath: icons[it.icon] || icons.info }))
+}
+
+Page({
+  data: {
+    theme: 'standard',
+    patient: { name: '' },
+    // 主问候语（姓名 + 时段问候）：时段由本地时间算，姓名缺失时退化为「晚上好！」，不出现「，晚上好！」
+    greetText: periodGreeting() + '！',
+    // 副句：标准档=后端 greeting（仅当它不重复主句时）；大字档=设计稿 08 固定文案
+    subText: '',
+    // 品牌行右侧的小安头像（复用 A.doctor，主包 assets/home）
+    aiAvatar: A.doctor,
+    home: { greeting: '', appointment: {} },
+    // 是否展示预约动态卡（数据源=后端 NEXT_APPOINTMENT 块；无数据/未返回时不伪造）
+    hasApt: false,
+    // 汇总加载/失败态：没有它，生产档弱网下"没挂号"和"加载失败"长得一模一样（审查 P2-07）
+    aptLoading: true,
+    aptError: '',
+    // 预约日期徽章（VF-11）：解析成功 = {mon,day,week}；失败 = null → WXML 回退整行文本
+    aptDate: null,
+    // 在线问诊接单提示（D6）：{ id, accepted, title, sub, ack }；null = 不渲染
+    consultNotice: null,
+    quad: withIcon(QUAD),
+    services: SERVICES,
+    quickSymptoms: QUICK_SYMPTOMS,
+    // 开发/演示档：常用服务下方露出「模拟支付」直达，生产构建不渲染
+    demoEnabled: ENV.legacyManualLoginEnabled,
+    tip: null,
+    kbVideos: [],
+    icons,
+    A
+  },
+
+  onShow() {
+    // 登录守卫
+    const role = app.globalData.role
+    if (!role) {
+      wx.reLaunch({ url: '/pages/auth/login/login' })
+      return
+    }
+    if (role === 'doctor') {
+      wx.reLaunch({ url: '/pages/doctor/workbench/workbench' })
+      return
+    }
+    const theme = app.globalData.theme || 'standard'
+    // 适老/超大字档：问候与副问候按设计稿 08（「您好」+「今天感觉怎么样？」）
+    const isLarge = theme === 'large' || theme === 'xlarge'
+    // 自绘 TabBar 高亮当前项（自动适配标准4项/适老3项）
+    if (typeof this.getTabBar === 'function' && this.getTabBar()) {
+      this.getTabBar().selectByPath('/pages/home/home')
+    }
+    // 患者信息只信登录下发的全局态；演示兜底仅在 MOCK_FALLBACK 档（生产档不留固定前端数据）
+    const patient = Object.assign({}, app.globalData.user || (ENV.MOCK_FALLBACK ? app.MOCK.PATIENT : { name: '' }))
+    // 头像兜底：登录态用户对象可能缺 avatarText，取姓名首字，避免空圆
+    if (!patient.avatarText) patient.avatarText = (patient.name || '我').slice(0, 1)
+    this.setData({
+      theme,
+      // D-10：高对比开关映射到根节点 class（原来只在设置页生效，其它页无反应）
+      hc: !!app.globalData.highContrast,
+      patient,
+      // 主问候语：姓名 + 时段问候合成一句（「张三，晚上好！」）。
+      // 时段用本地时间算：不等网络、不受后端文案格式影响，避免出现「张三，！这种破句」。
+      // 大字档沿用设计稿 08 的「您好」，不含姓名（适老化首屏字号更大，姓名单独成句会换行）。
+      greetText: isLarge ? '您好' : (patient.name ? patient.name + '，' + periodGreeting() + '！' : periodGreeting() + '！'),
+      subText: isLarge ? SUB_GREETING_LARGE : '',
+      // ⚠️ 首页属于主包，**不能引用分包 packageContent 内的封面图**（分包未下载时会裂图），
+      // 所以这里只取图标 + 文字；封面与视频本体在详情/列表页（同包）里用。
+      kbVideos: KB.VIDEOS.map((v) => ({
+        id: v.id,
+        title: v.title,
+        durationSec: v.durationSec,
+        iconPath: icons[v.icon] || icons.video
+      }))
+    })
+    // 小贴士只在首次进入时定一条；用户点过"换一条"后再回到首页不重置（否则白点）
+    if (!this.data.tip) this._tipAt(0)
+    // 首页汇总（问候语 + 预约动态）每次 onShow 刷新：新预约提交后回首页立即能看到
+    this._loadSummary()
+    // 在线问诊接单状态（D6）：待接单/已接单提示随 onShow 同步
+    this._loadConsultNotice()
+    // 远端素材每次 onShow 重新解析：清单由 app.js 冷启动时异步刷新，
+    // 首次进入时可能还没到（此时仍是包内路径），回到本页即自动切到远端。
+    this._applyRemoteAssets()
+  },
+
+  /* ==================== 远端素材（清单远端优先 → 包内兜底）==================== */
+  /**
+   * 把 A.banner / A.doctor 换成清单下发的绝对 HTTPS（若已就绪）。
+   *
+   * 为什么不做成"一次性初始化"：`app.js` 的 `resource.refreshManifest()` 是异步且静默的，
+   * 冷启动首屏几乎一定拿不到清单。用 onShow 重试是最省事的收敛方式——
+   * 拿到就切远端，拿不到继续用包内图，**任何时刻都不会裂图**。
+   * 兜底值取自常量 A（包内路径），不是 `this.data.A`（可能已被远端覆盖）。
+   */
+  _applyRemoteAssets() {
+    const remote = {
+      banner: resource.resolveResource('home.banner-hospital', A.banner),
+      doctor: resource.resolveResource('home.ai-doctor', A.doctor)
+    }
+    const cur = this.data.A || {}
+    if (cur.banner === remote.banner && cur.doctor === remote.doctor) return
+    this.setData({ A: Object.assign({}, cur, remote) })
+  },
+
+  /**
+   * 远端图加载失败 → 回退包内素材（不显示灰块）。
+   * `<image>` 没有"自动重试"能力，binderror 是唯一可观测的失败信号。
+   */
+  onBannerError() {
+    if (this.data.A && this.data.A.banner !== A.banner) {
+      this.setData({ 'A.banner': A.banner })
+    }
+  },
+
+  /* ==================== 首页汇总（契约 GET /api/v1/home/summary）==================== */
+  /**
+   * 问候语与预约动态全部来自后端；失败时：
+   *   - 开发档（MOCK_FALLBACK=true）→ 演示数据兜底，演示流程不中断；
+   *   - 生产档 → 空态（"暂无待就诊预约"），绝不展示伪造数据。
+   */
+  _loadSummary() {
+    // 每次进入都先回到"加载中"：预约卡不再从上一屏数据直接闪成空态
+    if (!this.data.aptLoading) this.setData({ aptLoading: true, aptError: '' })
+    homeService.getSummary()
+      .then((s) => this._applySummary(s))
+      .catch(() => this._applySummaryFailed())
+  },
+
+  /** 失败态的重试入口（生产档空态上那颗「点击重试」按钮） */
+  onRetrySummary() {
+    this._loadSummary()
+  },
+
+  /** 后端响应成功 → 以响应为准（无 NEXT_APPOINTMENT 块 = 无待就诊预约 → 空态，不塞演示数据） */
+  _applySummary(summary) {
+    const blk = summary && homeService.blockOf(summary, 'NEXT_APPOINTMENT')
+    const a = (blk && blk.status !== 'unavailable' && blk.nextAppointment) || null
+    let apt = null
+    if (a) {
+      const when = fmtLocalDateTime(a.startTime)
+      apt = {
+        dept: a.departmentName || '',
+        doctor: a.doctorName || '',
+        date: when.date,
+        time: when.time,
+        place: a.location || '',
+        // D-06：过期单不能还写「待就诊」（首页是最高频入口，误导性最强）
+        status: aptDisplayStatus(a.status, a.startTime, a.endTime)
+      }
+    }
+    const greeting = (summary && summary.greeting) || ''
+    this.setData({
+      home: { greeting, appointment: apt || {} },
+      subText: this._subTextOf(greeting),
+      hasApt: !!apt,
+      aptLoading: false,
+      aptError: '',
+      aptDate: apt ? parseAptDate(apt.date) : null
+    })
+  },
+
+  /**
+   * 副句取值：大字档固定设计稿文案；标准档只有后端 greeting "说了新东西"时才展示。
+   *
+   * 为什么不再无条件展示 greeting：主句已经是「姓名 + 时段问候」，
+   * 而后端 greeting 常常就是「晚上好」「您好」这类纯问候 —— 两行一起渲染，
+   * 用户看到的就是「张三，您好！」下面再来一句「晚上好」，同一句问候说两遍。
+   * 所以纯问候一律不占位，只有承载额外信息的文案（「夜深了，注意休息」）才展示。
+   */
+  _subTextOf(greeting) {
+    const t = this.data.theme
+    if (t === 'large' || t === 'xlarge') return SUB_GREETING_LARGE
+    const g = (greeting || '').trim()
+    if (!g || PURE_GREETING.test(g)) return ''
+    return g
+  },
+
+  /* ==================== 在线问诊接单提示（D6，2026-11-15）==================== */
+  /**
+   * 「我的就医安排」卡内的问诊提示行。
+   *  - 待接单：会话已创建（患者已提交预约）、医生尚未接单 → 常驻提示；
+   *  - 已接单：提示一次，患者点进会话即按 lastMessageAt 写本地已读；医生有新消息会再次提示。
+   * 只认**指定医生**的图文会话（doctorName 有值）；AI 问诊会话 doctorId 为空，不在此提示。
+   * 失败静默：这是增强信息，不能影响就医安排卡本身的加载/错误态。
+   */
+  _loadConsultNotice() {
+    userService.listMyConsultations()
+      .then((list) => {
+        const arr = Array.isArray(list) ? list : []
+        const c = arr.filter((x) => x && x.id && x.status !== 'CLOSED' && x.doctorName)[0]
+        if (!c) {
+          if (this.data.consultNotice) this.setData({ consultNotice: null })
+          return
+        }
+        const accepted = c.accepting === true
+        const ack = String(c.lastMessageAt || '')
+        const read = wx.getStorageSync('wb_consult_ack_' + c.id) || ''
+        // 已接单且这一版已读过 → 不重复提示
+        if (accepted && read && read === ack) {
+          if (this.data.consultNotice) this.setData({ consultNotice: null })
+          return
+        }
+        const doctorName = c.doctorName || '医生'
+        this.setData({
+          consultNotice: {
+            id: c.id,
+            accepted,
+            ack,
+            title: accepted ? '医生已接单 · 可开始咨询' : '在线问诊 · 等待医生接单',
+            sub: accepted ? '点击进入在线问诊' : doctorName + '接单后可开始对话'
+          }
+        })
+      })
+      .catch(() => { /* 增强信息，失败不打扰 */ })
+  },
+
+  /** 点击问诊提示 → 进入会话；已接单先记已读，避免回首页重复提示 */
+  onConsultNotice() {
+    const n = this.data.consultNotice
+    if (!n || !n.id) return
+    if (n.accepted) wx.setStorageSync('wb_consult_ack_' + n.id, n.ack || '')
+    wx.navigateTo({ url: '/pages/consult/consult?consultationId=' + encodeURIComponent(n.id) })
+  },
+
+  /**
+   * 首页应急提示条：一键拨打 120。
+   * 与导诊页 / 报告页 / 问诊页同口径（`wx.makePhoneCall`，失败退回手动拨号提示）——
+   * 医疗场景里"只提示不拨号"等于把最急的一步留给用户自己找。
+   */
+  onCall120() {
+    wx.makePhoneCall({
+      phoneNumber: '120',
+      fail: () => wx.showToast({ title: '请手动拨打 120', icon: 'none' })
+    })
+  },
+
+  /** 请求失败 → 开发档演示兜底 / 生产档错误态（可重试，不假装"没挂号"） */
+  _applySummaryFailed() {
+    if (ENV.MOCK_FALLBACK) {
+      this.setData({
+        home: app.MOCK.HOME,
+        subText: this._subTextOf(app.MOCK.HOME.greeting),
+        hasApt: true,
+        aptLoading: false,
+        aptError: '',
+        aptDate: parseAptDate((app.MOCK.HOME.appointment || {}).date)
+      })
+    } else {
+      this.setData({
+        home: { greeting: '', appointment: {} },
+        subText: this._subTextOf(''),
+        hasApt: false,
+        aptLoading: false,
+        // 中文说明走页面常量，不回显 err.message（RULE #13）
+        aptError: '就医安排加载失败，请点击重试',
+        aptDate: null
+      })
+    }
+  },
+
+  /* ==================== 入口路由（所有 key 的唯一定义处）==================== */
+  _route(key, text) {
+    switch (key) {
+      case 'triage':
+        // 带 text 时导诊页会自动分析出结论（首页快选词/搜索条走这条）
+        wx.navigateTo({ url: '/pages/triage/triage' + (text ? '?text=' + encodeURIComponent(text) : '') })
+        break
+      case 'appoint':
+      case 'doctor':
+        // appointment 是 tabBar 页（app.json tabBar 第 3 项）：navigateTo 会被微信静默拒绝，
+        // 必须 switchTab（曾实测"点了没反应"）。switchTab 不带参：预选科室走 wb_appoint_dept 缓存。
+        wx.switchTab({ url: '/pages/appointment/appointment' })
+        break
+      case 'dept':
+        wx.navigateTo({ url: '/pages/triage/triage' })
+        break
+      case 'health':
+        // health 已不在 tabBar（现 tab = home/问诊/挂号/我的）→ 只能 navigateTo，switchTab 会失败
+        wx.navigateTo({ url: '/pages/health/health' })
+        break
+      case 'consult':
+      case 'advice':
+        // 在线咨询 = 先选医生，再进入医患图文会话（picker → consult?doctorId=…）
+        wx.navigateTo({ url: '/pages/consult/picker/picker' })
+        break
+      case 'reports':
+        // ⚠️ 口径统一（2026-11-14）：首页「报告查询」原跳健康档案页（health-records），
+        //    与「我的 → 报告查询」跳的电子检查报告列表（profile/reports）不是同一个页面，
+        //    同一入口名两处落地页不同。以「我的」页为准 —— 报告查询 = 报告列表（含状态/检验明细）。
+        wx.navigateTo({ url: '/pages/profile/reports/reports' })
+        break
+      case 'archive':
+        // 「健康档案」才是档案页（health-records）；与上面的「报告查询」区分开，不合并。
+        wx.navigateTo({ url: '/pages/profile/health-records/health-records' })
+        break
+      case 'checkup':
+        // 检查预约（P0-2）：演示排期，页面内明确标注；关闭态由后端 config 统一提示。
+        wx.navigateTo({ url: '/pages/exam/exam' })
+        break
+      case 'care':
+        // 后端与页面都还没有居家护理 → 给中文说明，不做假跳转。
+        wx.showModal({
+          title: NOT_READY[key],
+          content: '该服务正在筹备中，敬请期待。如需居家护理咨询，可先到「健康咨询」留言。',
+          showCancel: false,
+          confirmText: '知道了'
+        })
+        break
+      case 'nav':
+        wx.navigateTo({ url: '/packageNav/pages/nav/nav' })
+        break
+      case 'knowledge':
+        wx.navigateTo({ url: '/packageContent/pages/knowledge/knowledge' })
+        break
+      case 'more':
+        this.onMore()
+        break
+      default:
+        break
+    }
+  },
+
+  // 四宫格 / 常用服务（同一个 handler，靠 data-key 区分）
+  onRoute(e) {
+    this._route(e.currentTarget.dataset.key)
+  },
+
+  // 更多服务 / 全部服务：列出真实入口
+  onMore() {
+    wx.showActionSheet({
+      itemList: MORE_MENU,
+      success: (res) => this._route(MORE_ROUTE[res.tapIndex]),
+      // 用户自己取消，不提示（不是错误）
+      fail: () => {}
+    })
+  },
+
+  /* ==================== 导诊入口 ==================== */
+  // 搜索条 / 小安头像 / banner：进导诊页
+  goTriage() {
+    this._route('triage')
+  },
+
+  // 症状快选词：带文本进导诊页，进去就出结论
+  onQuickChip(e) {
+    this._route('triage', e.currentTarget.dataset.text)
+  },
+
+  /* ==================== 健康小贴士 ==================== */
+  /** 取第 (当前 + step) 条文章做贴士；用内容库真实文章，不编造健康建议 */
+  _tipAt(step) {
+    const list = KB.ARTICLES || []
+    if (!list.length) {
+      this.setData({ tip: null })
+      return
+    }
+    const n = list.length
+    const next = (((this._tipIndex || 0) + step) % n + n) % n
+    this._tipIndex = next
+    const a = list[next]
+    this.setData({
+      tip: {
+        id: a.id,
+        title: a.title,
+        summary: a.summary,
+        // 参考图科普卡第二行为「呼吸内科 · 约3分钟阅读」——科室取内容库的 source 字段
+        source: a.source || '',
+        readMin: a.readMin,
+        iconPath: icons[a.icon] || icons.shield
+      }
+    })
+  },
+
+  onTipRefresh() { this._tipAt(1) },
+
+  onTipTap() {
+    if (!this.data.tip) return
+    // 详情页在分包 packageContent；首页已配 preloadRule 预下载，首屏点击通常无需等待
+    wx.navigateTo({ url: '/packageContent/pages/detail/detail?id=' + this.data.tip.id })
+  },
+
+  /* ==================== 侧栏（预约动态 / 短视频 / 导航 / 科普）==================== */
+  // 开发/演示档直达模拟收银台：无真实支付/预约也能验证支付页交互（生产构建不渲染入口）
+  goDemoPay() {
+    wx.navigateTo({ url: '/pages/payment/payment' })
+  },
+
+  goRecords() {
+    wx.navigateTo({ url: '/pages/profile/records/records' })
+  },
+
+  goNav() {
+    this._route('nav')
+  },
+
+  goKnowledge() {
+    this._route('knowledge')
+  },
+
+  goVideo(e) {
+    wx.navigateTo({ url: '/packageContent/pages/detail/detail?id=' + e.currentTarget.dataset.id })
+  }
+})

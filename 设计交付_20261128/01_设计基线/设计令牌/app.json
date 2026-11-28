@@ -1,0 +1,156 @@
+{
+  "pages": [
+    "pages/auth/login/login",
+    "pages/auth/consent/consent",
+    "pages/auth/health-consent/health-consent",
+    "pages/auth/patient-login/patient-login",
+    "pages/auth/manual-login/manual-login",
+    "pages/auth/doctor-login/doctor-login",
+    "pages/home/home",
+    "pages/consultation/consultation",
+    "pages/health/health",
+    "pages/profile/profile",
+    "pages/appointment/appointment",
+    "pages/profile/records/records",
+    "pages/profile/health-records/health-records",
+    "pages/profile/reports/reports",
+    "pages/profile/report-detail/report-detail",
+    "pages/profile/consultations/consultations",
+    "pages/profile/messages/messages",
+    "pages/profile/family/family",
+    "pages/profile/personal-info/personal-info",
+    "pages/profile/settings/settings",
+    "pages/profile/voice-settings/voice-settings",
+    "pages/profile/privacy/privacy",
+    "pages/profile/agreement/agreement"
+  ],
+  "subPackages": [
+    {
+      "root": "pages/doctor",
+      "name": "doctor",
+      "pages": [
+        "workbench/workbench",
+        "personal/personal",
+        "consult/consult",
+        "schedule/schedule",
+        "messages/messages"
+      ]
+    },
+    {
+      "root": "pages/triage",
+      "name": "triage",
+      "pages": [
+        "triage",
+        "result/result"
+      ]
+    },
+    {
+      "root": "pages/consult",
+      "name": "consult",
+      "pages": [
+        "consult",
+        "picker/picker"
+      ]
+    },
+    {
+      "root": "pages/exam",
+      "name": "exam",
+      "pages": [
+        "exam"
+      ]
+    },
+    {
+      "root": "pages/payment",
+      "name": "payment",
+      "pages": [
+        "payment"
+      ]
+    },
+    {
+      "root": "pages/tv",
+      "name": "tv",
+      "pages": [
+        "cast/cast"
+      ]
+    },
+    {
+      "root": "packageNav",
+      "name": "nav",
+      "pages": [
+        "pages/nav/nav"
+      ]
+    },
+    {
+      "root": "packageContent",
+      "name": "content",
+      "pages": [
+        "pages/knowledge/knowledge",
+        "pages/detail/detail"
+      ]
+    }
+  ],
+  "preloadRule": {
+    "pages/home/home": {
+      "network": "all",
+      "packages": [
+        "triage"
+      ]
+    },
+    "pages/health/health": {
+      "network": "wifi",
+      "packages": [
+        "packageContent",
+        "packageNav"
+      ]
+    }
+  },
+  "lazyCodeLoading": "requiredComponents",
+  "window": {
+    "navigationBarTitleText": "康诊云",
+    "navigationBarBackgroundColor": "#0B6EF8",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#F3F8FF",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "custom": true,
+    "color": "#8E98B4",
+    "selectedColor": "#7E93CC",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/home/home",
+        "text": "首页",
+        "iconPath": "assets/icons/home_gray.png",
+        "selectedIconPath": "assets/icons/home.png"
+      },
+      {
+        "pagePath": "pages/consultation/consultation",
+        "text": "AI 问诊",
+        "iconPath": "assets/icons/chat_gray.png",
+        "selectedIconPath": "assets/icons/chat.png"
+      },
+      {
+        "pagePath": "pages/appointment/appointment",
+        "text": "预约挂号",
+        "iconPath": "assets/icons/calendar_gray.png",
+        "selectedIconPath": "assets/icons/calendar.png"
+      },
+      {
+        "pagePath": "pages/profile/profile",
+        "text": "我的",
+        "iconPath": "assets/icons/user_gray.png",
+        "selectedIconPath": "assets/icons/user.png"
+      }
+    ]
+  },
+  "style": "v2",
+  "__usePrivacyCheck__": true,
+  "resizable": true,
+  "usingComponents": {
+    "submission-actions": "/components/submission-actions/submission-actions",
+    "offline-bar": "/components/offline-bar/offline-bar"
+  },
+  "sitemapLocation": "sitemap.json"
+}

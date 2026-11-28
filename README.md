@@ -347,6 +347,11 @@ voice.js:156-158 → 101-104 连锁复位，登记 V1.20 T1-1）；3 项登记�
   设计阶段存档（`docs/历史设计规范/1.md~5.md`、`design-output/` 的 UIUX 说明书 V4）**仅本地保留、不入库**：
   `1.md~5.md` 属早期草稿，UIUX V4 是设计交付稿；两者都可能与当前代码有出入，**不作为验收依据**。
   仓库内可点的只有 [`LAYOUT_PLAN.md`](docs/历史设计规范/LAYOUT_PLAN.md)（版式方案档案）。
+- 作品文档（2026-11-28，开发完成后复盘成稿，见 [`设计交付_20261128/`](设计交付_20261128/00_索引.md)）：
+  [`创意设计文档`](设计交付_20261128/03_创意设计/康诊云_创意设计文档_20261128.md)（问题→主张→三方向探索→七关键页→视觉语言→创新对照→价值边界，8.9k 字）与
+  [`设计说明书`](设计交付_20261128/05_说明文档/康诊云_设计说明书_20261128.md)（信息架构→令牌组件→逐页交互与五态→适老化实测→落地映射→附录 A–D，11.6k 字），
+  同名 `.docx` 为排版稿；两份均以 `app.wxss` / `app.json` 与 `main@591ef67` 为事实源，数字不回溯到设计阶段旧稿（旧稿的 36 页 / 18 科室 / `#0B6EF8` 已作废）。
+  核验：`node 设计交付_20261128/06_验证记录/check-docs.js`（FAIL=0 WARN=0）。
 - 架构与契约：[`docs/v4/`](docs/v4/)、[`backend/contracts/business-openapi.yaml`](backend/contracts/business-openapi.yaml)（⚠️ **to-be 目标态契约，不是当前实现事实**，见 AGENTS.md 红线）
 - 数据库：[`数据库表结构总览`](docs/交付文档/数据库表结构总览_20261022.md)、[`DATA_GOVERNANCE.md`](backend/deploy/DATA_GOVERNANCE.md)、[检查报告体系交付报告](backend/deploy/REPORT_DELIVERY_20261105.md)
 - 协作规范：[`AGENTS.md`](AGENTS.md)；`WORKBODY_AGENT_RULES.md`（42 节完整 AI 工程规范）**仅本地保留、不入库**。

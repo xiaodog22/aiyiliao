@@ -1,0 +1,64 @@
+/* custom-tab-bar —— 自绘底部导航 */
+.tab-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  height: 100rpx;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: #FFFFFF;
+  /* 分割线/选中色改走全局令牌（带原值兜底）：
+     超大字档会把 --border 压深、--primary 压成纯黑，否则底栏仍是一条看不见的浅灰线 + 蓝色高亮，
+     与页面其它元素配色不一致。标准/大字档令牌值与原字面值一致，视觉零变化。 */
+  border-top: 1rpx solid var(--border, #E3EAF5);
+  z-index: 999;
+}
+
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  padding: 8rpx 0;
+}
+
+.tab-icon {
+  width: 44rpx;
+  height: 44rpx;
+}
+
+.tab-text {
+  font-size: 22rpx;
+  color: var(--text-weak, #8E98B4);  /* V4 ink-3 */
+  line-height: 1.2;
+}
+
+.tab-item.active .tab-text {
+  color: var(--tab-active, #7E93CC);
+  font-weight: 500;
+}
+
+/* 适老模式：放大图标和文字，增加触控区域 */
+.tab-elder {
+  padding: 16rpx 0;
+}
+.tab-elder .tab-icon {
+  width: 56rpx;
+  height: 56rpx;
+}
+.tab-elder .tab-text {
+  font-size: 28rpx;
+  font-weight: 500;
+}
+
+/* 超大字档：文案再放大一档（原先 large/xlarge 共用 28rpx，xlarge 正文 38rpx 时底栏明显偏小），
+   未选中色改用本档的 --text-weak（更深）。calc 保证 ≥600px 时跟随 px 化后的 --font-caption。 */
+.tab-xlarge .tab-text {
+  font-size: calc(var(--font-caption) + 2rpx);
+  color: var(--text-weak, #8E98B4);
+}

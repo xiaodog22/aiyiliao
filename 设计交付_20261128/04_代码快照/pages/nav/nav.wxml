@@ -1,0 +1,221 @@
+<!--
+  packageNav/pages/nav —— 院内导航（患者端 16-院内导航）
+
+  版式逐项对照 design-output/患者端/F-导航与科普/16-院内导航.png：
+    ① 路线信息卡（白卡三栏）：当前楼层 1F / 从 医院大门 / 到 呼吸内科门诊（蓝色高亮）
+    ② 平面图卡（白卡）：
+         · 平面图底图 + 蓝色路线（起点光晕 → 蓝色主线 → 终点圆点）
+         · 终点旗帜气泡（白底圆角 + 蓝旗 + 蓝色科名，尾巴指向终点）
+         · 起点（医院大门门洞）下方的「入口」标注
+         · 左下角楼层胶囊「1F/2F/3F」（点开是横向楼层 tab）
+         · 右侧竖排圆形按钮：放大 + / 缩小 − / 回到当前位置
+    ③ 路线指引卡（白卡）：标题 + 蓝色圆形数字编号的步骤列表 + 分割线 + 居中「语音播报」
+
+  ⚠️ 导航栏用**原生**（设计稿标题「院内导航」+ 左侧返回 + 右侧微信胶囊，就是原生栏）。
+  ⚠️ canvas 不支持 CSS 变量：画布内的颜色在 nav.js 顶部的 C 常量里（与 app.wxss 令牌同值，改色只改一处）。
+  ⚠️ 所有图标取自 utils 的图标清单；配色/圆角/阴影走 app.wxss 令牌。
+-->
+<view class="page theme-{{theme}} nvpage">
+
+  <!-- ===== ① 路线信息卡 =====
+       「到」整格可点 → 打开目的地选择弹层（内含搜索框 + 搜索按钮）。
+       未选目的地时该格显示「搜索目的地」引导词，选好后显示科室全名（蓝色高亮）。 -->
+  <view class="card nvi">
+    <view class="nvi-cell nvi-c1">
+      <view class="nvi-k">当前楼层</view>
+      <view class="nvi-v">{{floorSel}}</view>
+    </view>
+    <view class="nvi-cell nvi-c2">
+      <view class="nvi-k">从</view>
+      <view class="nvi-v">{{origin.name}}</view>
+    </view>
+    <view class="nvi-cell nvi-c3 pressable" bindtap="onOpenPicker">
+      <view class="nvi-k">到</view>
+      <view wx:if="{{activeLabel}}" class="nvi-v nvi-v-to">{{activeLabel}}</view>
+      <view wx:else class="nvi-v nvi-v-empty">
+        <image class="nvi-pick-ic" src="{{icons.searchGray}}" />
+        <text class="nvi-pick-t">搜索目的地</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== ② 平面图卡 ===== -->
+  <view class="card nvm">
+    <view class="nvm-stage">
+
+      <!-- 底图 + 路线 + 标记全部同层画在同一张 canvas 上（避免小程序原生 canvas 在 transform 图层里
+           "图动了线不动"的老问题；缩放/拖动由 JS 自绘实现） -->
+      <canvas
+        type="2d"
+        id="nvmap"
+        class="nvm-canvas"
+        bindtouchstart="onTouchStart"
+        bindtouchmove="onTouchMove"
+        bindtouchend="onTouchEnd"
+        bindtouchcancel="onTouchEnd"
+      ></canvas>
+
+      <!-- 楼层胶囊（设计稿左下角「1F/2F/3F」位）：点开是横向可滚动楼层 tab，选中高亮 -->
+      <view class="nvm-floor {{floorPick ? 'nvm-floor-on' : ''}}" catchtap="onToggleFloorPick">
+        <text class="nvm-floor-t">{{floorStrip}}</text>
+        <view class="nvm-floor-h"></view>
+      </view>
+
+      <view wx:if="{{floorPick}}" class="nvm-floors">
+        <scroll-view class="nvm-floors-scroll" scroll-x>
+          <view
+            wx:for="{{floors}}"
+            wx:key="key"
+            class="nvm-floor-tab {{floorSel === item.key ? 'nvm-floor-tab-on' : ''}}"
+            data-key="{{item.key}}"
+            catchtap="onPickFloor"
+          >{{item.label}}</view>
+        </scroll-view>
+      </view>
+
+      <!-- 非 1F：底图尚未录入 —— 如实说明 + 给出该层科室清单与换层动线，不伪造平面图 -->
+      <view wx:if="{{floorSel !== '1F'}}" class="nvm-nomap">
+        <image class="nvm-nomap-ic" src="{{icons.info}}" />
+        <view class="nvm-nomap-t">{{floorSel}} 平面图尚未录入</view>
+        <view wx:if="{{floorDepts.length}}" class="nvm-nomap-d">{{floorSel}} 科室：{{floorDeptsText}}</view>
+        <view class="nvm-nomap-d">请先按 1F 指引到「电梯厅」，乘电梯上 {{floorSelNum}} 楼后按楼层指示牌前往</view>
+        <view class="nvm-nomap-btn pressable" catchtap="onBackTo1F">查看 1F 平面图</view>
+      </view>
+
+      <!-- 右侧浮动按钮组：放大 / 缩小 / 回到当前位置 -->
+      <view class="nvm-tools">
+        <view class="nvm-btn pressable" bindtap="onZoomIn">
+          <view class="nvm-btn-icon nvm-btn-plus"></view>
+        </view>
+        <view class="nvm-btn pressable" bindtap="onZoomOut">
+          <view class="nvm-btn-icon nvm-btn-minus"></view>
+        </view>
+        <view class="nvm-btn pressable" bindtap="onLocate">
+          <image class="nvm-btn-ic" src="{{icons.mapPin}}" />
+        </view>
+      </view>
+
+    </view>
+  </view>
+
+  <!-- ===== ③ 路线指引卡 =====
+       标题行右侧放「楼层 · 距离」元信息（设计稿此处留白，不额外占高度）。 -->
+  <view class="card nvr">
+    <view class="nvr-head">
+      <view class="nvr-title">路线指引</view>
+      <view wx:if="{{active}}" class="nvr-meta">{{activeFloor}} · 约 {{active.distanceM}} 米</view>
+    </view>
+
+    <block wx:if="{{active}}">
+      <!-- 门诊类目的地：先取号提示（needRegister 早就算好了，此前 WXML 从未渲染 → 审查 P2-19） -->
+      <view wx:if="{{needRegister}}" class="nvr-tip">
+        <image class="nvr-tip-ic" src="{{icons.info}}" />
+        <text class="nvr-tip-t">就诊前请先到 1F「挂号 / 缴费」窗口取号，再到诊室候诊</text>
+      </view>
+
+      <view class="nvr-steps">
+        <view class="nvr-step" wx:for="{{steps}}" wx:key="index">
+          <view class="nvr-n">{{index + 1}}</view>
+          <view class="nvr-t">{{item}}</view>
+        </view>
+      </view>
+
+      <!-- 换层提示：2F/3F 的科室（先按 1F 路线到电梯厅，再上 N 楼） -->
+      <view wx:if="{{floorTip}}" class="nvr-tip">
+        <image class="nvr-tip-ic" src="{{icons.arrowUpRight}}" />
+        <text class="nvr-tip-t">{{floorTip}}</text>
+      </view>
+    </block>
+
+    <view wx:else class="nvr-empty">
+      <image class="nvr-empty-ic" src="{{icons.mapPinGray}}" />
+      <view class="nvr-empty-t">还没有选择目的地</view>
+      <view class="nvr-empty-d">点上方「到」搜索科室或设施（如 检验科、卫生间、电梯），也可以直接点平面图上的圆点</view>
+      <view class="nvr-empty-btn pressable" bindtap="onOpenPicker">选择目的地</view>
+    </view>
+
+    <view class="nvr-line"></view>
+
+    <view class="nvr-voice pressable {{speaking ? 'nvr-voice-on' : ''}}" bindtap="onSpeak">
+      <image class="nvr-voice-ic" src="{{speaking ? icons.volumeOff : icons.volume}}" />
+      <text class="nvr-voice-t">{{speaking ? '停止播报' : '语音播报'}}</text>
+    </view>
+  </view>
+
+  <!-- ===== 目的地选择弹层 ===== -->
+  <view wx:if="{{pickerOpen}}" class="sheet-mask" bindtap="onClosePicker"></view>
+  <view wx:if="{{pickerOpen}}" class="sheet nvp">
+    <view class="sheet-handle"></view>
+    <view class="nvp-head">
+      <view class="sheet-title nvp-title">选择目的地</view>
+      <view class="nvp-x pressable" bindtap="onClosePicker">关闭</view>
+    </view>
+
+    <!-- 搜索：输入框 + 搜索按钮（支持科室名 / 设施名 / 俗称，如 检验科、厕所、电梯） -->
+    <view class="nvp-search">
+      <image class="nvp-search-ic" src="{{icons.searchGray}}" />
+      <input
+        class="nvp-input"
+        value="{{q}}"
+        placeholder="搜索科室 / 设施，如 检验科、卫生间、电梯"
+        placeholder-class="nvp-ph"
+        confirm-type="search"
+        bindinput="onSearchInput"
+        bindconfirm="onSearch"
+      />
+      <view class="nvp-search-btn pressable" catchtap="onSearch">搜索</view>
+    </view>
+
+    <view class="nvp-hot">
+      <text class="nvp-hot-k">常用</text>
+      <view
+        wx:for="{{hotWords}}"
+        wx:key="*this"
+        class="nvp-hot-c pressable"
+        data-w="{{item}}"
+        catchtap="onHotWord"
+      >{{item}}</view>
+    </view>
+
+    <view class="nvp-cats">
+      <view
+        wx:for="{{cats}}"
+        wx:key="*this"
+        class="nvp-cat {{cat === item ? 'nvp-cat-on' : ''}}"
+        data-c="{{item}}"
+        catchtap="onCat"
+      >{{item}}</view>
+    </view>
+
+    <view wx:if="{{deptErr}}" class="error-inline nvp-err">
+      <image class="error-inline-ic" src="{{icons.alertWhite}}" />
+      <view class="error-inline-text">{{deptErr}}</view>
+      <view class="error-inline-btn" catchtap="loadDepartments">重试</view>
+    </view>
+
+    <scroll-view class="nvp-list" scroll-y>
+      <view
+        wx:for="{{list}}"
+        wx:key="id"
+        class="li-row nvp-row pressable"
+        data-id="{{item.id}}"
+        catchtap="onPickItem"
+      >
+        <image class="nvp-row-ic" src="{{item.iconPath}}" />
+        <view class="nvp-row-main">
+          <view class="nvp-row-name">{{item.label}}</view>
+          <view class="nvp-row-sub">{{item.category}} · {{item.floorLabel}}{{item.desc ? ' · ' + item.desc : ''}}</view>
+        </view>
+        <view class="nvp-row-dist">{{item.distanceM}} 米</view>
+      </view>
+
+      <view wx:if="{{!list.length}}" class="nvp-none">
+        <image class="nvp-none-ic" src="{{icons.searchGray}}" />
+        <view class="nvp-none-t">没有匹配的目的地</view>
+        <view class="nvp-none-d">换个说法试试：科室（检验科）、设施（卫生间 / 电梯）</view>
+      </view>
+      <view class="nvp-pad"></view>
+    </scroll-view>
+  </view>
+
+</view>

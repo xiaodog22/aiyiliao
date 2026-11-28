@@ -1,0 +1,8 @@
+<!-- 提交完成后才渲染：showActions 由状态机唯一判定，页面不得自行拼 wx:if 条件 -->
+<view wx:if="{{showActions}}" class="sa-wrap">
+  <view wx:if="{{passed}}" class="sa-passed" aria-role="text">已通过</view>
+  <view wx:else class="sa-btn sa-btn-pass {{locked ? 'sa-disabled' : ''}}"
+        bindtap="onPass" hover-class="sa-hover" aria-role="button" aria-label="通过" aria-disabled="{{locked}}">通过</view>
+  <view class="sa-btn sa-btn-assess {{locked ? 'sa-disabled' : ''}}"
+        bindtap="onAssess" hover-class="sa-hover" aria-role="button" aria-label="去评定项目" aria-disabled="{{locked}}">去评定项目</view>
+</view>

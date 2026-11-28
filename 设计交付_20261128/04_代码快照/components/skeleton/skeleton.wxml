@@ -1,0 +1,40 @@
+<view wx:if="{{loading}}" class="sk sk-{{type}}">
+
+  <!-- 列表骨架：多条卡片行 -->
+  <block wx:if="{{type === 'list'}}">
+    <view class="sk-card" wx:for="{{list}}" wx:key="*this">
+      <view class="sk-row">
+        <view class="sk-block sk-line-lg"></view>
+        <view class="sk-block sk-badge"></view>
+      </view>
+      <view class="sk-block sk-line-sm"></view>
+      <view class="sk-block sk-line-xs"></view>
+    </view>
+  </block>
+
+  <!-- 统计骨架：数字块横排 -->
+  <block wx:elif="{{type === 'stats'}}">
+    <view class="sk-stats">
+      <view class="sk-stat" wx:for="{{stats}}" wx:key="*this">
+        <view class="sk-block sk-num"></view>
+        <view class="sk-block sk-label"></view>
+      </view>
+    </view>
+  </block>
+
+  <!-- 卡片骨架（默认）：头像 + 文字行 + 按钮 -->
+  <block wx:else>
+    <view class="sk-card" wx:for="{{list}}" wx:key="*this">
+      <view class="sk-row">
+        <view class="sk-block sk-avatar"></view>
+        <view class="sk-col">
+          <view class="sk-block sk-line-lg"></view>
+          <view class="sk-block sk-line-sm"></view>
+        </view>
+      </view>
+      <view class="sk-block sk-line"></view>
+      <view class="sk-block sk-btn"></view>
+    </view>
+  </block>
+
+</view>

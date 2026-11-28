@@ -1,0 +1,88 @@
+/**
+ * custom-tab-bar/index.js —— 自绘 TabBar
+ * 原生 tabBar 无法按主题动态切换项数：
+ *   · standard  → 4 项：首页 / AI问诊 / AI养生 / 我的
+ *   · large/xlarge（适老化）→ 3 项：首页 / 就医 / 我的
+ * 每个 tab 页面 onShow 时调用 this.getTabBar().setData({ selected: N }) 高亮当前项。
+ */
+/**
+ * ⚠️ 不要在模块顶层写 `const app = getApp()`：组件模块可能在 App() 尚未执行时就被加载
+ *    （预加载 / 分包懒注入），此时取到的是 undefined，attached 里一读 globalData 就崩。
+ *    改为每次进方法时现取，App 已就绪时才有意义。
+ */
+function appInstance() {
+  try { return getApp() || null } catch (e) { return null }
+}
+
+// 标准模式 4 项配置
+const TABS_STANDARD = [
+  { pagePath: '/pages/home/home',       text: '首页',   icon: '/assets/icons/home_gray.png',  activeIcon: '/assets/icons/home.png' },
+  { pagePath: '/pages/consultation/consultation', text: 'AI 问诊', icon: '/assets/icons/chat_gray.png', activeIcon: '/assets/icons/chat.png' },
+  { pagePath: '/pages/appointment/appointment', text: '预约挂号', icon: '/assets/icons/calendar_gray.png', activeIcon: '/assets/icons/calendar.png' },
+  { pagePath: '/pages/profile/profile', text: '我的',   icon: '/assets/icons/user_gray.png',  activeIcon: '/assets/icons/user.png' }
+]
+
+// 适老模式 4 项配置：去掉 AI养生，问诊入口简化为"就医"
+// ⚠️ 必须包含预约挂号：它是 app.json 的 tabBar 页面，适老档从首页快捷入口 switchTab 进去时
+//    没有对应项 → selectByPath 返回 -1、selected 保留上一项，底部会错亮"首页"（D-04）。
+const TABS_ELDER = [
+  { pagePath: '/pages/home/home',       text: '首页', icon: '/assets/icons/home_gray.png',  activeIcon: '/assets/icons/home.png' },
+  { pagePath: '/pages/consultation/consultation', text: '就医', icon: '/assets/icons/chat_gray.png', activeIcon: '/assets/icons/chat.png' },
+  { pagePath: '/pages/appointment/appointment', text: '预约挂号', icon: '/assets/icons/calendar_gray.png', activeIcon: '/assets/icons/calendar.png' },
+  { pagePath: '/pages/profile/profile', text: '我的', icon: '/assets/icons/user_gray.png',  activeIcon: '/assets/icons/user.png' }
+]
+
+Component({
+  data: {
+    selected: 0,
+    theme: 'standard',
+    list: TABS_STANDARD
+  },
+
+  lifetimes: {
+    attached() {
+      this._syncTheme()
+    }
+  },
+
+  methods: {
+    // 根据全局主题刷新 tab 列表（切换字号模式后由设置页触发）
+    refresh() {
+      this._syncTheme()
+    },
+
+    _syncTheme() {
+      const app = appInstance()
+      const theme = (app && app.globalData && app.globalData.theme) || 'standard'
+      const isElder = theme === 'large' || theme === 'xlarge'
+      const list = isElder ? TABS_ELDER : TABS_STANDARD
+      this.setData({ theme, list })
+    },
+
+    // 页面 onShow 时调用：按页面路径高亮，自动适配标准/适老两种项数
+    // 用法：if (typeof this.getTabBar === 'function' && this.getTabBar()) {
+    //        this.getTabBar().selectByPath('/pages/home/home')
+    //      }
+    selectByPath(pagePath) {
+      // 先确保列表与当前主题同步（设置页切主题后 tab 页 onShow 会走到这里）
+      this._syncTheme()
+      const idx = this.data.list.findIndex(t => t.pagePath === pagePath)
+      // B1-02：找不到映射时**清除高亮**（selected=-1），不能保留上一项——
+      // 否则会出现「在 A 页却高亮 B 项」的错亮（真机 T33 的根因形态）。
+      // 当前 4 项列表已覆盖全部 tabBar 页；此分支防未来新增页/主题差异再次错亮。
+      const next = idx >= 0 ? idx : -1
+      if (next !== this.data.selected) {
+        this.setData({ selected: next })
+      }
+    },
+
+    // 点击 tab：切换页面
+    onTap(e) {
+      const idx = e.currentTarget.dataset.index
+      const item = this.data.list[idx]
+      if (!item) return
+      if (idx === this.data.selected) return
+      wx.switchTab({ url: item.pagePath })
+    }
+  }
+})

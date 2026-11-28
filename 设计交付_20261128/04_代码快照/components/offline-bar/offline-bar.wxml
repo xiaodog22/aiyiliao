@@ -1,0 +1,11 @@
+<view wx:if="{{show}}" class="ob" aria-role="alert" aria-label="{{title}}">
+  <view class="ob-dot"></view>
+  <view class="ob-text">
+    <view class="ob-title">{{title}}</view>
+    <view class="ob-detail">{{detail}}</view>
+  </view>
+  <view class="ob-retry {{retrying ? 'is-busy' : ''}}"
+        bindtap="onRetry"
+        aria-role="button"
+        aria-label="重试连接">{{retrying ? '重试中' : '重试'}}</view>
+</view>

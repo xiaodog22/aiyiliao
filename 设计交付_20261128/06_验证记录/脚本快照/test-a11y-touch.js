@@ -1,0 +1,196 @@
+/**
+ * tools/test-a11y-touch.js —— 适老化触控目标 + 登录页字号令牌化断言（离线静态，node 直接跑）
+ *
+ * 依据：docs/测试报告_20261029_全量前端测试_详细版.md §3.2 / §3.4
+ *   红线：375px 档 88rpx = 44px；本轮按"提到 80~88rpx"验收（≥80rpx 且断点内 ≥40px）。
+ *
+ * 断言分组：
+ *   T02  触控 6 条（D-B-P2-04 ×4 / D-D-P2-01 / D-D-P2-02）+ 手动登录输入框（D-A-P2-02）
+ *   F03  登录五页 base 区不得残留 <48rpx 的硬编码字号（D-A-P2-03；展示型大字号除外）
+ *
+ * 运行：node tools/test-a11y-touch.js
+ */
+const fs = require('fs')
+const path = require('path')
+
+const ROOT = path.join(__dirname, '..', 'miniprogram')
+let PASS = 0
+let FAIL = 0
+
+function check(id, name, ok, note) {
+  if (ok) PASS++; else FAIL++
+  console.log((ok ? '✓' : '✗') + ' [' + id + '] ' + name + (note ? '  → ' + note : ''))
+}
+
+function read(rel) {
+  return fs.readFileSync(path.join(ROOT, rel), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+}
+
+/** 拆 base / ≥600px 断点两段（断点内尺寸必须折 px，÷2） */
+function split(rel) {
+  const s = read(rel)
+  const i = s.indexOf('@media (min-width: 600px)')
+  return i >= 0 ? { base: s.slice(0, i), wide: s.slice(i) } : { base: s, wide: '' }
+}
+
+/** 取某选择器块内的属性值（同名属性取最后一次声明） */
+function prop(block, selector, name) {
+  const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const re = new RegExp(esc + '\\s*\\{([^}]*)\\}', 'g')
+  let val = null
+  let m
+  while ((m = re.exec(block)) !== null) {
+    const hit = m[1].match(new RegExp('(?:^|;)\\s*' + name + '\\s*:\\s*([^;]+)'))
+    if (hit) val = hit[1].trim()
+  }
+  return val
+}
+
+function rpx(v) {
+  const n = parseFloat(String(v || ''))
+  return /rpx/.test(String(v)) ? n : NaN
+}
+
+function px(v) {
+  const n = parseFloat(String(v || ''))
+  return /px/.test(String(v)) ? n : NaN
+}
+
+// ---------------- T02 触控目标 ----------------
+const TOUCH = [
+  // [id, 文件, 选择器, 属性, base 最小 rpx, 断点最小 px, 说明]
+  ['T02-1', 'pages/doctor/appointments/appointments.wxss', '.apt-btn', 'height', 88, 44, '医生叫号/完成就诊（D-D-P2-01，原 25px）'],
+  ['T02-2', 'pages/doctor/appointments/appointments.wxss', '.apt-actions', 'min-height', 88, 44, '叫号动作区容器'],
+  ['T02-3', 'pages/doctor/workbench/workbench.wxss', '.todo-btn', 'height', 80, 40, '待办「处理」胶囊（D-D-P2-02，原 25px）'],
+  ['T02-4', 'pages/consultation/consultation.wxss', '.chip', 'min-height', 80, 40, '问诊快捷症状 chip（D-B-P2-04，原 34px）'],
+  ['T02-5', 'pages/consultation/consultation.wxss', '.emergency-call', 'min-height', 88, 44, '急诊预警「拨打」按钮（D-B-P2-04，原 36px）'],
+  ['T02-6', 'pages/consultation/consultation.wxss', '.voice-btn', 'height', 80, 40, '输入栏语音圆钮（D-B-P2-04，原 32px）'],
+  ['T02-7', 'pages/auth/manual-login/manual-login.wxss', '.ml-input', 'height', 88, 44, '手动登录输入框（D-A-P2-02，原 36px）']
+]
+
+TOUCH.forEach(([id, file, sel, name, minRpx, minPx, label]) => {
+  const { base, wide } = split(file)
+  const b = prop(base, sel, name)
+  const w = prop(wide, sel, name)
+  const okB = rpx(b) >= minRpx
+  const okW = wide ? px(w) >= minPx : true
+  check(id, label + ' ' + name + ' ≥ ' + minRpx + 'rpx / ' + minPx + 'px',
+    okB && okW, 'base=' + b + ' 窄=' + (okB ? '达标' : '不足') + ' ｜ ≥600px=' + (w || '(未覆盖)'))
+})
+
+// 首页发送胶囊走 CSS 变量（不在选择器里，单独断言变量值）
+{
+  const { base, wide } = split('pages/home/home.wxss')
+  const b = (base.match(/--h-send-h:\s*([^;]+)/) || [])[1]
+  const w = (wide.match(/--h-send-h:\s*([^;]+)/) || [])[1]
+  check('T02-8', '首页发送胶囊高度 ≥ 80rpx / 40px（D-B-P2-04，原 36px）',
+    rpx(b) >= 80 && px(w) >= 40, 'base=' + b + ' ｜ ≥600px=' + w)
+}
+
+// ---------------- F03 登录页字号令牌化 ----------------
+// 由磁盘真实文件集推导，不手写清单。
+// 2026-11-09 事故：清单里残留 2026-11-05 已删除的 pages/auth/auth-common.wxss →
+// readFileSync 直接 ENOENT 抛异常，本门禁自 11-05 起是**崩溃**而非报错，等于完全失效。
+const AUTH_DIR = path.join(ROOT, 'pages', 'auth')
+const LOGIN_FILES = fs.readdirSync(AUTH_DIR, { withFileTypes: true })
+  .filter((d) => d.isDirectory())
+  .flatMap((d) => fs.readdirSync(path.join(AUTH_DIR, d.name))
+    .filter((f) => f.endsWith('.wxss'))
+    .map((f) => 'pages/auth/' + d.name + '/' + f))
+  .sort()
+
+// 磁盘推导修好了「硬编码清单导致 ENOENT 崩溃」，但引入新风险：目录被清空/改名时
+// 清单为空 → F03-* 全不执行 → FAIL=0 假绿。补一条数量下限把空集变成显式失败。
+check('F03-0', '登录页 wxss 清单非空且 ≥4（防目录清空/改名导致空集假绿）',
+  LOGIN_FILES.length >= 4, '实得 ' + LOGIN_FILES.length)
+
+LOGIN_FILES.forEach((file, i) => {
+  const { base } = split(file)
+  const bad = []
+  base.split('\n').forEach((line) => {
+    const m = line.match(/font-size:\s*([0-9]+)rpx/)
+    if (!m) return
+    if (Number(m[1]) >= 48) return            // 展示型大字号（logo/slogan）按设计稿固定，不参与适老缩放
+    if (/theme-large|theme-xlarge/.test(line)) return // 主题专项覆盖本身即放大档
+    bad.push(m[1] + 'rpx')
+  })
+  check('F03-' + (i + 1), path.basename(file) + ' base 区无 <48rpx 硬编码字号',
+    bad.length === 0, bad.length ? '残留=' + bad.join(',') : '全部走 --font-* 令牌')
+})
+
+// 令牌化后的字号必须真实跟随档位（抽查三档差异，防止写成固定 var 别名）
+{
+  const app = read('app.wxss')
+  // --font-body 在 app.wxss 按 standard → .theme-large → .theme-xlarge 顺序各声明一次
+  const all = (app.match(/--font-body:\s*([0-9]+)rpx/g) || []).map((s) => s.match(/([0-9]+)rpx/)[1])
+  check('F03-6', '字号令牌三档确实递增（standard < large < xlarge）',
+    all.length >= 3 && Number(all[0]) < Number(all[1]) && Number(all[1]) < Number(all[2]),
+    'body=' + all.slice(0, 3).join(' / '))
+}
+
+// ---------------- F04 宽屏大字档按钮高度复核（Pad 适老化，静态可回归） ----------------
+// 2026-11-10：组件曾在 ≥600px 用 height:44px / border-radius:12px 字面覆盖令牌，
+// 把 theme-large(54px) / theme-xlarge(64px) 钉死成默认档，且 radius 与真源 10px 不一致。
+{
+  const app = read('app.wxss')
+  const wideApp = app.slice(app.indexOf('@media (min-width: 600px)'))
+  const heights = (wideApp.match(/--btn-height:\s*([0-9]+)px/g) || [])
+    .map((s) => Number(s.match(/([0-9]+)px/)[1]))
+  const sa = split('components/submission-actions/submission-actions.wxss')
+  const hardCoded = /(?:^|;)\s*(?:height|border-radius)\s*:\s*[0-9]+px/.test(sa.wide)
+  check('F04-1', '宽屏 --btn-height 三档递增（standard < large < xlarge）',
+    heights.length >= 3 && heights[0] < heights[1] && heights[1] < heights[2],
+    'px=' + heights.slice(0, 3).join(' / '))
+  check('F04-2', '组件宽屏段不得用字面 px 覆盖 height / border-radius（由令牌承载）',
+    !hardCoded && /var\(--btn-height\)/.test(sa.base) && /var\(--radius-md\)/.test(sa.base),
+    hardCoded ? '仍存在字面覆盖' : 'height=var(--btn-height), radius=var(--radius-md)')
+}
+
+// ---------------- F05 超大字档线条 / 对比度（2026-11-16，防"只放大字号不调线"回退） ----------------
+// 背景：xlarge 曾只放大字号并把 --bg 改成纯白，却沿用 #E4E9F0 的分割线（白底 1.22:1）
+// → 真机表现"线条看不见、卡片没有边界"。这里把口径写成硬断言。
+{
+  const app = read('app.wxss')
+  const block = (app.match(/\.theme-xlarge\s*\{([\s\S]*?)\}/) || [])[1] || ''
+  const token = (n) => {
+    const m = block.match(new RegExp('--' + n + ':\\s*(#[0-9A-Fa-f]{6})'))
+    return m ? m[1] : null
+  }
+  const lum = (hex) => {
+    const c = [1, 3, 5].map((i) => parseInt(hex.substr(i, 2), 16) / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)))
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+  }
+  const contrast = (a, b) => {
+    const x = lum(a); const y = lum(b)
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+  }
+  const border = token('border')
+  const weak = token('text-weak')
+  const bg = token('bg')
+
+  check('F05-1', '超大字档必须自带 --border / --bg（不能沿用默认档的浅灰线 + 纯白底）',
+    !!border && !!bg, 'border=' + border + ' bg=' + bg)
+  check('F05-2', '超大字档 --border 在本档底色上 ≥3:1（非文本边界线可辨）',
+    !!border && !!bg && contrast(border, bg) >= 3,
+    border && bg ? contrast(border, bg).toFixed(2) + ':1' : '缺令牌')
+  check('F05-3', '超大字档 --text-weak 在白卡上 ≥4.5:1（辅助文字可读）',
+    !!weak && contrast(weak, '#FFFFFF') >= 4.5,
+    weak ? contrast(weak, '#FFFFFF').toFixed(2) + ':1' : '缺 --text-weak')
+  check('F05-4', '超大字档细线必须加粗到 2rpx（divider / row / li-row）',
+    /\.theme-xlarge \.divider\s*\{[^}]*height:\s*2rpx/.test(app) &&
+    /\.theme-xlarge \.row\s*\{[^}]*border-bottom-width:\s*2rpx/.test(app) &&
+    /\.theme-xlarge \.li-row \+ \.li-row\s*\{[^}]*border-top-width:\s*2rpx/.test(app),
+    'divider/row/li-row 三处')
+  // 装饰性品牌渐变不得用 --primary → --accent：超大字档 --primary 是纯黑，会变「黑→蓝」脏渐变
+  for (const f of ['pages/auth/login/login.wxss', 'pages/consultation/consultation.wxss']) {
+    const s = read(f)
+    const bad = /linear-gradient\([^;]*var\(--primary\)[^;]*var\(--accent\)/.test(s)
+    check('F05-5·' + path.basename(f), f + ' 品牌渐变走 --brand-grad-*',
+      !bad && /var\(--brand-grad-from\)/.test(s), bad ? '仍是 var(--primary)→var(--accent)' : 'ok')
+  }
+}
+
+console.log('--------------------------------')
+console.log('PASS=' + PASS + ' FAIL=' + FAIL)
+process.exit(FAIL > 0 ? 1 : 0)

@@ -63,6 +63,8 @@ backend/deploy/logs/
 # 设计交付存档
 design-output/
 ui-design-runs/
+# 设计交付_20261128 成稿入库；现行规范快照含 UIUX V4 / V3.1 等仅本地保留的设计阶段稿，随目录排除
+设计交付_20261128/01_设计基线/现行规范/
 # 临时备份
 backend/business-service/.backup/
 # 完整版 README（含开发口令，仅本地保留，不入库）
