@@ -10,7 +10,7 @@
 **医疗健康 AI 微信小程序**（代号：康诊云 / 患者端 AI 助手「小安」）
 
 - 形态：原生微信小程序（WXML + WXSS + JS，**禁止 Vue/React/UniApp**），面向中老年适老化（大字三档/高对比）
-- 后端：**统一网关单入口** —— `miniprogram/config/env.js` 的 `gateway`（:8000 反代 Python FastAPI :8001 + Java Spring Boot :8088）；前端代码禁止出现 8001/8088/127.0.0.1/localhost
+- 后端：**统一网关单入口** —— `miniprogram/config/env.js` 的 `gateway`（:8080 反代 Python FastAPI :8001 + Java Spring Boot :8088）；前端代码禁止出现 8001/8088/127.0.0.1/localhost
 - 核心能力：智能导诊（本地规则引擎 + 后端 AI 融合）、AI 问诊、AI 养生、分步挂号、院内导航（canvas）、健康科普、音色管理（Qwen3-TTS）、医生工作台
 - 当前版本：以 `AI_CONTEXT.md` 为准（约 V1.19，2026-10 中旬；README 可能滞后）
 - 已下线（勿碰）：手势识别、Live2D 数字人（2026-09-13 前端已删，后端/素材仅作备份）
@@ -20,7 +20,7 @@
 | 目录 | 是什么 | 可否改动 |
 | --- | --- | --- |
 | `miniprogram/` | 前端主项目（pages / services / utils / config / components / 分包） | ✅ 日常改动区 |
-| `backend/` | edge-gateway(:8000) / business-service(:8088) / ai-service(:8001) | ⚠️ 仅联调或改契约时 |
+| `backend/` | edge-gateway(:8080) / business-service(:8088) / ai-service(:8001) | ⚠️ 仅联调或改契约时 |
 | `tools/` | 构建 + 验证脚本（check-*.js / test-*.js / build-*.py） | ✅ 改动前先查有没有现成脚本 |
 | `docs/` | 方案 / 契约 / 交付文档 / 手册 / 评审复盘 / 验收文档 + `历史设计规范/`（1.md~5.md、LAYOUT_PLAN.md、页面复刻/）+ `文档整理_20261117/`（246 份原文件的按作用+时间全量分类，入口 `00_索引.md`；不搬迁原文）+ `security/`（安全审计原始报告与整改闭环，本地不入库） | ⚠️ 只读为主 |
 | `archive/` | 已退出活动链的本地归档（重复副本、被取代的旧版本、一次性流水线产物、备份包）。不参与构建、门禁、运行与人工检索主路径 | ❌ 不碰 |

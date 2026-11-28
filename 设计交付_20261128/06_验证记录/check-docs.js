@@ -21,6 +21,7 @@ const ROOT = path.resolve(__dirname, '..', '..')
 const DOCS = [
   '设计交付_20261128/03_创意设计/康诊云_创意设计文档_20261128.md',
   '设计交付_20261128/05_说明文档/康诊云_设计说明书_20261128.md',
+  '设计交付_20261128/05_说明文档/康诊云_项目说明文档_20261128.md',
 ]
 
 // level：FAIL = 一定违规；WARN = 需人工看上下文（文档里说明"不做什么"时会合法出现）
@@ -46,6 +47,10 @@ const REQUIRED = {
     '第 0 节', '第 1 节', '第 2 节', '第 3 节',
     '第 4 节', '第 5 节', '第 6 节',
     '附录 A', '附录 B', '附录 C', '附录 D',
+  ],
+  '康诊云_项目说明文档_20261128.md': [
+    '第 1 章', '第 2 章', '第 3 章', '第 4 章', '第 5 章',
+    '第 6 章', '第 7 章', '第 8 章', '第 9 章', '第 10 章',
   ],
 }
 
@@ -80,6 +85,8 @@ for (const rel of DOCS) {
     if (CMD_PREFIX.test(tok) || NOT_PATH.test(tok)) continue
     if (/[*?{}]/.test(tok)) continue
     if (/^[.#]/.test(tok)) continue
+    // HTTP 路由与接口路径（/api/...、/openapi/...）不是仓库文件，跳过存在性检查
+    if (/^\/(?:api|openapi|gw)\//.test(tok)) continue
     const clean = tok.replace(/[，。；：、)）]+$/, '').replace(/:\d+(?:-\d+)?$/, '')
     if (checked.has(clean)) continue
     checked.add(clean)

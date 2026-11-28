@@ -4,7 +4,7 @@
 md2docx.py —— 把交付 Markdown 转成排版规整的 DOCX（无 pandoc 环境的替代方案）
 
 支持子集：H1–H4 / 段落（**粗体**、`行内代码`）/ 无序·有序列表 / 管道表格 /
-引用块 / 围栏代码块 / 分割线 / 图片（存在才插）。
+引用块 / 围栏代码块 / 分割线 / 图片（存在才插）/ 链接（[文字](URL)、<URL>、裸 URL）。
 
 用法：
   python 设计交付_20261128/06_验证记录/md2docx.py <in.md> [out.docx] [--pdf]
@@ -15,11 +15,13 @@ md2docx.py —— 把交付 Markdown 转成排版规整的 DOCX（无 pandoc 环
 import os
 import re
 import sys
+from urllib.parse import quote
 
 from docx import Document
 from docx.enum.section import WD_SECTION
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
@@ -131,11 +133,55 @@ def setup_document():
     return doc
 
 
-INLINE = re.compile(r"(\*\*[^*]+\*\*|`[^`]+`)")
+INLINE = re.compile(
+    r"(\[[^\]\n]+\]\([^)\s]+\)"            # [文字](链接)
+    r"|<https?://[^>\s]+>"                  # <https://…> 自动链接
+    r"|https?://[^\s<>（）()\[\]「」，。；、]+"  # 裸链接
+    r"|\*\*[^*\n]+\*\*"                     # **粗体**
+    r"|`[^`\n]+`)"                          # `行内代码`
+)
+
+LINK_MD = re.compile(r"^\[([^\]\n]+)\]\(([^)\s]+)\)$")
+LINK_ANGLE = re.compile(r"^<(https?://[^>\s]+)>$")
+LINK_BARE = re.compile(r"^https?://")
+
+
+def add_hyperlink(paragraph, text, url, size=10.5, cn=BODY_FONT_CN):
+    """插入真实的 w:hyperlink（外部关系），Word/PDF 中可点击。"""
+    # 中文路径在 Word 里容易被截断，统一按 UTF-8 百分号编码成 ASCII 目标
+    target = quote(url, safe=":/?#[]@!$&'()*+,;=%")
+    r_id = paragraph.part.relate_to(target, RT.HYPERLINK, is_external=True)
+    link = OxmlElement("w:hyperlink")
+    link.set(qn("r:id"), r_id)
+
+    run = OxmlElement("w:r")
+    rpr = OxmlElement("w:rPr")
+    rfonts = OxmlElement("w:rFonts")
+    rfonts.set(qn("w:ascii"), BODY_FONT_EN)
+    rfonts.set(qn("w:hAnsi"), BODY_FONT_EN)
+    rfonts.set(qn("w:eastAsia"), cn)
+    rpr.append(rfonts)
+    color = OxmlElement("w:color")
+    color.set(qn("w:val"), "4C63A8")
+    rpr.append(color)
+    u = OxmlElement("w:u")
+    u.set(qn("w:val"), "single")
+    rpr.append(u)
+    sz = OxmlElement("w:sz")
+    sz.set(qn("w:val"), str(int(round(size * 2))))
+    rpr.append(sz)
+    run.append(rpr)
+
+    t = OxmlElement("w:t")
+    t.set(qn("xml:space"), "preserve")
+    t.text = text
+    run.append(t)
+    link.append(run)
+    paragraph._p.append(link)
 
 
 def write_inline(paragraph, text, size=10.5, base_bold=False, cn=BODY_FONT_CN):
-    """处理 **粗体** 与 `行内代码`。"""
+    """处理 **粗体**、`行内代码`、[文字](链接)、<自动链接> 与裸链接。"""
     for chunk in INLINE.split(text):
         if not chunk:
             continue
@@ -146,6 +192,14 @@ def write_inline(paragraph, text, size=10.5, base_bold=False, cn=BODY_FONT_CN):
             r = paragraph.add_run(chunk[1:-1])
             set_run_font(r, cn=cn, en=CODE_FONT, size=size - 1.0,
                          color=RGBColor(0x4C, 0x63, 0xA8))
+        elif LINK_MD.match(chunk):
+            m = LINK_MD.match(chunk)
+            add_hyperlink(paragraph, m.group(1), m.group(2), size=size, cn=cn)
+        elif LINK_ANGLE.match(chunk):
+            m = LINK_ANGLE.match(chunk)
+            add_hyperlink(paragraph, m.group(1), m.group(1), size=size, cn=cn)
+        elif LINK_BARE.match(chunk):
+            add_hyperlink(paragraph, chunk, chunk, size=size, cn=cn)
         else:
             r = paragraph.add_run(chunk)
             set_run_font(r, cn=cn, size=size, bold=base_bold)
@@ -167,7 +221,17 @@ def add_table(doc, rows):
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = True
     for i, row in enumerate(rows):
-        cells = table.add_row().cells
+        tr = table.add_row()
+        cells = tr.cells
+        # 跨页断表时重复表头，且单行不被横向截断
+        trPr = tr._tr.get_or_add_trPr()
+        cant = OxmlElement("w:cantSplit")
+        cant.set(qn("w:val"), "true")
+        trPr.append(cant)
+        if i == 0:
+            th = OxmlElement("w:tblHeader")
+            th.set(qn("w:val"), "true")
+            trPr.append(th)
         for j in range(cols):
             text = row[j] if j < len(row) else ""
             cell = cells[j]
@@ -341,12 +405,14 @@ def build(md_path, out_path):
         if lm:
             indent = len(lm.group(1))
             ordered = lm.group(2)[0].isdigit()
-            style = "List Number" if ordered else "List Bullet"
-            p = doc.add_paragraph(style=style)
+            p = doc.add_paragraph()
             p.paragraph_format.left_indent = Cm(0.75 + 0.6 * (indent // 2))
+            p.paragraph_format.first_line_indent = Cm(-0.55)
             p.paragraph_format.space_after = Pt(2)
             p.paragraph_format.line_spacing = 1.45
-            write_inline(p, lm.group(3))
+            # 手写序号：Word 的 List Number 样式会跨列表续号（第 2 节接 6、第 3 节接 11）
+            prefix = (lm.group(2).rstrip(".)") + ". ") if ordered else "• "
+            write_inline(p, prefix + lm.group(3))
             i += 1
             continue
 
@@ -372,28 +438,42 @@ def to_pdf(docx_path):
         print("!! 未安装 pywin32，无法导出 PDF")
         return None
     pdf_path = os.path.splitext(docx_path)[0] + ".pdf"
+    src = os.path.abspath(docx_path)
+    dst = os.path.abspath(pdf_path)
     word = None
+    doc = None
     try:
         word = win32com.client.DispatchEx("Word.Application")
         word.Visible = False
         word.DisplayAlerts = 0
-        d = word.Documents.Open(os.path.abspath(docx_path))
-        # 更新目录与所有域
-        try:
-            for toc in d.TablesOfContents:
-                toc.Update()
-            d.Fields.Update()
-        except Exception:
-            pass
-        d.Save()
-        d.ExportAsFixedFormat(os.path.abspath(pdf_path), 17)  # 17 = wdExportFormatPDF
-        d.Close(0)
+        word.AutomationSecurity = 3          # 禁用宏，避免安全提示弹窗卡住
+        doc = word.Documents.Open(src, ReadOnly=True, AddToRecentFiles=False,
+                                  ConfirmConversions=False)
+        doc.Repaginate()
+        # 只导出，不回写源文件：Fields/TOC 更新会触发保存，既有脚本在此挂起
+        doc.ExportAsFixedFormat(
+            dst, 17, False, 0, 0, 1, 1,
+            0,      # wdExportDocumentContent
+            True,   # IncludeDocProps
+            True,   # KeepIRM
+            1,      # wdExportCreateHeadingBookmarks：保留标题书签层级
+            True,   # DocStructureTags：保留可访问性标签
+            True,   # BitmapMissingFonts
+            False,  # UseISO19005_1
+        )
+        doc.Close(0)
+        doc = None
         print("PDF:", pdf_path)
         return pdf_path
     except Exception as exc:
         print("!! PDF 导出失败（Word 不可用？）:", exc)
         return None
     finally:
+        if doc is not None:
+            try:
+                doc.Close(0)
+            except Exception:
+                pass
         if word is not None:
             try:
                 word.Quit()
